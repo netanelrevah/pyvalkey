@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-outside-of-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: isort/isort-action@master
+      - uses: psf/black@stable
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - uses: snok/install-poetry@v1
+      - id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --with dev --no-interaction --no-root
+      - run: poetry check
+      - run: poetry lock --check
+      - run: poetry run ruff check --format=github .
+      - run: poetry run mypy r3dis
+  lint:
+    runs-on: ${{ matrix.image }}
+    name: ${{ matrix.os }} / ${{ matrix.python-version }}
+    strategy:
+      matrix:
+        os: [ Ubuntu, macOS, Windows ]
+        python-version: [ "3.10", "3.11" ]
+        include:
+          - os: Ubuntu
+            image: ubuntu-22.04
+          - os: Windows
+            image: windows-2022
+          - os: macOS
+            image: macos-12
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: snok/install-poetry@v1
+
+      - id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --with dev --no-interaction --no-root
+
+      - run: poetry install --no-interaction
+
+      - name: Run pytest
+        run: poetry run pytest -v
