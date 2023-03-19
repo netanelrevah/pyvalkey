@@ -72,5 +72,5 @@ class RedisServer(TCPServer):
 
 
 if __name__ == "__main__":
-    with RedisServer(("127.0.0.1", 6379), RedisHandler) as server:
+    with RedisServer(("127.0.0.1", 6379)) as server:
         server.serve_forever()
