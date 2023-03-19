@@ -29,3 +29,6 @@ def test_simple(s, c):
     assert c.hgetall("c") == {b"d": b"2"}
     c.delete("a", "b")
     assert c.keys() == [b"c"]
+    c.set("f", "abc")
+    c.append("f", "abc")
+    assert c.get("f") == b"abcabc"
