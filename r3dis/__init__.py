@@ -5,6 +5,10 @@ from r3dis.resp import dump, load
 
 
 class RedisHandler(StreamRequestHandler):
+    def __init__(self, request, client_address, server: "RedisServer"):
+        super().__init__(request, client_address, server)
+        self.server: RedisServer = server
+
     @property
     def data(self) -> dict:
         return self.server.server_data
@@ -57,5 +61,5 @@ class RedisServer(TCPServer):
 
 
 if __name__ == "__main__":
-    with RedisServer(("127.0.0.1", 6379)) as server:
-        server.serve_forever()
+    with RedisServer(("127.0.0.1", 6379)) as s:
+        s.serve_forever()
