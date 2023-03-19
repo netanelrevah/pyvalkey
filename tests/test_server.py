@@ -4,7 +4,7 @@ import redis
 from _pytest.fixtures import yield_fixture
 from pytest import fixture
 
-from r3dis import RedisServer
+from r3dis.server import RedisServer
 
 
 @yield_fixture
