@@ -11,6 +11,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.10"
+typer = "^0.7.0"
 
 [tool.poetry.group.dev.dependencies]
 redis = "^4.5.1"
