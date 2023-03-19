@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "r3dis"
+version = "0.0.1"
+description = "r3dis: Python implemented Redis server"
+authors = ["Netanel Revah <netanelrevah@outlook.com>"]
+license = "MIT License"
+readme = "README.md"
+packages = [
+    { include = "r3dis" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+redis = "*"
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 120
