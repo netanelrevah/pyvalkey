@@ -27,7 +27,7 @@ jobs:
       - run: poetry check
       - run: poetry lock --check
       - run: poetry run ruff check --format=github .
-      - run: poetry run mypy cap
+      - run: poetry run mypy r3dis
   lint:
     runs-on: ${{ matrix.image }}
     name: ${{ matrix.os }} / ${{ matrix.python-version }}
