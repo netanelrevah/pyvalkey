@@ -13,8 +13,8 @@ packages = [
 python = "^3.10"
 
 [tool.poetry.group.dev.dependencies]
-redis = "*"
-pytest = "*"
+redis = "^4.5.1"
+pytest = "^7.2.2"
 ruff = "^0.0.257"
 black = "^23.1.0"
 isort = "^5.12.0"
