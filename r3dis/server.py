@@ -177,9 +177,6 @@ class RedisHandler(StreamRequestHandler):
                             pass
                         user_deleted += 1 if self.acl.pop(user_name, None) is not None else 0
                     self.dump(user_deleted)
-                case b"ACL", b"DRYRUN", user_name, command, *arg:
-                    # Todo: Implement
-                    self.dump_ok()
                 case b"ACL", b"SETUSER", user_name, *rules:
                     if user_name not in self.acl:
                         self.acl[user_name] = {b"passwords": set(), b"flags": set()}
