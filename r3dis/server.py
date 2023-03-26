@@ -3,6 +3,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
+from hashlib import sha256
 from io import BytesIO
 from itertools import count
 from os import urandom
@@ -138,13 +139,17 @@ class RedisHandler(StreamRequestHandler):
             match command:
                 case None:
                     break
-                case b"CONFIG", b"SET", config_name, config_value:
-                    self.configurations[config_name] = config_value
+                case b"CONFIG", b"SET", *parameters:
+                    if len(parameters) % 2 != 0:
+                        self.dump(Exception("ERR syntax error"))
+                    for name, value in zip(parameters[::2], parameters[1::2]):
+                        if name == b"requirepass":
+                            self.configurations[name] = sha256(value).hexdigest().encode()
                     self.dump_ok()
                 case b"CONFIG", b"GET", *parameters:
                     keys = set()
                     for parameter in parameters:
-                        keys |= set(fnmatch.filter(self.configurations.keys(), parameter))
+                        keys.update(set(fnmatch.filter(self.configurations.keys(), parameter)))
                     self.dump(
                         {
                             config_name: config_value
@@ -188,7 +193,7 @@ class RedisHandler(StreamRequestHandler):
                             self.acl[user_name][b"flags"] |= set(b"off")
                             continue
                         if rule.startswith(b">"):
-                            self.acl[user_name][b"passwords"].add(rule[1:])
+                            self.acl[user_name][b"passwords"].add(sha256(rule[1:]).hexdigest().encode())
                             continue
                         if rule.startswith(b"+"):
                             # Todo: Implement
@@ -269,7 +274,7 @@ class RedisHandler(StreamRequestHandler):
                 case b"AUTH", password:
                     if (
                         b"requirepass" in self.server.configurations
-                        and password == self.server.configurations[b"requirepass"]
+                        and sha256(password).hexdigest().encode() == self.server.configurations[b"requirepass"]
                     ):
                         self.dump_ok()
                         continue
@@ -284,10 +289,13 @@ class RedisHandler(StreamRequestHandler):
                     if username not in self.acl:
                         self.dump(Exception("WRONGPASS invalid username-password pair or user is disabled."))
                         continue
-                    if username == b"default" and password == self.server.configurations[b"requirepass"]:
+                    if (
+                        username == b"default"
+                        and sha256(password).hexdigest().encode() == self.server.configurations[b"requirepass"]
+                    ):
                         self.dump_ok()
                         continue
-                    if password not in self.acl[username][b"passwords"]:
+                    if sha256(password).hexdigest().encode() not in self.acl[username][b"passwords"]:
                         self.dump(Exception("WRONGPASS invalid username-password pair or user is disabled."))
                         continue
                     self.dump_ok()

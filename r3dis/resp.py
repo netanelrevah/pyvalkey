@@ -69,6 +69,11 @@ class RespDumper:
             self.dump_array(value)
         elif isinstance(value, set):
             self.dump_array(list(value))
+        elif isinstance(value, dict):
+            result = []
+            for k, v in value.items():
+                result += [k, v]
+            self.dump_array(result)
         elif value is None:
             self.writer.write("$-1\r\n".encode())
         elif isinstance(value, Exception):
