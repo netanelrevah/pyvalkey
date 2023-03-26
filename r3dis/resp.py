@@ -42,13 +42,17 @@ class RespDumper:
 
     def dump_bulk_string(self, value: AnyStr):
         if isinstance(value, str):
-            value = value.encode()
-        self.writer.write(b"$" + str(len(value)).encode() + b"\r\n" + value + b"\r\n")
+            bytes_value = value.encode()
+        else:
+            bytes_value = value
+        self.writer.write(b"$" + str(len(bytes_value)).encode() + b"\r\n" + bytes_value + b"\r\n")
 
     def dump_string(self, value: AnyStr):
         if isinstance(value, str):
-            value = value.encode()
-        self.writer.write(b"+" + value + b"\r\n")
+            bytes_value = value.encode()
+        else:
+            bytes_value = value
+        self.writer.write(b"+" + bytes_value + b"\r\n")
 
     def dump_array(self, value: list):
         self.writer.write(f"*{len(value)}\r\n".encode())

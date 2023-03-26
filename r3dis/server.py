@@ -27,7 +27,7 @@ class Client:
 
     is_killed: bool = False
     is_paused: bool = False
-    reply_mode: bytes = "on"
+    reply_mode: str = "on"
 
     @property
     def address(self) -> bytes:
@@ -47,7 +47,9 @@ class ClientList(dict[int, Client]):
     def all(self):
         return ClientList({id_: c for id_, c in self.items() if not c.is_killed})
 
-    def filter_(self, client_id: int = None, address: bytes = None, client_type: bytes = None) -> "ClientList":
+    def filter_(
+        self, client_id: int | None = None, address: bytes | None = None, client_type: bytes | None = None
+    ) -> "ClientList":
         filtered = ClientList()
         for c in self.all().values():
             if client_id is not None and c.client_id != client_id:
@@ -81,7 +83,6 @@ class RedisHandler(StreamRequestHandler):
     def __init__(self, request, client_address, server: "RedisServer"):
         super().__init__(request, client_address, server)
         self.server: RedisServer = server
-        self.current_client = None
         self.request: socket
 
     @property
