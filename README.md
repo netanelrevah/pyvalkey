@@ -65,4 +65,8 @@ currently supported commands:
 * KEYS
 * APPEND
 
-i want to add more in the future, you are invited to help :)
+in the future:
+* more commands
+* support for multiple client using asyncio loop instead of thread per client
+
+you are invited to help :)
