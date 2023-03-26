@@ -32,6 +32,31 @@ t.start()
 ```
 
 currently supported commands:
+* CONFIG SET
+* CONFIG GET
+* ACL HELP ~
+* ACL GENPASS
+* ACL CAT
+* ACL DELUSER
+* ACL SETUSER
+* ACL GETUSER
+* LPUSH
+* CLIENT LIST
+* CLIENT ID
+* CLIENT SETNAME
+* CLIENT GETNAME
+* CLIENT KILL
+* CLIENT PAUSE
+* CLIENT UNPAUSE
+* CLIENT REPLY
+* INFO
+* AUTH
+* FLUSHDB
+* SELECT
+* PING
+* QUIT
+* DBSIZE
+* ECHO
 * GET
 * SET
 * DEL
@@ -40,4 +65,8 @@ currently supported commands:
 * KEYS
 * APPEND
 
-i want to add more in the future, you are invited to help :)
+in the future:
+* more commands
+* support for multiple client using asyncio loop instead of thread per client
+
+you are invited to help :)

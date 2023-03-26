@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "r3dis"
-version = "0.0.3"
+version = "0.0.4"
 description = "r3dis: Python implemented Redis server"
 authors = ["Netanel Revah <netanelrevah@outlook.com>"]
 license = "MIT License"
@@ -34,3 +34,5 @@ profile = "black"
 
 [tool.ruff]
 line-length = 120
+
+ignore = ["E731"]
