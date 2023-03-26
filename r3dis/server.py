@@ -1,16 +1,69 @@
 import fnmatch
 import logging
+import time
 from collections import defaultdict
+from dataclasses import dataclass
 from io import BytesIO
 from itertools import count
 from os import urandom
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
-from typing import Any
 
 from r3dis.resp import dump, load
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Client:
+    client_id: int
+    host: bytes
+    port: int
+    name: bytes = b""
+
+    is_normal: bool = True
+    is_replica: bool = False
+
+    is_killed: bool = False
+    is_paused: bool = False
+    reply_mode: bytes = "on"
+
+    @property
+    def address(self) -> bytes:
+        return self.host + b":" + str(self.port).encode()
+
+    @property
+    def flags(self) -> bytes:
+        return b"".join([b"N" if self.is_normal else b"", b"S" if self.is_replica else b""])
+
+    @property
+    def info(self):
+        items = {b"id": self.client_id, b"addr": self.address, b"flags": self.flags, b"name": self.name}.items()
+        return b" ".join([k + b"=" + to_bytes(v) for k, v in items])
+
+
+class ClientList(dict[int, Client]):
+    def all(self):
+        return ClientList({id_: c for id_, c in self.items() if not c.is_killed})
+
+    def filter_(self, client_id: int = None, address: bytes = None, client_type: bytes = None) -> "ClientList":
+        filtered = ClientList()
+        for c in self.all().values():
+            if client_id is not None and c.client_id != client_id:
+                continue
+            if address is not None and c.address != address:
+                continue
+            if client_type is not None:
+                if client_type == b"normal" and not c.is_normal:
+                    continue
+                if client_type == b"replica" and not c.is_replica:
+                    continue
+            filtered[c.client_id] = c
+        return filtered
+
+    @property
+    def info(self) -> bytes:
+        return b"\r".join([c.info for c in self.all().values()])
 
 
 class ACLUser:
@@ -27,7 +80,7 @@ class RedisHandler(StreamRequestHandler):
     def __init__(self, request, client_address, server: "RedisServer"):
         super().__init__(request, client_address, server)
         self.server: RedisServer = server
-        self.current_client_id = None
+        self.current_client = None
         self.request: socket
 
     @property
@@ -49,7 +102,15 @@ class RedisHandler(StreamRequestHandler):
     def dump(self, value, bulk_string=False):
         dumped = BytesIO()
         dump(value, dumped, dump_bulk=bulk_string)
-        print(self.current_client_id, "result", dumped.getvalue())
+        print(self.current_client.client_id, "result", dumped.getvalue())
+
+        if self.current_client.reply_mode == "skip":
+            self.current_client.reply_mode = "on"
+            return
+
+        if self.current_client.reply_mode == "off":
+            return
+
         dump(value, self.wfile, dump_bulk=bulk_string)
 
     def dump_ok(self):
@@ -58,20 +119,21 @@ class RedisHandler(StreamRequestHandler):
     def setup(self) -> None:
         super().setup()
 
-        self.current_client_id = next(self.server.client_ids)
-        self.clients[self.current_client_id] = {
-            b"id": self.current_client_id,
-            b"addr": f"{self.client_address[0]}:{self.client_address[1]}".encode(),
-            b"flags": b"N",
-        }
+        current_client_id = next(self.server.client_ids)
+        self.current_client = Client(
+            client_id=current_client_id,
+            host=self.client_address[0].encode(),
+            port=self.client_address[1],
+        )
+        self.clients[self.current_client.client_id] = self.current_client
 
     def handle(self):
         current_database = self.databases[0]
 
-        while self.clients[self.current_client_id]:
+        while not self.current_client.is_killed:
             command = load(self.rfile)
 
-            print(self.current_client_id, command)
+            print(self.current_client.client_id, command)
 
             match command:
                 case None:
@@ -79,6 +141,17 @@ class RedisHandler(StreamRequestHandler):
                 case b"CONFIG", b"SET", config_name, config_value:
                     self.configurations[config_name] = config_value
                     self.dump_ok()
+                case b"CONFIG", b"GET", *parameters:
+                    keys = set()
+                    for parameter in parameters:
+                        keys |= set(fnmatch.filter(self.configurations.keys(), parameter))
+                    self.dump(
+                        {
+                            config_name: config_value
+                            for config_name, config_value in self.configurations.items()
+                            if config_name in keys
+                        }
+                    )
                 case b"ACL", b"HELP":
                     self.dump([b"genpass"])
                 case b"ACL", b"GENPASS":
@@ -135,62 +208,59 @@ class RedisHandler(StreamRequestHandler):
                     current_database[name].insert(0, value)
                     self.dump(len(current_database[name]))
                 case b"CLIENT", b"LIST":
-                    results = []
-                    for client in self.clients.values():
-                        if client is None:
-                            continue
-                        results.append(b" ".join([k + b"=" + to_bytes(v) for k, v in client.items()]))
-                    self.dump(b"\r".join(results), bulk_string=True)
+                    self.dump(self.clients.info, bulk_string=True)
                 case b"CLIENT", b"LIST", b"TYPE", type_:
-                    results = []
-                    for client in self.clients.values():
-                        if client is None:
-                            continue
-                        if type_ == b"replica" and b"S" not in client[b"flags"]:
-                            continue
-                        results.append(b" ".join([k + b"=" + to_bytes(v) for k, v in client.items()]))
-                    self.dump(b"\r".join(results), bulk_string=True)
+                    self.dump(self.clients.filter_(client_type=type_).info, bulk_string=True)
                 case b"CLIENT", b"ID":
-                    self.dump(self.current_client_id)
+                    self.dump(self.current_client.client_id)
                 case b"CLIENT", b"SETNAME", name:
-                    self.clients[self.current_client_id][b"name"] = name
+                    self.current_client.name = name
                     self.dump_ok()
                 case b"CLIENT", b"GETNAME":
-                    name = self.clients[self.current_client_id].get(b"name", b"")
-                    self.dump(name or None)
+                    self.dump(self.current_client.name or None)
                 case b"CLIENT", b"KILL", *filters:
                     if len(filters) == 1:
                         (addr,) = filters
-                        client_to_kill = None
-                        for client, client_configurations in self.clients.items():
-                            if client_configurations[b"addr"] != addr:
-                                continue
-                            client_to_kill = client
-                            break
-                        if not client_to_kill:
+                        clients = self.clients.filter_(address=addr).values()
+                        if not clients:
                             self.dump(Exception("ERR No such client"))
                             continue
-                        self.clients[client_to_kill] = None
+                        (client,) = clients
+                        client.is_killed = True
                         self.dump_ok()
                     else:
                         filters_dict = {}
                         for filter_ in zip(filters[::2], filters[1::2]):
                             match filter_:
                                 case b"ID", id_:
-                                    filters_dict[b"id"] = int(id_)
+                                    filters_dict["client_id"] = int(id_)
                                 case b"ADDR", addr:
-                                    filters_dict[b"addr"] = addr
+                                    filters_dict["address"] = addr
 
-                        killed_clients = 0
-                        for client, client_configurations in self.clients.items():
-                            for filter_key, filter_value in filters_dict.items():
-                                if client_configurations[filter_key] != filter_value:
-                                    break
-                            else:
-                                self.clients[client] = None
-                                killed_clients += 1
-                        self.dump(killed_clients)
-
+                        clients = self.clients.filter_(**filters_dict).values()
+                        for client in clients:
+                            client.is_killed = True
+                        self.dump(len(clients))
+                case b"CLIENT", b"PAUSE", timeout_seconds:
+                    timeout_seconds: bytes
+                    if not timeout_seconds.isdigit():
+                        self.dump(Exception("ERR timeout is not an integer or out of range"))
+                        continue
+                    timeout_seconds: int = int(timeout_seconds)
+                    self.current_client.is_paused = True
+                    self.dump_ok()
+                    timeout = time.time() + timeout_seconds
+                    while self.current_client.is_paused and time.time() < timeout:
+                        time.sleep(0.1)
+                case b"CLIENT", b"UNPAUSE":
+                    for client in self.clients.values():
+                        client.is_paused = False
+                case b"CLIENT", b"REPLY", mode:
+                    if mode not in (b"ON", b"OFF", b"SKIP"):
+                        self.dump(Exception("ERR syntax error"))
+                    self.current_client.reply_mode = mode.decode().lower()
+                    if mode == b"ON":
+                        self.dump_ok()
                 case b"INFO",:
                     self.dump(
                         "redis_version:4.9.0\r\n" "arch_bits:64\r\n" "cluster_enabled:0\r\n" "enterprise:0\r\n",
@@ -262,15 +332,19 @@ class RedisHandler(StreamRequestHandler):
                         current_database[name] = ""
                     current_database[name] += value
                     self.dump(len(current_database[name]))
-                case b"PING":
+                case b"PING",:
                     self.dump("PONG")
                     break
                 case b"PING", message:
                     self.dump(message, bulk_string=True)
                     break
-                case b"QUIT":
+                case b"QUIT",:
                     self.dump_ok()
                     break
+                case b"DBSIZE",:
+                    self.dump(len(current_database.keys()))
+                case b"ECHO", message:
+                    self.dump(message, bulk_string=True)
                 case unknown, *args:
                     print("exception")
 
@@ -280,10 +354,10 @@ class RedisHandler(StreamRequestHandler):
                         )
                     )
 
-        print(self.current_client_id, "exited")
+        print(self.current_client.client_id, "exited")
 
     def finish(self) -> None:
-        del self.clients[self.current_client_id]
+        del self.clients[self.current_client.client_id]
         super().finish()
 
 
@@ -293,5 +367,5 @@ class RedisServer(ThreadingTCPServer):
         self.databases: defaultdict[int, dict] = defaultdict(dict, {0: {}})
         self.acl: dict[bytes, dict] = {b"default": {b"passwords": [], b"flags": []}}
         self.client_ids = count(0)
-        self.clients: dict[int, None | dict[bytes, Any]] = {}
+        self.clients: ClientList = ClientList()
         self.configurations: dict[bytes, bytes] = {}
