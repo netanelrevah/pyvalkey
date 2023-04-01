@@ -9,81 +9,312 @@ from itertools import count
 from os import urandom
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
+from typing import Any
 
-from r3dis.resp import dump, load
+from r3dis.acl import ACL
+from r3dis.clients import Client, ClientList
+from r3dis.configurations import Configurations
+from r3dis.information import Information
+from r3dis.resp import RESP_OK, RespError, dump, load
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Client:
-    client_id: int
-    host: bytes
-    port: int
-    name: bytes = b""
+class RedisHandler:
+    client: Client
+    database: dict[bytes, Any]
+    configurations: Configurations
+    acl: ACL
 
-    is_normal: bool = True
-    is_replica: bool = False
+    information: Information
+    clients: ClientList
+    databases: dict[int, dict[bytes, Any]]
 
-    is_killed: bool = False
-    is_paused: bool = False
-    reply_mode: str = "on"
+    pause_timeout: float = 0
 
-    @property
-    def address(self) -> bytes:
-        return self.host + b":" + str(self.port).encode()
+    def handle_config_command(self, *command: bytes):
+        match command:
+            case b"SET", *parameters:
+                parameters_dict = {}
+                parameters_list = list(parameters)
+                while parameters_list:
+                    name = parameters_list.pop(0)
+                    number_of_values = Configurations.get_number_of_values(name)
+                    if number_of_values <= 0:
+                        return RespError(b"ERR syntax error")
+                    parameters_dict[name] = [parameters_list.pop(0) for _ in range(number_of_values)]
+                if not parameters_dict:
+                    return
 
-    @property
-    def flags(self) -> bytes:
-        return b"".join([b"N" if self.is_normal else b"", b"S" if self.is_replica else b""])
+                for name, values in parameters_dict.items():
+                    self.configurations.set_values(name, *values)
+                return RESP_OK
+            case b"GET", *parameters:
+                names = self.configurations.get_names(*parameters)
+                return self.configurations.info(names)
 
-    @property
-    def info(self):
-        items = {b"id": self.client_id, b"addr": self.address, b"flags": self.flags, b"name": self.name}.items()
-        return b" ".join([k + b"=" + to_bytes(v) for k, v in items])
+    def handle_client_command(self, *command: bytes):
+        match command:
+            case [b"LIST"]:
+                return self.clients.info
+            case [b"LIST", b"TYPE", type_]:
+                return self.clients.filter_(client_type=type_).info
+            case [b"ID"]:
+                return self.client.client_id
+            case [b"SETNAME", name]:
+                self.client.name = name
+                return RESP_OK
+            case [b"GETNAME"]:
+                return self.client.name or None
+            case [b"KILL", *filters]:
+                if len(filters) == 1:
+                    (addr,) = filters
+                    clients = self.clients.filter_(address=addr).values()
+                    if not clients:
+                        return RespError(b"ERR No such client")
+                    (client,) = clients
+                    client.is_killed = True
+                    return RESP_OK
+                else:
+                    filters_dict = {}
+                    for filter_ in zip(filters[::2], filters[1::2]):
+                        match filter_:
+                            case b"ID", id_:
+                                filters_dict["client_id"] = int(id_)
+                            case b"ADDR", addr:
+                                filters_dict["address"] = addr
+
+                    clients = self.clients.filter_(**filters_dict).values()
+                    for client in clients:
+                        client.is_killed = True
+                    return len(clients)
+            case [b"PAUSE", timeout_seconds]:
+                if not timeout_seconds.isdigit():
+                    return RespError(b"ERR timeout is not an integer or out of range")
+                self.pause_timeout: float = time.time() + int(timeout_seconds)
+                self.client.is_paused = True
+                return RESP_OK
+            case [b"UNPAUSE"]:
+                for client in self.clients.values():
+                    client.is_paused = False
+            case [b"REPLY", mode]:
+                if mode not in (b"ON", b"OFF", b"SKIP"):
+                    return RespError(b"ERR syntax error")
+                self.client.reply_mode = mode.decode().lower()
+                if mode == b"ON":
+                    return RESP_OK
+
+    def handle_acl_command(self, *command: bytes):
+        match command:
+            case [b"HELP"]:
+                return [b"genpass"]
+            case [b"GENPASS"]:
+                return urandom(64)
+            case [b"GENPASS", length]:
+                return urandom(length)
+            case [b"CAT"]:
+                return ACL.get_categories()
+            case [b"CAT", category]:
+                return ACL.get_category_commands(category)
+            case [b"DELUSER", *user_names]:
+                user_deleted = 0
+                for user_name in user_names:
+                    if user_name == b"default":
+                        pass
+                    user_deleted += 1 if self.acl.pop(user_name, None) is not None else 0
+                return user_deleted
+            case [b"SETUSER", user_name, *rules]:
+                acl_user = self.acl.get_or_create_user(user_name)
+
+                for rule in rules:
+                    if rule == b"on":
+                        acl_user.is_active = True
+                        continue
+                    if rule == b"off":
+                        acl_user.is_active = False
+                        continue
+                    if rule.startswith(b">"):
+                        acl_user.add_password(rule[1:])
+                        continue
+                    if rule.startswith(b"+"):
+                        # Todo: Implement
+                        continue
+                return RESP_OK
+            case [b"GETUSER", user_name]:
+                if user_name not in self.acl:
+                    return
+                return self.acl[user_name].info
+
+    def handle_command(self, *command):
+        match command:
+            case [b"CONFIG", *sub_command]:
+                return self.handle_config_command(*sub_command)
+            case [b"ACL", *sub_command]:
+                return self.handle_acl_command(*sub_command)
+            case [b"CLIENT", *sub_command]:
+                return self.handle_client_command(*sub_command)
+            case b"LPUSH", name, value:
+                if name not in self.database:
+                    self.database[name] = []
+                if not isinstance(self.database[name], list):
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                self.database[name].insert(0, value)
+                return len(self.database[name])
+
+            case b"INFO",:
+                return self.information.all()
+            case b"AUTH", password:
+                password_hash = sha256(password).hexdigest().encode()
+
+                if self.configurations.requirepass and password_hash == self.configurations.requirepass:
+                    return RESP_OK
+                return RespError(
+                    b"ERR AUTH "
+                    b"<password> called without any password configured for the default user. "
+                    b"Are you sure your configuration is correct?"
+                )
+            case b"AUTH", username, password:
+                password_hash = sha256(password).hexdigest().encode()
+
+                if username not in self.acl:
+                    return RespError(b"WRONGPASS invalid username-password pair or user is disabled.")
+                if username == b"default" and password_hash == self.configurations.requirepass:
+                    return RESP_OK
+                if password_hash not in self.acl[username].passwords:
+                    return RespError(b"WRONGPASS invalid username-password pair or user is disabled.")
+                return RESP_OK
+            case b"FLUSHDB",:
+                self.database.clear()
+                return RESP_OK
+            case b"SELECT", number:
+                self.database = self.databases[int(number)]
+                return RESP_OK
+            case b"SET", name, value:
+                self.database[name] = value
+                return RESP_OK
+            case b"GET", name:
+                value: bytes = self.database.get(name, None)
+                if value is None:
+                    value = b""
+                if not isinstance(value, bytes):
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return value
+            case b"HSET", name, *key_values:
+                number_of_items = len(key_values) // 2
+                h = {key_values[i * 2]: key_values[i * 2 + 1] for i in range(number_of_items)}
+                if name not in self.database:
+                    self.database[name] = {}
+                self.database[name].update(h)
+                return number_of_items
+            case b"HGETALL", name:
+                h = self.database.get(name, {})
+                response = []
+                for k, v in h.items():
+                    response.extend([k, v])
+                return response
+            case b"DEL", *names:
+                deleted = len([1 for _ in filter(None, [self.database.pop(name, None) for name in names])])
+                return deleted
+            case b"KEYS", pattern:
+                keys = list(fnmatch.filter(self.database.keys(), pattern))
+                return keys
+            case b"APPEND", name, value:
+                if name not in self.database:
+                    self.database[name] = ""
+                self.database[name] += value
+                return len(self.database[name])
+            case b"PING",:
+                return "PONG"
+            case b"PING", message:
+                return message
+            case b"DBSIZE",:
+                return len(self.database.keys())
+            case b"ECHO", message:
+                return message
+            case b"SETBIT", key, offset, value:
+                previous_value = 0
+                if key not in self.database:
+                    self.database[key] = 0
+                else:
+                    previous_value = self.database[key]
+                if value == b"1":
+                    self.database[key] |= 1 << int(offset)
+                else:
+                    self.database[key] &= ~(1 << int(offset))
+                return f"{previous_value:b}".encode()
+            case b"BITCOUNT", key:
+                value: int = self.database[key]
+                return value.bit_count()
+            case [b"BITCOUNT", key, start, end] | [b"BITCOUNT", key, start, end, b"BYTE"]:
+                value: int = self.database[key]
+                length = value.bit_length()
+                last_bit_start = (length // 8) * 8
+
+                start = int(start)
+                end = int(end)
+
+                if start >= 0:
+                    start = min(start * 8, last_bit_start)
+                elif start < 0:
+                    start = min(last_bit_start, last_bit_start + ((start + 1) * 8))
+
+                if end >= 0:
+                    end = min(length, ((end + 1) * 8) - 1)
+                elif end < 0:
+                    end = min(length, last_bit_start + ((end + 1) * 8) + 7)
+
+                bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
+                return bit_count
+            case [b"BITCOUNT", key, start, end, b"BIT"]:
+                value: int = self.database[key]
+                length = value.bit_length()
+
+                start = int(start)
+                end = int(end)
+
+                if start < 0:
+                    start = length + start
+
+                if end < 0:
+                    end = length + (end + 1)
+
+                bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
+                return bit_count
+            case [b"BITOP", b"AND", destination, *source_keys]:
+                result = source_keys[0]
+                for source_key in source_keys[1:]:
+                    result &= source_key
+                self.database[destination] = result
+                return len(result)
+            case [b"BITOP", b"OR", destination, *source_keys]:
+                result = source_keys[0]
+                for source_key in source_keys[1:]:
+                    result |= source_key
+                self.database[destination] = result
+                return len(result)
+            case [b"BITOP", b"XOR", destination, *source_keys]:
+                result = source_keys[0]
+                for source_key in source_keys[1:]:
+                    result ^= source_key
+                self.database[destination] = result
+                return len(result)
+            case [b"BITOP", b"NOT", destination, source_key]:
+                self.database[destination] = ~self.database[source_key]
+            case unknown, *args:
+                return RespError(
+                    f"ERR unknown command '{unknown}', with args beginning with: {args[0] if args else ''}".encode()
+                )
 
 
-class ClientList(dict[int, Client]):
-    def all(self):
-        return ClientList({id_: c for id_, c in self.items() if not c.is_killed})
-
-    def filter_(
-        self, client_id: int | None = None, address: bytes | None = None, client_type: bytes | None = None
-    ) -> "ClientList":
-        filtered = ClientList()
-        for c in self.all().values():
-            if client_id is not None and c.client_id != client_id:
-                continue
-            if address is not None and c.address != address:
-                continue
-            if client_type is not None:
-                if client_type == b"normal" and not c.is_normal:
-                    continue
-                if client_type == b"replica" and not c.is_replica:
-                    continue
-            filtered[c.client_id] = c
-        return filtered
-
-    @property
-    def info(self) -> bytes:
-        return b"\r".join([c.info for c in self.all().values()])
-
-
-class ACLUser:
-    pass
-
-
-def to_bytes(value) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    return str(value).encode()
-
-
-class RedisHandler(StreamRequestHandler):
+class RedisConnectionHandler(StreamRequestHandler):
     def __init__(self, request, client_address, server: "RedisServer"):
         super().__init__(request, client_address, server)
         self.server: RedisServer = server
         self.request: socket
+
+        self.current_database = self.databases[0]
+        self.current_client: Client
 
     @property
     def configurations(self):
@@ -101,277 +332,76 @@ class RedisHandler(StreamRequestHandler):
     def acl(self):
         return self.server.acl
 
-    def dump(self, value, bulk_string=False):
-        dumped = BytesIO()
-        dump(value, dumped, dump_bulk=bulk_string)
-        print(self.current_client.client_id, "result", dumped.getvalue())
-
-        if self.current_client.reply_mode == "skip":
-            self.current_client.reply_mode = "on"
-            return
-
-        if self.current_client.reply_mode == "off":
-            return
-
-        dump(value, self.wfile, dump_bulk=bulk_string)
-
-    def dump_ok(self):
-        dump(b"OK", self.wfile)
-
     def setup(self) -> None:
         super().setup()
 
         current_client_id = next(self.server.client_ids)
-        self.current_client = Client(
-            client_id=current_client_id,
-            host=self.client_address[0].encode(),
-            port=self.client_address[1],
+        self.handler = RedisHandler(
+            Client(
+                client_id=current_client_id,
+                host=self.client_address[0].encode(),
+                port=self.client_address[1],
+            ),
+            self.databases[0],
+            self.configurations,
+            self.acl,
+            self.server.information,
+            self.clients,
+            self.databases,
         )
-        self.clients[self.current_client.client_id] = self.current_client
+        self.clients[current_client_id] = self.handler.client
+
+    def dump(self, value):
+        dumped = BytesIO()
+        dump(value, dumped)
+        print(self.handler.client.client_id, "result", dumped.getvalue())
+
+        if self.handler.client.reply_mode == "skip":
+            self.handler.client.reply_mode = "on"
+            return
+
+        if self.handler.client.reply_mode == "off":
+            return
+
+        dump(value, self.wfile)
 
     def handle(self):
-        current_database = self.databases[0]
-
-        while not self.current_client.is_killed:
+        while not self.handler.client.is_killed:
             command = load(self.rfile)
 
-            print(self.current_client.client_id, command)
+            if command is None:
+                break
+            if command[0] == b"QUIT":
+                self.dump(RESP_OK)
+                break
 
-            match command:
-                case None:
-                    break
-                case b"CONFIG", b"SET", *parameters:
-                    if len(parameters) % 2 != 0:
-                        self.dump(Exception("ERR syntax error"))
-                    for name, value in zip(parameters[::2], parameters[1::2]):
-                        if name == b"requirepass":
-                            self.configurations[name] = sha256(value).hexdigest().encode()
-                    self.dump_ok()
-                case b"CONFIG", b"GET", *parameters:
-                    keys = set()
-                    for parameter in parameters:
-                        keys.update(set(fnmatch.filter(self.configurations.keys(), parameter)))
-                    self.dump(
-                        {
-                            config_name: config_value
-                            for config_name, config_value in self.configurations.items()
-                            if config_name in keys
-                        }
-                    )
-                case b"ACL", b"HELP":
-                    self.dump([b"genpass"])
-                case b"ACL", b"GENPASS":
-                    self.dump(urandom(64))
-                case b"ACL", b"GENPASS", length:
-                    self.dump(urandom(length))
-                case b"ACL", b"CAT":
-                    self.dump([b"read"])
-                case b"ACL", b"CAT", category:
-                    if category == b"read":
-                        self.dump([b"get"])
-                        continue
-                    self.dump([])
-                case b"ACL", b"DELUSER", *user_names:
-                    user_deleted = 0
-                    for user_name in user_names:
-                        if user_name == b"default":
-                            pass
-                        user_deleted += 1 if self.acl.pop(user_name, None) is not None else 0
-                    self.dump(user_deleted)
-                case b"ACL", b"SETUSER", user_name, *rules:
-                    if user_name not in self.acl:
-                        self.acl[user_name] = {b"passwords": set(), b"flags": set()}
-                    for rule in rules:
-                        if rule == b"on":
-                            self.acl[user_name][b"flags"] -= set(b"off")
-                            self.acl[user_name][b"flags"] |= set(b"on")
-                            continue
-                        if rule == b"off":
-                            self.acl[user_name][b"flags"] -= set(b"on")
-                            self.acl[user_name][b"flags"] |= set(b"off")
-                            continue
-                        if rule.startswith(b">"):
-                            self.acl[user_name][b"passwords"].add(sha256(rule[1:]).hexdigest().encode())
-                            continue
-                        if rule.startswith(b"+"):
-                            # Todo: Implement
-                            continue
-                    self.dump_ok()
-                case b"ACL", b"GETUSER", user_name:
-                    if user_name not in self.acl:
-                        self.dump(None)
-                        continue
-                    self.dump(self.acl[user_name])
-                case b"LPUSH", name, value:
-                    if name not in current_database:
-                        current_database[name] = []
-                    if not isinstance(current_database[name], list):
-                        self.dump(Exception("WRONGTYPE Operation against a key holding the wrong kind of value"))
-                        continue
-                    current_database[name].insert(0, value)
-                    self.dump(len(current_database[name]))
-                case b"CLIENT", b"LIST":
-                    self.dump(self.clients.info, bulk_string=True)
-                case b"CLIENT", b"LIST", b"TYPE", type_:
-                    self.dump(self.clients.filter_(client_type=type_).info, bulk_string=True)
-                case b"CLIENT", b"ID":
-                    self.dump(self.current_client.client_id)
-                case b"CLIENT", b"SETNAME", name:
-                    self.current_client.name = name
-                    self.dump_ok()
-                case b"CLIENT", b"GETNAME":
-                    self.dump(self.current_client.name or None)
-                case b"CLIENT", b"KILL", *filters:
-                    if len(filters) == 1:
-                        (addr,) = filters
-                        clients = self.clients.filter_(address=addr).values()
-                        if not clients:
-                            self.dump(Exception("ERR No such client"))
-                            continue
-                        (client,) = clients
-                        client.is_killed = True
-                        self.dump_ok()
-                    else:
-                        filters_dict = {}
-                        for filter_ in zip(filters[::2], filters[1::2]):
-                            match filter_:
-                                case b"ID", id_:
-                                    filters_dict["client_id"] = int(id_)
-                                case b"ADDR", addr:
-                                    filters_dict["address"] = addr
+            self.server.information.total_commands_processed += 1
 
-                        clients = self.clients.filter_(**filters_dict).values()
-                        for client in clients:
-                            client.is_killed = True
-                        self.dump(len(clients))
-                case b"CLIENT", b"PAUSE", timeout_seconds:
-                    timeout_seconds: bytes
-                    if not timeout_seconds.isdigit():
-                        self.dump(Exception("ERR timeout is not an integer or out of range"))
-                        continue
-                    timeout_seconds: int = int(timeout_seconds)
-                    self.current_client.is_paused = True
-                    self.dump_ok()
-                    timeout = time.time() + timeout_seconds
-                    while self.current_client.is_paused and time.time() < timeout:
+            print(self.handler.client.client_id, command)
+
+            try:
+                self.dump(self.handler.handle_command(*command))
+                if self.handler.pause_timeout:
+                    while self.handler.client.is_paused and time.time() < self.handler.pause_timeout:
                         time.sleep(0.1)
-                case b"CLIENT", b"UNPAUSE":
-                    for client in self.clients.values():
-                        client.is_paused = False
-                case b"CLIENT", b"REPLY", mode:
-                    if mode not in (b"ON", b"OFF", b"SKIP"):
-                        self.dump(Exception("ERR syntax error"))
-                    self.current_client.reply_mode = mode.decode().lower()
-                    if mode == b"ON":
-                        self.dump_ok()
-                case b"INFO",:
-                    self.dump(
-                        "redis_version:4.9.0\r\n" "arch_bits:64\r\n" "cluster_enabled:0\r\n" "enterprise:0\r\n",
-                        bulk_string=True,
-                    )
-                case b"AUTH", password:
-                    if (
-                        b"requirepass" in self.server.configurations
-                        and sha256(password).hexdigest().encode() == self.server.configurations[b"requirepass"]
-                    ):
-                        self.dump_ok()
-                        continue
-                    self.dump(
-                        Exception(
-                            "ERR AUTH "
-                            "<password> called without any password configured for the default user. "
-                            "Are you sure your configuration is correct?"
-                        )
-                    )
-                case b"AUTH", username, password:
-                    if username not in self.acl:
-                        self.dump(Exception("WRONGPASS invalid username-password pair or user is disabled."))
-                        continue
-                    if (
-                        username == b"default"
-                        and sha256(password).hexdigest().encode() == self.server.configurations[b"requirepass"]
-                    ):
-                        self.dump_ok()
-                        continue
-                    if sha256(password).hexdigest().encode() not in self.acl[username][b"passwords"]:
-                        self.dump(Exception("WRONGPASS invalid username-password pair or user is disabled."))
-                        continue
-                    self.dump_ok()
-                case b"FLUSHDB",:
-                    current_database.clear()
-                    self.dump_ok()
-                case b"SELECT", number:
-                    current_database = self.databases[int(number)]
-                    self.dump_ok()
-                case b"SET", name, value:
-                    current_database[name] = value
-                    self.dump_ok()
-                case b"GET", name:
-                    value = current_database.get(name, None)
-                    if value is None:
-                        value = ""
-                    if not isinstance(value, bytes):
-                        self.dump(Exception("WRONGTYPE Operation against a key holding the wrong kind of value"))
-                        continue
-                    self.dump(value)
-                case b"HSET", name, *key_values:
-                    number_of_items = len(key_values) // 2
-                    h = {key_values[i * 2]: key_values[i * 2 + 1] for i in range(number_of_items)}
-                    if name not in current_database:
-                        current_database[name] = {}
-                    current_database[name].update(h)
-                    self.dump(number_of_items)
-                case b"HGETALL", name:
-                    h = current_database.get(name, {})
-                    response = []
-                    for k, v in h.items():
-                        response.extend([k, v])
-                    self.dump(response)
-                case b"DEL", *names:
-                    deleted = len([1 for _ in filter(None, [current_database.pop(name) for name in names])])
-                    self.dump(deleted)
-                case b"KEYS", pattern:
-                    keys = list(fnmatch.filter(current_database.keys(), pattern))
-                    self.dump(keys)
-                case b"APPEND", name, value:
-                    if name not in current_database:
-                        current_database[name] = ""
-                    current_database[name] += value
-                    self.dump(len(current_database[name]))
-                case b"PING",:
-                    self.dump("PONG")
-                    break
-                case b"PING", message:
-                    self.dump(message, bulk_string=True)
-                    break
-                case b"QUIT",:
-                    self.dump_ok()
-                    break
-                case b"DBSIZE",:
-                    self.dump(len(current_database.keys()))
-                case b"ECHO", message:
-                    self.dump(message, bulk_string=True)
-                case unknown, *args:
-                    print("exception")
+                    self.handler.pause_timeout = 0
+            except Exception as e:
+                print(e)
+                self.dump(RespError(str(e).encode()))
 
-                    self.dump(
-                        Exception(
-                            f"ERR unknown command '{unknown}', with args beginning with: {args[0] if args else ''}"
-                        )
-                    )
-
-        print(self.current_client.client_id, "exited")
+        print(self.handler.client.client_id, "exited")
 
     def finish(self) -> None:
-        del self.clients[self.current_client.client_id]
+        del self.clients[self.handler.client.client_id]
         super().finish()
 
 
 class RedisServer(ThreadingTCPServer):
     def __init__(self, server_address, bind_and_activate=True):
-        super().__init__(server_address, RedisHandler, bind_and_activate)
+        super().__init__(server_address, RedisConnectionHandler, bind_and_activate)
         self.databases: defaultdict[int, dict] = defaultdict(dict, {0: {}})
-        self.acl: dict[bytes, dict] = {b"default": {b"passwords": [], b"flags": []}}
+        self.acl: ACL = ACL.create()
         self.client_ids = count(0)
         self.clients: ClientList = ClientList()
-        self.configurations: dict[bytes, bytes] = {}
+        self.configurations: Configurations = Configurations()
+        self.information: Information = Information()

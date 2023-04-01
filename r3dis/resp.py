@@ -2,6 +2,17 @@ from dataclasses import dataclass
 from typing import Any, AnyStr, BinaryIO
 
 
+class RespSimpleString(bytes):
+    pass
+
+
+RESP_OK = RespSimpleString(b"OK")
+
+
+class RespError(bytes):
+    pass
+
+
 @dataclass
 class RespLoader:
     reader: BinaryIO
@@ -25,9 +36,9 @@ class RespLoader:
             case b":", value:
                 return int(value)
             case b"+", value:
-                return value
+                return RespSimpleString(value)
             case b"-", value:
-                return Exception(value)
+                return RespError(value)
             case _:
                 return None
 
@@ -57,18 +68,19 @@ class RespDumper:
     def dump_array(self, value: list):
         self.writer.write(f"*{len(value)}\r\n".encode())
         for item in value:
-            self.dump(item, dump_bulk=True)
+            self.dump(item)
 
-    def dump(self, value, dump_bulk=False):
+    def dump(self, value):
         if isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
+        elif isinstance(value, RespSimpleString):
+            self.dump_string(value)
+        elif isinstance(value, RespError):
+            self.writer.write(f"-{value.decode()}\r\n".encode())
         elif isinstance(value, str) or isinstance(value, bytes):
             if isinstance(value, str):
                 value = value.encode()
-            if dump_bulk or b"\r" in value or b"\n" in value:
-                self.dump_bulk_string(value)
-            else:
-                self.dump_string(value)
+            self.dump_bulk_string(value)
         elif isinstance(value, list):
             self.dump_array(value)
         elif isinstance(value, set):
@@ -80,9 +92,7 @@ class RespDumper:
             self.dump_array(result)
         elif value is None:
             self.writer.write("$-1\r\n".encode())
-        elif isinstance(value, Exception):
-            self.writer.write(f"-{value.args[0]}\r\n".encode())
 
 
-def dump(value: Any, stream: BinaryIO, dump_bulk=False):
-    RespDumper(stream).dump(value, dump_bulk=dump_bulk)
+def dump(value: Any, stream: BinaryIO):
+    RespDumper(stream).dump(value)
