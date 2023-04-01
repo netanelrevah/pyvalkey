@@ -228,6 +228,27 @@ class RedisHandler:
                 if not l:
                     return None
                 return [l.pop() for _ in min(count, len(l))]
+            case [b"LREM", key, count, element]:
+                l = self.database.get_or_create_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                if not l:
+                    return 0
+                count = int(count)
+                to_delete = abs(count)
+                if count < 0:
+                    l.reverse()
+
+                deleted = 0
+                for _ in range(to_delete if to_delete > 0 else l.count(element)):
+                    try:
+                        l.remove(element)
+                        deleted += 1
+                    except ValueError:
+                        break
+                if count < 0:
+                    l.reverse()
+                return deleted
             case [b"RPUSH", key, *value]:
                 l = self.database.get_or_create_list(key)
                 if l is None:
