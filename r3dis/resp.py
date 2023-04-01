@@ -71,13 +71,20 @@ class RespDumper:
             self.dump(item)
 
     def dump(self, value):
-        if isinstance(value, int):
+        if isinstance(value, bool):
+            if value:
+                self.dump(1)
+            else:
+                self.dump(0)
+        elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
+        elif isinstance(value, float):
+            self.dump_bulk_string(str(value))
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
             self.writer.write(f"-{value.decode()}\r\n".encode())
-        elif isinstance(value, str) or isinstance(value, bytes):
+        elif isinstance(value, (str, bytes)):
             if isinstance(value, str):
                 value = value.encode()
             self.dump_bulk_string(value)

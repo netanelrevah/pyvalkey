@@ -1,11 +1,11 @@
 import fnmatch
+import itertools
 import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
-from itertools import count
 from os import urandom
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
@@ -16,20 +16,55 @@ from r3dis.clients import Client, ClientList
 from r3dis.configurations import Configurations
 from r3dis.information import Information
 from r3dis.resp import RESP_OK, RespError, dump, load
+from r3dis.utils import chunks
 
 logger = logging.getLogger(__name__)
+
+
+class Database(dict[bytes, Any]):
+    def get_hash_table(self, key):
+        h = {}
+        if key in self:
+            h = self[key]
+        if not isinstance(h, dict):
+            return None
+        return h
+
+    def get_or_create_hash_table(self, key):
+        if key not in self:
+            self[key] = {}
+        h = self[key]
+        if not isinstance(h, dict):
+            return None
+        return h
+
+    def get_list(self, key):
+        l = []
+        if key in self:
+            l = self[key]
+        if not isinstance(l, list):
+            return None
+        return l
+
+    def get_or_create_list(self, key):
+        if key not in self:
+            self[key] = []
+        l = self[key]
+        if not isinstance(l, list):
+            return None
+        return l
 
 
 @dataclass
 class RedisHandler:
     client: Client
-    database: dict[bytes, Any]
+    database: Database
     configurations: Configurations
     acl: ACL
 
     information: Information
     clients: ClientList
-    databases: dict[int, dict[bytes, Any]]
+    databases: dict[int, Database]
 
     pause_timeout: float = 0
 
@@ -146,7 +181,7 @@ class RedisHandler:
                     return
                 return self.acl[user_name].info
 
-    def handle_command(self, *command):
+    def handle_command(self, *command: bytes):
         match command:
             case [b"CONFIG", *sub_command]:
                 return self.handle_config_command(*sub_command)
@@ -154,17 +189,85 @@ class RedisHandler:
                 return self.handle_acl_command(*sub_command)
             case [b"CLIENT", *sub_command]:
                 return self.handle_client_command(*sub_command)
-            case b"LPUSH", name, value:
-                if name not in self.database:
-                    self.database[name] = []
-                if not isinstance(self.database[name], list):
+            case [b"LRANGE", key, start, stop]:
+                l = self.database.get_list(key)
+                if l is None:
                     return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
-                self.database[name].insert(0, value)
-                return len(self.database[name])
 
-            case b"INFO",:
+                stop = int(stop)
+                start = int(start)
+
+                if stop >= 0:
+                    stop = min(len(l), stop)
+                else:
+                    stop = max(len(l) + int(stop) + 1, 0)
+
+                if start >= 0:
+                    start = min(len(l), start)
+                else:
+                    start = max(len(l) + int(start) + 1, 0)
+
+                return l[start : stop + 1]
+            case [b"LPUSH", key, value]:
+                l = self.database.get_or_create_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                l.insert(0, value)
+                return len(l)
+            case [b"LPOP", key]:
+                l = self.database.get_or_create_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                if not l:
+                    return None
+                return l.pop(0)
+            case [b"LPOP", key, count]:
+                l = self.database.get_or_create_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                if not l:
+                    return None
+                return [l.pop() for _ in min(count, len(l))]
+            case [b"RPUSH", key, *value]:
+                l = self.database.get_or_create_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                l.extend(value)
+                return len(l)
+            case [b"LLEN", key]:
+                l = self.database.get_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return len(l)
+            case [b"LINDEX", key, index]:
+                l = self.database.get_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                try:
+                    return l[int(index)]
+                except IndexError:
+                    return None
+            case [b"LINSERT", key, direction, pivot, element]:
+                if direction.upper() == b"BEFORE":
+                    offset = 0
+                elif direction.upper() == b"AFTER":
+                    offset = 1
+                else:
+                    return RespError(b"ERR syntax error")
+                l = self.database.get_list(key)
+                if l is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                if not l:
+                    return 0
+                try:
+                    index = l.index(pivot)
+                except ValueError:
+                    return -1
+                l.insert(index + offset, element)
+                return len(l)
+            case [b"INFO"]:
                 return self.information.all()
-            case b"AUTH", password:
+            case [b"AUTH", password]:
                 password_hash = sha256(password).hexdigest().encode()
 
                 if self.configurations.requirepass and password_hash == self.configurations.requirepass:
@@ -200,19 +303,96 @@ class RedisHandler:
                 if not isinstance(value, bytes):
                     return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
                 return value
-            case b"HSET", name, *key_values:
-                number_of_items = len(key_values) // 2
-                h = {key_values[i * 2]: key_values[i * 2 + 1] for i in range(number_of_items)}
-                if name not in self.database:
-                    self.database[name] = {}
-                self.database[name].update(h)
-                return number_of_items
-            case b"HGETALL", name:
-                h = self.database.get(name, {})
+            case b"HGET", key, field:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return h.get(field)
+            case b"HSTRLEN", key, field:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return len(h.get(field, ""))
+            case b"HDEL", key, *fields:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return sum([1 if h.pop(f, None) is not None else 0 for f in fields])
+            case b"HSET", key, *fields_values:
+                h = self.database.get_or_create_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                added_fields = 0
+                for field, value in chunks(fields_values, 2):
+                    if field not in h:
+                        added_fields += 1
+                    h[field] = value
+                return added_fields
+            case b"HGETALL", key:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
                 response = []
                 for k, v in h.items():
                     response.extend([k, v])
                 return response
+            case b"HEXISTS", key, field:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return field in h
+            case b"HINCRBY", key, field, increment:
+                try:
+                    increment = int(increment)
+                except ValueError:
+                    return RespError(b"ERR value is not a valid integer")
+                h = self.database.get_or_create_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                if field not in h:
+                    h[field] = 0
+                if not isinstance(h[field], (int, float)):
+                    return RespError(b"ERR hash value is not an integer")
+                h[field] += increment
+                return h[field]
+            case b"HINCRBYFLOAT", key, field, increment:
+                try:
+                    increment = float(increment)
+                except ValueError:
+                    return RespError(b"ERR value is not a valid float")
+                h = self.database.get_or_create_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                if field not in h:
+                    h[field] = 0
+                if not isinstance(h[field], (int, float)):
+                    return RespError(b"ERR hash value is not an float")
+                h[field] = float(h[field]) + increment
+                return h[field]
+            case b"HKEYS", key:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return list[h.keys()]
+            case b"HLEN", key:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return len(h.keys())
+            case b"HMGET", key, *field:
+                h = self.database.get_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                return [h.get(f, None) for f in field]
+            case b"HMSET", key, *parameters:
+                if len(parameters) % 2 != 0:
+                    return RespError(b"ERR wrong number of arguments for command")
+                h = self.database.get_or_create_hash_table(key)
+                if h is None:
+                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+                for field, value in chunks(parameters, 2):
+                    h[field] = value
+                return RESP_OK
             case b"DEL", *names:
                 deleted = len([1 for _ in filter(None, [self.database.pop(name, None) for name in names])])
                 return deleted
@@ -399,9 +579,9 @@ class RedisConnectionHandler(StreamRequestHandler):
 class RedisServer(ThreadingTCPServer):
     def __init__(self, server_address, bind_and_activate=True):
         super().__init__(server_address, RedisConnectionHandler, bind_and_activate)
-        self.databases: defaultdict[int, dict] = defaultdict(dict, {0: {}})
+        self.databases: defaultdict[int, Database] = defaultdict(Database, {0: {}})
         self.acl: ACL = ACL.create()
-        self.client_ids = count(0)
+        self.client_ids = itertools.count(0)
         self.clients: ClientList = ClientList()
         self.configurations: Configurations = Configurations()
         self.information: Information = Information()
