@@ -1,9 +1,11 @@
 import fnmatch
 import itertools
 import logging
+import operator
 import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import reduce
 from hashlib import sha256
 from io import BytesIO
 from os import urandom
@@ -11,23 +13,105 @@ from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 from typing import Any
 
+from sortedcontainers import SortedSet
+
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
 from r3dis.configurations import Configurations
 from r3dis.information import Information
 from r3dis.resp import RESP_OK, RespError, dump, load
-from r3dis.utils import chunks
+from r3dis.utils import chunks, flatten
 
 logger = logging.getLogger(__name__)
 
 
+class RedisWrongType(Exception):
+    pass
+
+
+@dataclass
+class RedisString:
+    bytes_value: bytes = b""
+    int_value: int = 0
+
+    @classmethod
+    def int_to_bytes(cls, value: int) -> bytes:
+        return value.to_bytes(length=(8 + (value + (value < 0)).bit_length()) // 8, byteorder="big", signed=True)
+
+    @classmethod
+    def int_from_bytes(cls, value: bytes) -> int:
+        return int.from_bytes(value, byteorder="big", signed=True)
+
+    def update(self, value: int | bytes):
+        if isinstance(value, int):
+            self.int_value = value
+            self.bytes_value = self.int_to_bytes(value)
+        elif isinstance(value, bytes):
+            self.int_value = self.int_from_bytes(value)
+            self.bytes_value = value
+
+    def __len__(self):
+        return len(self.bytes_value)
+
+
+@dataclass
+class RedisSortedSet:
+    members_scores: dict[bytes, float] = field(default_factory=dict)
+    members: SortedSet = field(default_factory=SortedSet)
+
+    def add(self, score: float, member: bytes):
+        if member in self.members_scores:
+            old_score = self.members_scores[member]
+            self.members.remove((old_score, member))
+        self.members_scores[member] = score
+        self.members.add((score, member))
+
+    def range(self, redis_start: int, redis_stop: int, with_scores=False, is_reversed=False):
+        if redis_stop >= 0:
+            stop = min(len(self.members), redis_stop)
+        else:
+            stop = max(len(self.members) + int(redis_stop) + 1, 0)
+
+        if redis_start >= 0:
+            start = min(len(self.members), redis_start)
+        else:
+            start = max(len(self.members) + int(redis_start) + 1, 0)
+
+        result = self.members[start : stop + 1]
+        if is_reversed:
+            result.reverse()
+
+        if with_scores:
+            return list(flatten(result, reverse_sub_lists=True))
+        return [member for score, member in result]
+
+    def __len__(self):
+        return len(self.members)
+
+
 class Database(dict[bytes, Any]):
+    def get_string(self, key, default=None):
+        s = default
+        if key in self:
+            s = self[key]
+        if not isinstance(s, RedisString):
+            raise RedisWrongType()
+        return s
+
+    def get_or_create_string(self, key):
+        if key not in self:
+            self[key] = RedisString()
+        s = self[key]
+        if not isinstance(s, RedisString):
+            raise RedisWrongType()
+        return s
+
     def get_hash_table(self, key):
         h = {}
         if key in self:
             h = self[key]
         if not isinstance(h, dict):
-            return None
+            raise RedisWrongType()
         return h
 
     def get_or_create_hash_table(self, key):
@@ -35,7 +119,7 @@ class Database(dict[bytes, Any]):
             self[key] = {}
         h = self[key]
         if not isinstance(h, dict):
-            return None
+            raise RedisWrongType()
         return h
 
     def get_list(self, key):
@@ -43,7 +127,7 @@ class Database(dict[bytes, Any]):
         if key in self:
             l = self[key]
         if not isinstance(l, list):
-            return None
+            raise RedisWrongType()
         return l
 
     def get_or_create_list(self, key):
@@ -51,12 +135,34 @@ class Database(dict[bytes, Any]):
             self[key] = []
         l = self[key]
         if not isinstance(l, list):
-            return None
+            raise RedisWrongType()
+        return l
+
+    def get_sorted_set(self, key):
+        l = RedisSortedSet()
+        if key in self:
+            l = self[key]
+        if not isinstance(l, RedisSortedSet):
+            raise RedisWrongType()
+        return l
+
+    def get_or_create_sorted_set(self, key):
+        if key not in self:
+            self[key] = RedisSortedSet()
+        l = self[key]
+        if not isinstance(l, RedisSortedSet):
+            raise RedisWrongType()
         return l
 
 
 @dataclass
 class RedisHandler:
+    OPERATION_TO_OPERATOR = {
+        b"AND": operator.and_,
+        b"OR": operator.or_,
+        b"XOR": operator.xor,
+    }
+
     client: Client
     database: Database
     configurations: Configurations
@@ -67,6 +173,28 @@ class RedisHandler:
     databases: dict[int, Database]
 
     pause_timeout: float = 0
+
+    def handle_bit_operation(self, *command: bytes):
+        operation, *parameters = command
+        match operation.upper(), *parameters:
+            case [(b"AND", b"OR", b"XOR") as operation, destination, *source_keys]:
+                result = reduce(
+                    self.OPERATION_TO_OPERATOR[operation],
+                    (
+                        self.database.get_string(source_key, default=RedisString()).int_value
+                        for source_key in source_keys
+                    ),
+                )
+                s = self.database.get_or_create_string(destination)
+                s.update(result)
+                return len(s)
+            case [b"NOT", destination, source_key]:
+                source_s = self.database.get_string(source_key, default=RedisString())
+                destination_s = self.database.get_or_create_string(destination)
+                destination_s.update(~source_s.int_value)
+                return len(destination_s)
+            case _:
+                return RespError(b"ERR syntax error")
 
     def handle_config_command(self, *command: bytes):
         match command:
@@ -191,8 +319,6 @@ class RedisHandler:
                 return self.handle_client_command(*sub_command)
             case [b"LRANGE", key, start, stop]:
                 l = self.database.get_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
 
                 stop = int(stop)
                 start = int(start)
@@ -208,30 +334,27 @@ class RedisHandler:
                     start = max(len(l) + int(start) + 1, 0)
 
                 return l[start : stop + 1]
-            case [b"LPUSH", key, value]:
+            case [b"LPUSH", key, *value]:
                 l = self.database.get_or_create_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
-                l.insert(0, value)
+
+                for v in value:
+                    l.insert(0, v)
                 return len(l)
             case [b"LPOP", key]:
                 l = self.database.get_or_create_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 if not l:
                     return None
                 return l.pop(0)
             case [b"LPOP", key, count]:
                 l = self.database.get_or_create_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 if not l:
                     return None
                 return [l.pop() for _ in min(count, len(l))]
             case [b"LREM", key, count, element]:
                 l = self.database.get_or_create_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 if not l:
                     return 0
                 count = int(count)
@@ -251,19 +374,16 @@ class RedisHandler:
                 return deleted
             case [b"RPUSH", key, *value]:
                 l = self.database.get_or_create_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 l.extend(value)
                 return len(l)
             case [b"LLEN", key]:
                 l = self.database.get_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return len(l)
             case [b"LINDEX", key, index]:
                 l = self.database.get_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 try:
                     return l[int(index)]
                 except IndexError:
@@ -276,8 +396,7 @@ class RedisHandler:
                 else:
                     return RespError(b"ERR syntax error")
                 l = self.database.get_list(key)
-                if l is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 if not l:
                     return 0
                 try:
@@ -314,35 +433,31 @@ class RedisHandler:
             case b"SELECT", number:
                 self.database = self.databases[int(number)]
                 return RESP_OK
-            case b"SET", name, value:
-                self.database[name] = value
+            case b"SET", key, value:
+                s = self.database.get_or_create_string(key)
+                s.update(value)
                 return RESP_OK
-            case b"GET", name:
-                value: bytes = self.database.get(name, None)
-                if value is None:
-                    value = b""
-                if not isinstance(value, bytes):
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
-                return value
+            case b"GET", key:
+                return self.database.get_string(key).bytes_value
             case b"HGET", key, field:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return h.get(field)
+            case b"HVALS", key:
+                h = self.database.get_hash_table(key)
+
+                return list(h.values())
             case b"HSTRLEN", key, field:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return len(h.get(field, ""))
             case b"HDEL", key, *fields:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return sum([1 if h.pop(f, None) is not None else 0 for f in fields])
             case b"HSET", key, *fields_values:
                 h = self.database.get_or_create_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 added_fields = 0
                 for field, value in chunks(fields_values, 2):
                     if field not in h:
@@ -351,16 +466,14 @@ class RedisHandler:
                 return added_fields
             case b"HGETALL", key:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 response = []
                 for k, v in h.items():
                     response.extend([k, v])
                 return response
             case b"HEXISTS", key, field:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return field in h
             case b"HINCRBY", key, field, increment:
                 try:
@@ -368,8 +481,7 @@ class RedisHandler:
                 except ValueError:
                     return RespError(b"ERR value is not a valid integer")
                 h = self.database.get_or_create_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 if field not in h:
                     h[field] = 0
                 if not isinstance(h[field], (int, float)):
@@ -382,8 +494,7 @@ class RedisHandler:
                 except ValueError:
                     return RespError(b"ERR value is not a valid float")
                 h = self.database.get_or_create_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 if field not in h:
                     h[field] = 0
                 if not isinstance(h[field], (int, float)):
@@ -392,25 +503,21 @@ class RedisHandler:
                 return h[field]
             case b"HKEYS", key:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
-                return list[h.keys()]
+
+                return list(h.keys())
             case b"HLEN", key:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return len(h.keys())
             case b"HMGET", key, *field:
                 h = self.database.get_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 return [h.get(f, None) for f in field]
             case b"HMSET", key, *parameters:
                 if len(parameters) % 2 != 0:
                     return RespError(b"ERR wrong number of arguments for command")
                 h = self.database.get_or_create_hash_table(key)
-                if h is None:
-                    return RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
+
                 for field, value in chunks(parameters, 2):
                     h[field] = value
                 return RESP_OK
@@ -420,11 +527,10 @@ class RedisHandler:
             case b"KEYS", pattern:
                 keys = list(fnmatch.filter(self.database.keys(), pattern))
                 return keys
-            case b"APPEND", name, value:
-                if name not in self.database:
-                    self.database[name] = ""
-                self.database[name] += value
-                return len(self.database[name])
+            case b"APPEND", key, value:
+                s = self.database.get_or_create_string(key)
+                s.update(s.bytes_value + value)
+                return len(s)
             case b"PING",:
                 return "PONG"
             case b"PING", message:
@@ -434,21 +540,22 @@ class RedisHandler:
             case b"ECHO", message:
                 return message
             case b"SETBIT", key, offset, value:
-                previous_value = 0
-                if key not in self.database:
-                    self.database[key] = 0
-                else:
-                    previous_value = self.database[key]
+                s = self.database.get_or_create_string(key)
+
+                previous_value = s.int_value
+
                 if value == b"1":
-                    self.database[key] |= 1 << int(offset)
+                    s.update(s.int_value | 1 << int(offset))
                 else:
-                    self.database[key] &= ~(1 << int(offset))
+                    s.update(s.int_value & ~(1 << int(offset)))
                 return f"{previous_value:b}".encode()
             case b"BITCOUNT", key:
                 value: int = self.database[key]
                 return value.bit_count()
             case [b"BITCOUNT", key, start, end] | [b"BITCOUNT", key, start, end, b"BYTE"]:
-                value: int = self.database[key]
+                s = self.database.get_string(key, default=RedisString())
+                value: int = s.int_value
+
                 length = value.bit_length()
                 last_bit_start = (length // 8) * 8
 
@@ -468,7 +575,9 @@ class RedisHandler:
                 bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
                 return bit_count
             case [b"BITCOUNT", key, start, end, b"BIT"]:
-                value: int = self.database[key]
+                s = self.database.get_string(key, default=RedisString())
+                value: int = s.int_value
+
                 length = value.bit_length()
 
                 start = int(start)
@@ -482,26 +591,48 @@ class RedisHandler:
 
                 bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
                 return bit_count
-            case [b"BITOP", b"AND", destination, *source_keys]:
-                result = source_keys[0]
-                for source_key in source_keys[1:]:
-                    result &= source_key
-                self.database[destination] = result
-                return len(result)
-            case [b"BITOP", b"OR", destination, *source_keys]:
-                result = source_keys[0]
-                for source_key in source_keys[1:]:
-                    result |= source_key
-                self.database[destination] = result
-                return len(result)
-            case [b"BITOP", b"XOR", destination, *source_keys]:
-                result = source_keys[0]
-                for source_key in source_keys[1:]:
-                    result ^= source_key
-                self.database[destination] = result
-                return len(result)
-            case [b"BITOP", b"NOT", destination, source_key]:
-                self.database[destination] = ~self.database[source_key]
+            case [b"BITOP", *parameters]:
+                return self.handle_bit_operation(*parameters)
+            case [b"ZADD", key, *scores_members]:
+                z = self.database.get_or_create_sorted_set(key)
+                length_before = len(z)
+                for score, member in chunks(scores_members, 2):
+                    z.add(float(score), member)
+                return len(z) - length_before
+            case [b"ZRANGE", key, start, stop, *options]:
+                range_kwargs = {}
+                while options:
+                    option = options.pop()
+                    match option:
+                        case b"WITHSCORES" if "with_scores" not in range_kwargs:
+                            range_kwargs["with_scores"] = True
+                        case b"REV" if "is_reversed" not in range_kwargs:
+                            range_kwargs["is_reversed"] = True
+                        case _:
+                            return RespError(b"ERR syntax error")
+
+                z = self.database.get_or_create_sorted_set(key)
+
+                start = int(start)
+                stop = int(stop)
+
+                return z.range(start, stop, **range_kwargs)
+            case [b"ZREVRANGE", key, start, stop, *options]:
+                range_kwargs = {}
+                while options:
+                    option = options.pop()
+                    match option:
+                        case b"WITHSCORES" if "with_scores" not in range_kwargs:
+                            range_kwargs["with_scores"] = True
+                        case _:
+                            return RespError(b"ERR syntax error")
+
+                z = self.database.get_or_create_sorted_set(key)
+
+                start = int(start)
+                stop = int(stop)
+
+                return z.range(start, stop, is_reversed=True, **range_kwargs)
             case unknown, *args:
                 return RespError(
                     f"ERR unknown command '{unknown}', with args beginning with: {args[0] if args else ''}".encode()
@@ -586,6 +717,8 @@ class RedisConnectionHandler(StreamRequestHandler):
                     while self.handler.client.is_paused and time.time() < self.handler.pause_timeout:
                         time.sleep(0.1)
                     self.handler.pause_timeout = 0
+            except RedisWrongType:
+                self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
             except Exception as e:
                 print(e)
                 self.dump(RespError(str(e).encode()))

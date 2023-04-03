@@ -79,7 +79,7 @@ class RespDumper:
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.dump_bulk_string(str(value))
+            self.dump_bulk_string(f"{value:g}")
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
