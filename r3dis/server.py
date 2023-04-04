@@ -33,6 +33,15 @@ class RedisWrongType(Exception):
 class RedisString:
     bytes_value: bytes = b""
     int_value: int = 0
+    numeric_value: float | None = 0
+
+    @classmethod
+    def is_float(cls, value: bytes) -> bool:
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
 
     @classmethod
     def int_to_bytes(cls, value: int) -> bytes:
@@ -42,13 +51,20 @@ class RedisString:
     def int_from_bytes(cls, value: bytes) -> int:
         return int.from_bytes(value, byteorder="big", signed=True)
 
-    def update(self, value: int | bytes):
-        if isinstance(value, int):
-            self.int_value = value
-            self.bytes_value = self.int_to_bytes(value)
-        elif isinstance(value, bytes):
-            self.int_value = self.int_from_bytes(value)
-            self.bytes_value = value
+    def update_with_numeric_value(self, value: int | float):
+        self.numeric_value = value
+        self.bytes_value = f"{value:g}".encode()
+        self.int_value = self.int_from_bytes(self.bytes_value)
+
+    def update_with_int_value(self, value: int):
+        self.int_value = value
+        self.bytes_value = self.int_to_bytes(value)
+        self.numeric_value = int(self.bytes_value) if self.bytes_value.isdigit() else None
+
+    def update_with_bytes_value(self, value: bytes):
+        self.int_value = self.int_from_bytes(value)
+        self.bytes_value = value
+        self.numeric_value = float(value) if self.is_float(value) else None
 
     def __len__(self):
         return len(self.bytes_value)
@@ -90,10 +106,14 @@ class RedisSortedSet:
 
 
 class Database(dict[bytes, Any]):
-    def get_string(self, key, default=None):
-        s = default
-        if key in self:
-            s = self[key]
+    def get_string(self, key):
+        s = self.get_string_or_none(key)
+        return s if s is not None else RedisString()
+
+    def get_string_or_none(self, key):
+        if key not in self:
+            return None
+        s = self[key]
         if not isinstance(s, RedisString):
             raise RedisWrongType()
         return s
@@ -177,21 +197,18 @@ class RedisHandler:
     def handle_bit_operation(self, *command: bytes):
         operation, *parameters = command
         match operation.upper(), *parameters:
-            case [(b"AND", b"OR", b"XOR") as operation, destination, *source_keys]:
+            case [(b"AND" | b"OR" | b"XOR") as operation, destination, *source_keys]:
                 result = reduce(
                     self.OPERATION_TO_OPERATOR[operation],
-                    (
-                        self.database.get_string(source_key, default=RedisString()).int_value
-                        for source_key in source_keys
-                    ),
+                    (self.database.get_string(source_key).int_value for source_key in source_keys),
                 )
                 s = self.database.get_or_create_string(destination)
-                s.update(result)
+                s.update_with_int_value(result)
                 return len(s)
             case [b"NOT", destination, source_key]:
-                source_s = self.database.get_string(source_key, default=RedisString())
+                source_s = self.database.get_string(source_key)
                 destination_s = self.database.get_or_create_string(destination)
-                destination_s.update(~source_s.int_value)
+                destination_s.update_with_int_value(~source_s.int_value)
                 return len(destination_s)
             case _:
                 return RespError(b"ERR syntax error")
@@ -433,12 +450,48 @@ class RedisHandler:
             case b"SELECT", number:
                 self.database = self.databases[int(number)]
                 return RESP_OK
-            case b"SET", key, value:
+            case [b"DEL", *names]:
+                deleted = len([1 for _ in filter(None, [self.database.pop(name, None) for name in names])])
+                return deleted
+            case [b"GET", key]:
+                s = self.database.get_string_or_none(key)
+                if s is None:
+                    return None
+                return s.bytes_value
+            case [b"SET", key, value]:
                 s = self.database.get_or_create_string(key)
-                s.update(value)
+                s.update_with_bytes_value(value)
                 return RESP_OK
-            case b"GET", key:
-                return self.database.get_string(key).bytes_value
+            case [b"INCR", key]:
+                s = self.database.get_or_create_string(key)
+                if s.numeric_value is None:
+                    return RespError(b"ERR value is not an integer or out of range")
+                s.update_with_numeric_value(s.numeric_value + 1)
+                return s.bytes_value
+            case [b"DECR", key]:
+                s = self.database.get_or_create_string(key)
+                if s.numeric_value is None:
+                    return RespError(b"ERR value is not an integer or out of range")
+                s.update_with_numeric_value(s.numeric_value - 1)
+                return s.bytes_value
+            case [b"INCRBY", key, increment]:
+                s = self.database.get_or_create_string(key)
+                if s.numeric_value is None or not increment.isdigit():
+                    return RespError(b"ERR value is not an integer or out of range")
+                s.update_with_numeric_value(s.numeric_value + int(increment))
+                return s.bytes_value
+            case [b"DECRBY", key, decrement]:
+                s = self.database.get_or_create_string(key)
+                if s.numeric_value is None or not decrement.isdigit():
+                    return RespError(b"ERR value is not an integer or out of range")
+                s.update_with_numeric_value(s.numeric_value - int(decrement))
+                return s.bytes_value
+            case [b"INCRBYFLOAT", key, increment]:
+                s = self.database.get_or_create_string(key)
+                if s.numeric_value is None or not RedisString.is_float(increment):
+                    return RespError(b"ERR value is not a valid float")
+                s.update_with_numeric_value(s.numeric_value + float(increment))
+                return s.bytes_value
             case b"HGET", key, field:
                 h = self.database.get_hash_table(key)
 
@@ -521,15 +574,13 @@ class RedisHandler:
                 for field, value in chunks(parameters, 2):
                     h[field] = value
                 return RESP_OK
-            case b"DEL", *names:
-                deleted = len([1 for _ in filter(None, [self.database.pop(name, None) for name in names])])
-                return deleted
+
             case b"KEYS", pattern:
                 keys = list(fnmatch.filter(self.database.keys(), pattern))
                 return keys
             case b"APPEND", key, value:
                 s = self.database.get_or_create_string(key)
-                s.update(s.bytes_value + value)
+                s.update_with_bytes_value(s.bytes_value + value)
                 return len(s)
             case b"PING",:
                 return "PONG"
@@ -545,15 +596,15 @@ class RedisHandler:
                 previous_value = s.int_value
 
                 if value == b"1":
-                    s.update(s.int_value | 1 << int(offset))
+                    s.update_with_int_value(s.int_value | 1 << int(offset))
                 else:
-                    s.update(s.int_value & ~(1 << int(offset)))
+                    s.update_with_int_value(s.int_value & ~(1 << int(offset)))
                 return f"{previous_value:b}".encode()
-            case b"BITCOUNT", key:
-                value: int = self.database[key]
-                return value.bit_count()
+            case [b"BITCOUNT", key]:
+                s = self.database.get_string(key)
+                return s.int_value.bit_count()
             case [b"BITCOUNT", key, start, end] | [b"BITCOUNT", key, start, end, b"BYTE"]:
-                s = self.database.get_string(key, default=RedisString())
+                s = self.database.get_string(key)
                 value: int = s.int_value
 
                 length = value.bit_length()
@@ -575,7 +626,7 @@ class RedisHandler:
                 bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
                 return bit_count
             case [b"BITCOUNT", key, start, end, b"BIT"]:
-                s = self.database.get_string(key, default=RedisString())
+                s = self.database.get_string(key)
                 value: int = s.int_value
 
                 length = value.bit_length()
