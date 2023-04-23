@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from hashlib import sha256
 
-from r3dis.consts import COMMANDS_PER_CATEGORY, ACLCategories
+from r3dis.consts import COMMANDS_PER_CATEGORY, ACLCategories, Command
 
 
 @dataclass
@@ -10,6 +10,7 @@ class ACLUser:
 
     is_active: bool = False
     passwords: set[bytes] = field(default_factory=set)
+    allowed_commands: dict[Command, bytes] = field(default_factory=dict)
 
     def add_password(self, password: bytes):
         self.passwords.add(sha256(password).hexdigest().encode())
@@ -23,7 +24,7 @@ class ACLUser:
 
 
 class ACL(dict[bytes, ACLUser]):
-    def get_or_create_user(self, user_name: bytes):
+    def get_or_create_user(self, user_name: bytes) -> ACLUser:
         if user_name not in self:
             self[user_name] = ACLUser(user_name)
         return self[user_name]

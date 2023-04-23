@@ -4,175 +4,30 @@ import logging
 import operator
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import reduce
 from hashlib import sha256
 from io import BytesIO
 from os import urandom
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
-from typing import Any
-
-from sortedcontainers import SortedSet
 
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
+from r3dis.commands.core import CommandContext
+from r3dis.commands.router import Router, create_base_router
 from r3dis.configurations import Configurations
+from r3dis.databases import Database, RedisString
+from r3dis.errors import (
+    RedisInvalidIntegerError,
+    RedisSyntaxError,
+    RedisWrongType,
+    RouterKeyError,
+)
 from r3dis.information import Information
 from r3dis.resp import RESP_OK, RespError, dump, load
-from r3dis.utils import chunks, flatten
 
 logger = logging.getLogger(__name__)
-
-
-class RedisWrongType(Exception):
-    pass
-
-
-@dataclass
-class RedisString:
-    bytes_value: bytes = b""
-    int_value: int = 0
-    numeric_value: float | None = 0
-
-    @classmethod
-    def is_float(cls, value: bytes) -> bool:
-        try:
-            float(value)
-            return True
-        except ValueError:
-            return False
-
-    @classmethod
-    def int_to_bytes(cls, value: int) -> bytes:
-        return value.to_bytes(length=(8 + (value + (value < 0)).bit_length()) // 8, byteorder="big", signed=True)
-
-    @classmethod
-    def int_from_bytes(cls, value: bytes) -> int:
-        return int.from_bytes(value, byteorder="big", signed=True)
-
-    def update_with_numeric_value(self, value: int | float):
-        self.numeric_value = value
-        self.bytes_value = f"{value:g}".encode()
-        self.int_value = self.int_from_bytes(self.bytes_value)
-
-    def update_with_int_value(self, value: int):
-        self.int_value = value
-        self.bytes_value = self.int_to_bytes(value)
-        self.numeric_value = int(self.bytes_value) if self.bytes_value.isdigit() else None
-
-    def update_with_bytes_value(self, value: bytes):
-        self.int_value = self.int_from_bytes(value)
-        self.bytes_value = value
-        self.numeric_value = float(value) if self.is_float(value) else None
-
-    def __len__(self):
-        return len(self.bytes_value)
-
-
-@dataclass
-class RedisSortedSet:
-    members_scores: dict[bytes, float] = field(default_factory=dict)
-    members: SortedSet = field(default_factory=SortedSet)
-
-    def add(self, score: float, member: bytes):
-        if member in self.members_scores:
-            old_score = self.members_scores[member]
-            self.members.remove((old_score, member))
-        self.members_scores[member] = score
-        self.members.add((score, member))
-
-    def range(self, redis_start: int, redis_stop: int, with_scores=False, is_reversed=False):
-        if redis_stop >= 0:
-            stop = min(len(self.members), redis_stop)
-        else:
-            stop = max(len(self.members) + int(redis_stop) + 1, 0)
-
-        if redis_start >= 0:
-            start = min(len(self.members), redis_start)
-        else:
-            start = max(len(self.members) + int(redis_start) + 1, 0)
-
-        result = self.members[start : stop + 1]
-        if is_reversed:
-            result.reverse()
-
-        if with_scores:
-            return list(flatten(result, reverse_sub_lists=True))
-        return [member for score, member in result]
-
-    def __len__(self):
-        return len(self.members)
-
-
-class Database(dict[bytes, Any]):
-    def get_string(self, key):
-        s = self.get_string_or_none(key)
-        return s if s is not None else RedisString()
-
-    def get_string_or_none(self, key):
-        if key not in self:
-            return None
-        s = self[key]
-        if not isinstance(s, RedisString):
-            raise RedisWrongType()
-        return s
-
-    def get_or_create_string(self, key):
-        if key not in self:
-            self[key] = RedisString()
-        s = self[key]
-        if not isinstance(s, RedisString):
-            raise RedisWrongType()
-        return s
-
-    def get_hash_table(self, key):
-        h = {}
-        if key in self:
-            h = self[key]
-        if not isinstance(h, dict):
-            raise RedisWrongType()
-        return h
-
-    def get_or_create_hash_table(self, key):
-        if key not in self:
-            self[key] = {}
-        h = self[key]
-        if not isinstance(h, dict):
-            raise RedisWrongType()
-        return h
-
-    def get_list(self, key):
-        l = []
-        if key in self:
-            l = self[key]
-        if not isinstance(l, list):
-            raise RedisWrongType()
-        return l
-
-    def get_or_create_list(self, key):
-        if key not in self:
-            self[key] = []
-        l = self[key]
-        if not isinstance(l, list):
-            raise RedisWrongType()
-        return l
-
-    def get_sorted_set(self, key):
-        l = RedisSortedSet()
-        if key in self:
-            l = self[key]
-        if not isinstance(l, RedisSortedSet):
-            raise RedisWrongType()
-        return l
-
-    def get_or_create_sorted_set(self, key):
-        if key not in self:
-            self[key] = RedisSortedSet()
-        l = self[key]
-        if not isinstance(l, RedisSortedSet):
-            raise RedisWrongType()
-        return l
 
 
 @dataclass
@@ -191,6 +46,8 @@ class RedisHandler:
     information: Information
     clients: ClientList
     databases: dict[int, Database]
+
+    commands_router: Router
 
     pause_timeout: float = 0
 
@@ -304,29 +161,17 @@ class RedisHandler:
                         pass
                     user_deleted += 1 if self.acl.pop(user_name, None) is not None else 0
                 return user_deleted
-            case [b"SETUSER", user_name, *rules]:
-                acl_user = self.acl.get_or_create_user(user_name)
-
-                for rule in rules:
-                    if rule == b"on":
-                        acl_user.is_active = True
-                        continue
-                    if rule == b"off":
-                        acl_user.is_active = False
-                        continue
-                    if rule.startswith(b">"):
-                        acl_user.add_password(rule[1:])
-                        continue
-                    if rule.startswith(b"+"):
-                        # Todo: Implement
-                        continue
-                return RESP_OK
             case [b"GETUSER", user_name]:
                 if user_name not in self.acl:
                     return
                 return self.acl[user_name].info
 
     def handle_command(self, *command: bytes):
+        try:
+            return self.commands_router.execute(list(command))
+        except RouterKeyError:
+            pass
+
         match command:
             case [b"CONFIG", *sub_command]:
                 return self.handle_config_command(*sub_command)
@@ -334,94 +179,6 @@ class RedisHandler:
                 return self.handle_acl_command(*sub_command)
             case [b"CLIENT", *sub_command]:
                 return self.handle_client_command(*sub_command)
-            case [b"LRANGE", key, start, stop]:
-                l = self.database.get_list(key)
-
-                stop = int(stop)
-                start = int(start)
-
-                if stop >= 0:
-                    stop = min(len(l), stop)
-                else:
-                    stop = max(len(l) + int(stop) + 1, 0)
-
-                if start >= 0:
-                    start = min(len(l), start)
-                else:
-                    start = max(len(l) + int(start) + 1, 0)
-
-                return l[start : stop + 1]
-            case [b"LPUSH", key, *value]:
-                l = self.database.get_or_create_list(key)
-
-                for v in value:
-                    l.insert(0, v)
-                return len(l)
-            case [b"LPOP", key]:
-                l = self.database.get_or_create_list(key)
-
-                if not l:
-                    return None
-                return l.pop(0)
-            case [b"LPOP", key, count]:
-                l = self.database.get_or_create_list(key)
-
-                if not l:
-                    return None
-                return [l.pop() for _ in min(count, len(l))]
-            case [b"LREM", key, count, element]:
-                l = self.database.get_or_create_list(key)
-
-                if not l:
-                    return 0
-                count = int(count)
-                to_delete = abs(count)
-                if count < 0:
-                    l.reverse()
-
-                deleted = 0
-                for _ in range(to_delete if to_delete > 0 else l.count(element)):
-                    try:
-                        l.remove(element)
-                        deleted += 1
-                    except ValueError:
-                        break
-                if count < 0:
-                    l.reverse()
-                return deleted
-            case [b"RPUSH", key, *value]:
-                l = self.database.get_or_create_list(key)
-
-                l.extend(value)
-                return len(l)
-            case [b"LLEN", key]:
-                l = self.database.get_list(key)
-
-                return len(l)
-            case [b"LINDEX", key, index]:
-                l = self.database.get_list(key)
-
-                try:
-                    return l[int(index)]
-                except IndexError:
-                    return None
-            case [b"LINSERT", key, direction, pivot, element]:
-                if direction.upper() == b"BEFORE":
-                    offset = 0
-                elif direction.upper() == b"AFTER":
-                    offset = 1
-                else:
-                    return RespError(b"ERR syntax error")
-                l = self.database.get_list(key)
-
-                if not l:
-                    return 0
-                try:
-                    index = l.index(pivot)
-                except ValueError:
-                    return -1
-                l.insert(index + offset, element)
-                return len(l)
             case [b"INFO"]:
                 return self.information.all()
             case [b"AUTH", password]:
@@ -449,6 +206,7 @@ class RedisHandler:
                 return RESP_OK
             case b"SELECT", number:
                 self.database = self.databases[int(number)]
+                self.commands_router.command_context.current_database = int(number)
                 return RESP_OK
             case [b"DEL", *names]:
                 deleted = len([1 for _ in filter(None, [self.database.pop(name, None) for name in names])])
@@ -492,89 +250,6 @@ class RedisHandler:
                     return RespError(b"ERR value is not a valid float")
                 s.update_with_numeric_value(s.numeric_value + float(increment))
                 return s.bytes_value
-            case b"HGET", key, field:
-                h = self.database.get_hash_table(key)
-
-                return h.get(field)
-            case b"HVALS", key:
-                h = self.database.get_hash_table(key)
-
-                return list(h.values())
-            case b"HSTRLEN", key, field:
-                h = self.database.get_hash_table(key)
-
-                return len(h.get(field, ""))
-            case b"HDEL", key, *fields:
-                h = self.database.get_hash_table(key)
-
-                return sum([1 if h.pop(f, None) is not None else 0 for f in fields])
-            case b"HSET", key, *fields_values:
-                h = self.database.get_or_create_hash_table(key)
-
-                added_fields = 0
-                for field, value in chunks(fields_values, 2):
-                    if field not in h:
-                        added_fields += 1
-                    h[field] = value
-                return added_fields
-            case b"HGETALL", key:
-                h = self.database.get_hash_table(key)
-
-                response = []
-                for k, v in h.items():
-                    response.extend([k, v])
-                return response
-            case b"HEXISTS", key, field:
-                h = self.database.get_hash_table(key)
-
-                return field in h
-            case b"HINCRBY", key, field, increment:
-                try:
-                    increment = int(increment)
-                except ValueError:
-                    return RespError(b"ERR value is not a valid integer")
-                h = self.database.get_or_create_hash_table(key)
-
-                if field not in h:
-                    h[field] = 0
-                if not isinstance(h[field], (int, float)):
-                    return RespError(b"ERR hash value is not an integer")
-                h[field] += increment
-                return h[field]
-            case b"HINCRBYFLOAT", key, field, increment:
-                try:
-                    increment = float(increment)
-                except ValueError:
-                    return RespError(b"ERR value is not a valid float")
-                h = self.database.get_or_create_hash_table(key)
-
-                if field not in h:
-                    h[field] = 0
-                if not isinstance(h[field], (int, float)):
-                    return RespError(b"ERR hash value is not an float")
-                h[field] = float(h[field]) + increment
-                return h[field]
-            case b"HKEYS", key:
-                h = self.database.get_hash_table(key)
-
-                return list(h.keys())
-            case b"HLEN", key:
-                h = self.database.get_hash_table(key)
-
-                return len(h.keys())
-            case b"HMGET", key, *field:
-                h = self.database.get_hash_table(key)
-
-                return [h.get(f, None) for f in field]
-            case b"HMSET", key, *parameters:
-                if len(parameters) % 2 != 0:
-                    return RespError(b"ERR wrong number of arguments for command")
-                h = self.database.get_or_create_hash_table(key)
-
-                for field, value in chunks(parameters, 2):
-                    h[field] = value
-                return RESP_OK
-
             case b"KEYS", pattern:
                 keys = list(fnmatch.filter(self.database.keys(), pattern))
                 return keys
@@ -590,41 +265,59 @@ class RedisHandler:
                 return len(self.database.keys())
             case b"ECHO", message:
                 return message
+            case b"GETBIT", key, offset:
+                s = self.database.get_or_create_string(key)
+
+                offset = int(offset)
+                bytes_offset = offset // 8
+                byte_offset = offset - (bytes_offset * 8)
+
+                return (s.bytes_value[bytes_offset] >> byte_offset) & 1
+
             case b"SETBIT", key, offset, value:
                 s = self.database.get_or_create_string(key)
 
-                previous_value = s.int_value
+                offset = int(offset)
+                bytes_offset = offset // 8
+                byte_offset = offset - (bytes_offset * 8)
+
+                if len(s.bytes_value) <= bytes_offset:
+                    s.bytes_value = s.bytes_value.ljust(bytes_offset + 1, b"\0")
+                previous_value = (s.bytes_value[bytes_offset] >> byte_offset) & 1
 
                 if value == b"1":
-                    s.update_with_int_value(s.int_value | 1 << int(offset))
+                    new_byte = s.bytes_value[bytes_offset] | 1 << byte_offset
+                elif value == b"0":
+                    new_byte = s.bytes_value[bytes_offset] & ~(1 << byte_offset)
                 else:
-                    s.update_with_int_value(s.int_value & ~(1 << int(offset)))
-                return f"{previous_value:b}".encode()
+                    return RespError(b"ERR syntax error")
+
+                s.update_with_bytes_value(
+                    s.bytes_value[:bytes_offset] + bytes([new_byte]) + s.bytes_value[bytes_offset + 1 :]
+                )
+
+                return previous_value
             case [b"BITCOUNT", key]:
                 s = self.database.get_string(key)
-                return s.int_value.bit_count()
+                return sum(map(int.bit_count, s.bytes_value))
             case [b"BITCOUNT", key, start, end] | [b"BITCOUNT", key, start, end, b"BYTE"]:
                 s = self.database.get_string(key)
-                value: int = s.int_value
 
-                length = value.bit_length()
-                last_bit_start = (length // 8) * 8
+                length = len(s.bytes_value)
+                redis_start = int(start)
+                redis_stop = int(end)
 
-                start = int(start)
-                end = int(end)
+                if redis_start >= 0:
+                    start = min(length, redis_start)
+                else:
+                    start = max(length + int(redis_start), 0)
 
-                if start >= 0:
-                    start = min(start * 8, last_bit_start)
-                elif start < 0:
-                    start = min(last_bit_start, last_bit_start + ((start + 1) * 8))
+                if redis_stop >= 0:
+                    stop = min(length, redis_stop)
+                else:
+                    stop = max(length + int(redis_stop), 0)
 
-                if end >= 0:
-                    end = min(length, ((end + 1) * 8) - 1)
-                elif end < 0:
-                    end = min(length, last_bit_start + ((end + 1) * 8) + 7)
-
-                bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
-                return bit_count
+                return sum(map(int.bit_count, s.bytes_value[start : stop + 1]))
             case [b"BITCOUNT", key, start, end, b"BIT"]:
                 s = self.database.get_string(key)
                 value: int = s.int_value
@@ -644,46 +337,6 @@ class RedisHandler:
                 return bit_count
             case [b"BITOP", *parameters]:
                 return self.handle_bit_operation(*parameters)
-            case [b"ZADD", key, *scores_members]:
-                z = self.database.get_or_create_sorted_set(key)
-                length_before = len(z)
-                for score, member in chunks(scores_members, 2):
-                    z.add(float(score), member)
-                return len(z) - length_before
-            case [b"ZRANGE", key, start, stop, *options]:
-                range_kwargs = {}
-                while options:
-                    option = options.pop()
-                    match option:
-                        case b"WITHSCORES" if "with_scores" not in range_kwargs:
-                            range_kwargs["with_scores"] = True
-                        case b"REV" if "is_reversed" not in range_kwargs:
-                            range_kwargs["is_reversed"] = True
-                        case _:
-                            return RespError(b"ERR syntax error")
-
-                z = self.database.get_or_create_sorted_set(key)
-
-                start = int(start)
-                stop = int(stop)
-
-                return z.range(start, stop, **range_kwargs)
-            case [b"ZREVRANGE", key, start, stop, *options]:
-                range_kwargs = {}
-                while options:
-                    option = options.pop()
-                    match option:
-                        case b"WITHSCORES" if "with_scores" not in range_kwargs:
-                            range_kwargs["with_scores"] = True
-                        case _:
-                            return RespError(b"ERR syntax error")
-
-                z = self.database.get_or_create_sorted_set(key)
-
-                start = int(start)
-                stop = int(stop)
-
-                return z.range(start, stop, is_reversed=True, **range_kwargs)
             case unknown, *args:
                 return RespError(
                     f"ERR unknown command '{unknown}', with args beginning with: {args[0] if args else ''}".encode()
@@ -731,6 +384,7 @@ class RedisConnectionHandler(StreamRequestHandler):
             self.server.information,
             self.clients,
             self.databases,
+            create_base_router(CommandContext(self.databases, self.acl)),
         )
         self.clients[current_client_id] = self.handler.client
 
@@ -770,9 +424,13 @@ class RedisConnectionHandler(StreamRequestHandler):
                     self.handler.pause_timeout = 0
             except RedisWrongType:
                 self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
+            except RedisSyntaxError:
+                self.dump(RespError(b"ERR syntax error"))
+            except RedisInvalidIntegerError:
+                self.dump(RespError(b"ERR hash value is not an integer"))
             except Exception as e:
-                print(e)
-                self.dump(RespError(str(e).encode()))
+                self.dump(RespError(b"ERR internal"))
+                raise e
 
         print(self.handler.client.client_id, "exited")
 

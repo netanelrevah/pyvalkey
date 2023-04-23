@@ -18,7 +18,7 @@ def configuration(
 
 @dataclass
 class Information:
-    redis_version: bytes = b"4.9.0"
+    redis_version: bytes = b"7.0.0"
     arch_bits: bytes = b"64"
     cluster_enabled: bool = False
     enterprise: bool = False

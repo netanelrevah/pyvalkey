@@ -1,7 +1,9 @@
 from enum import StrEnum, auto
 
+from r3dis.utils import BytesEnum
 
-class ACLCategories(StrEnum):
+
+class ACLCategories(BytesEnum):
     keyspace = auto()
     read = auto()
     write = auto()
@@ -25,7 +27,7 @@ class ACLCategories(StrEnum):
     scripting = auto()
 
 
-class Commands(StrEnum):
+class Command(BytesEnum):
     llen = auto()
     smismember = auto()
     xread = auto()
@@ -42,11 +44,11 @@ class Commands(StrEnum):
     xpending = auto()
     sismember = auto()
     hscan = auto()
-    get = auto()
-    object__freq = "object|freq"
-    object__encoding = "object|encoding"
-    object__idletime = "object|idletime"
-    object__refcount = "object|refcount"
+    Get = auto()
+    object__freq = b"object|freq"
+    object__encoding = b"object|encoding"
+    object__idletime = b"object|idletime"
+    object__refcount = b"object|refcount"
     expiretime = auto()
     dump = auto()
     sintercard = auto()
@@ -60,9 +62,9 @@ class Commands(StrEnum):
     strlen = auto()
     lolwut = auto()
     xlen = auto()
-    xinfo__groups = "xinfo|groups"
-    xinfo__consumers = "xinfo|consumers"
-    xinfo__stream = "xinfo|stream"
+    xinfo__groups = b"xinfo|groups"
+    xinfo__consumers = b"xinfo|consumers"
+    xinfo__stream = b"xinfo|stream"
     xrevrange = auto()
     zintercard = auto()
     substr = auto()
@@ -97,7 +99,7 @@ class Commands(StrEnum):
     smembers = auto()
     randomkey = auto()
     sort_ro = auto()
-    memory__usage = "memory|usage"
+    memory__usage = b"memory|usage"
     hrandfield = auto()
     hkeys = auto()
     hget = auto()
@@ -113,96 +115,110 @@ class Commands(StrEnum):
     touch = auto()
     bitpos = auto()
     zlexcount = auto()
+    Acl = b'acl'
+    AclGet = b'acl|get'
+    AclDelUser = b"acl|deluser"
+    AclDryRun = b'acl|dryrun'
+    AclGenPass = b'acl|genpass'
+    AclGetUser = b'acl|getuser'
+    AclList = b'acl|list'
+    AclLoad = b'acl|load'
+    AclLog = b'acl|log'
+    AclSave = b'acl|save'
+    AclSetUser = b'acl|setuser'
+    AclUsers = b'acl|users'
+    AclWhoAmI = b'acl|whoami'
+
 
 
 COMMANDS_PER_CATEGORY = {
     ACLCategories.read: [
-        Commands.llen,
-        Commands.smismember,
-        Commands.xread,
-        Commands.bitcount,
-        Commands.geodist,
-        Commands.exists,
-        Commands.zrevrank,
-        Commands.zrangebyscore,
-        Commands.pfcount,
-        Commands.hmget,
-        Commands.sunion,
-        Commands.keys,
-        Commands.hexists,
-        Commands.xpending,
-        Commands.sismember,
-        Commands.hscan,
-        Commands.get,
-        Commands.object__freq,
-        Commands.object__encoding,
-        Commands.object__idletime,
-        Commands.object__refcount,
-        Commands.expiretime,
-        Commands.dump,
-        Commands.sintercard,
-        Commands.srandmember,
-        Commands.sinter,
-        Commands.hstrlen,
-        Commands.zrevrange,
-        Commands.lpos,
-        Commands.zrevrangebyscore,
-        Commands.getbit,
-        Commands.strlen,
-        Commands.lolwut,
-        Commands.xlen,
-        Commands.xinfo__groups,
-        Commands.xinfo__consumers,
-        Commands.xinfo__stream,
-        Commands.xrevrange,
-        Commands.zintercard,
-        Commands.substr,
-        Commands.mget,
-        Commands.zinter,
-        Commands.zrandmember,
-        Commands.lcs,
-        Commands.zscore,
-        Commands.ttl,
-        Commands.scan,
-        Commands.zrank,
-        Commands.sscan,
-        Commands.geohash,
-        Commands.hgetall,
-        Commands.xrange,
-        Commands.zunion,
-        Commands.geopos,
-        Commands.bitfield_ro,
-        Commands.zmscore,
-        Commands.zcard,
-        Commands.georadiusbymember_ro,
-        Commands.getrange,
-        Commands.pttl,
-        Commands.zrange,
-        Commands.sdiff,
-        Commands.hvals,
-        Commands.lindex,
-        Commands.georadius_ro,
-        Commands.dbsize,
-        Commands.zscan,
-        Commands.zcount,
-        Commands.smembers,
-        Commands.randomkey,
-        Commands.sort_ro,
-        Commands.memory__usage,
-        Commands.hrandfield,
-        Commands.hkeys,
-        Commands.hget,
-        Commands.zdiff,
-        Commands.geosearch,
-        Commands.zrangebylex,
-        Commands.hlen,
-        Commands.lrange,
-        Commands.zrevrangebylex,
-        Commands.pexpiretime,
-        Commands.type_,
-        Commands.scard,
-        Commands.touch,
-        Commands.bitpos,
-        Commands.zlexcount,
+        Command.llen,
+        Command.smismember,
+        Command.xread,
+        Command.bitcount,
+        Command.geodist,
+        Command.exists,
+        Command.zrevrank,
+        Command.zrangebyscore,
+        Command.pfcount,
+        Command.hmget,
+        Command.sunion,
+        Command.keys,
+        Command.hexists,
+        Command.xpending,
+        Command.sismember,
+        Command.hscan,
+        Command.get,
+        Command.object__freq,
+        Command.object__encoding,
+        Command.object__idletime,
+        Command.object__refcount,
+        Command.expiretime,
+        Command.dump,
+        Command.sintercard,
+        Command.srandmember,
+        Command.sinter,
+        Command.hstrlen,
+        Command.zrevrange,
+        Command.lpos,
+        Command.zrevrangebyscore,
+        Command.getbit,
+        Command.strlen,
+        Command.lolwut,
+        Command.xlen,
+        Command.xinfo__groups,
+        Command.xinfo__consumers,
+        Command.xinfo__stream,
+        Command.xrevrange,
+        Command.zintercard,
+        Command.substr,
+        Command.mget,
+        Command.zinter,
+        Command.zrandmember,
+        Command.lcs,
+        Command.zscore,
+        Command.ttl,
+        Command.scan,
+        Command.zrank,
+        Command.sscan,
+        Command.geohash,
+        Command.hgetall,
+        Command.xrange,
+        Command.zunion,
+        Command.geopos,
+        Command.bitfield_ro,
+        Command.zmscore,
+        Command.zcard,
+        Command.georadiusbymember_ro,
+        Command.getrange,
+        Command.pttl,
+        Command.zrange,
+        Command.sdiff,
+        Command.hvals,
+        Command.lindex,
+        Command.georadius_ro,
+        Command.dbsize,
+        Command.zscan,
+        Command.zcount,
+        Command.smembers,
+        Command.randomkey,
+        Command.sort_ro,
+        Command.memory__usage,
+        Command.hrandfield,
+        Command.hkeys,
+        Command.hget,
+        Command.zdiff,
+        Command.geosearch,
+        Command.zrangebylex,
+        Command.hlen,
+        Command.lrange,
+        Command.zrevrangebylex,
+        Command.pexpiretime,
+        Command.type_,
+        Command.scard,
+        Command.touch,
+        Command.bitpos,
+        Command.zlexcount,
     ]
 }
