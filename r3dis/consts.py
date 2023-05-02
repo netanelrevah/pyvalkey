@@ -44,11 +44,10 @@ class Command(BytesEnum):
     xpending = auto()
     sismember = auto()
     hscan = auto()
-    Get = auto()
-    object__freq = b"object|freq"
-    object__encoding = b"object|encoding"
-    object__idletime = b"object|idletime"
-    object__refcount = b"object|refcount"
+    ObjectFrequency = b"object|freq"
+    ObjectEncoding = b"object|encoding"
+    ObjectIdleTime = b"object|idletime"
+    ObjectReferenceCount = b"object|refcount"
     expiretime = auto()
     dump = auto()
     sintercard = auto()
@@ -115,20 +114,97 @@ class Command(BytesEnum):
     touch = auto()
     bitpos = auto()
     zlexcount = auto()
-    Acl = b'acl'
-    AclGet = b'acl|get'
+    Acl = b"acl"
+    AclCategory = b"acl|category"
     AclDelUser = b"acl|deluser"
-    AclDryRun = b'acl|dryrun'
-    AclGenPass = b'acl|genpass'
-    AclGetUser = b'acl|getuser'
-    AclList = b'acl|list'
-    AclLoad = b'acl|load'
-    AclLog = b'acl|log'
-    AclSave = b'acl|save'
-    AclSetUser = b'acl|setuser'
-    AclUsers = b'acl|users'
-    AclWhoAmI = b'acl|whoami'
-
+    AclDryRun = b"acl|dryrun"
+    AclGenPass = b"acl|genpass"
+    AclGetUser = b"acl|getuser"
+    AclList = b"acl|list"
+    AclLoad = b"acl|load"
+    AclLog = b"acl|log"
+    AclSave = b"acl|save"
+    AclSetUser = b"acl|setuser"
+    AclUsers = b"acl|users"
+    AclWhoAmI = b"acl|whoami"
+    AclHelp = b"acl|help"
+    Client = b"client"
+    ClientSetName = b"client|setname"
+    ClientPause = b"client|pause"
+    ClientUnpause = b"client|unpause"
+    ClientReply = b"client|reply"
+    ClientKill = b"client|kill"
+    ClientGetName = b"client|getname"
+    ClientId = b"client|id"
+    ClientList = b"client|list"
+    Config = b"config"
+    ConfigSet = b"config|set"
+    ConfigGet = b"config|get"
+    Information = b"info"
+    Authorize = b"auth"
+    FlushDatabase = b"flushdb"
+    Select = b"select"
+    Delete = b"del"
+    Get = b"get"
+    Set = b"set"
+    Increment = b"incr"
+    Decrement = b"decr"
+    IncrementBy = b"incrby"
+    DecrementBy = b"decrby"
+    IncrementByFloat = b"incrbyfloat"
+    Keys = b"keys"
+    Append = b"append"
+    Ping = b"ping"
+    DatabaseSize = b"dbsize"
+    Echo = b"echo"
+    GetBit = b"getbit"
+    SetBit = b"setbit"
+    BitCount = b"bitcount"
+    BitOperation = b"bitop"
+    HashMapGet = b"hget"
+    HashMapValues = b"hvals"
+    HashMapStringLength = b"hstrlen"
+    HashMapDelete = b"hdel"
+    HashMapSet = b"hset"
+    HashMapGetAll = b"hgetall"
+    HashMapExists = b"hexists"
+    HashMapIncreaseBy = b"hincrby"
+    HashMapIncreaseByFloat = b"hincrbyfloat"
+    HashMapKeys = b"hkeys"
+    HashMapLength = b"hlen"
+    HashMapGetMultiple = b"hmget"
+    HashMapSetMultiple = b"hmset"
+    SetPop = b"spop"
+    SetRemove = b"srem"
+    SetUnion = b"sunion"
+    SetIntersection = b"sinter"
+    SetDifference = b"sdiff"
+    SetUnionStore = b"sunionstore"
+    SetIntersectionStore = b"sinterstore"
+    SetDifferenceStore = b"sdiffstore"
+    SetAdd = b"sadd"
+    SetIsMember = b"sismember"
+    SetMembers = b"smembers"
+    SetMultipleIsMember = b"smismember"
+    SetMove = b"smove"
+    SetCardinality = b"scard"
+    SortedSetRange = b"zrange"
+    SortedSetRangeStore = b"zrangestore"
+    SortedSetReversedRange = b"zrevrange"
+    SortedSetRangeByScore = b"zrangebyscore"
+    SortedSetReversedRangeByScore = b"zrevrangebyscore"
+    SortedSetRangeByLexical = b"zrangebylex"
+    SortedSetReversedRangeByLexical = b"zrevrangebylex"
+    SortedSetCount = b"zcount"
+    SortedSetAdd = b"zadd"
+    ListRange = b"lrange"
+    ListPush = b"lpush"
+    ListPop = b"lpop"
+    ListRemove = b"lrem"
+    ListPushAtTail = b"rpush"
+    ListLength = b"llen"
+    ListIndex = b"lindex"
+    ListInsert = b"linsert"
 
 
 COMMANDS_PER_CATEGORY = {
@@ -149,11 +225,11 @@ COMMANDS_PER_CATEGORY = {
         Command.xpending,
         Command.sismember,
         Command.hscan,
-        Command.get,
-        Command.object__freq,
-        Command.object__encoding,
-        Command.object__idletime,
-        Command.object__refcount,
+        Command.Get,
+        Command.ObjectFrequency,
+        Command.ObjectEncoding,
+        Command.ObjectIdleTime,
+        Command.ObjectReferenceCount,
         Command.expiretime,
         Command.dump,
         Command.sintercard,

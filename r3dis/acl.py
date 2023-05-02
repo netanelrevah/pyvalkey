@@ -40,6 +40,9 @@ class ACL(dict[bytes, ACLUser]):
             deleted_users += 1 if self.delete_user(user_name) is not None else 0
         return deleted_users
 
+    def add_allowed_command(self, command: Command, first_parameter: bytes):
+        pass
+
     @classmethod
     def get_categories(cls):
         return [acl_category.encode() for acl_category in ACLCategories]

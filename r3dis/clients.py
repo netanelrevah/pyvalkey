@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import dataclass
 
 from r3dis.utils import to_bytes
@@ -14,7 +15,6 @@ class Client:
     is_replica: bool = False
 
     is_killed: bool = False
-    is_paused: bool = False
     reply_mode: str = "on"
 
     @property
@@ -32,6 +32,10 @@ class Client:
 
 
 class ClientList(dict[int, Client]):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.client_ids = itertools.count(0)
+
     def all(self):
         return ClientList({id_: c for id_, c in self.items() if not c.is_killed})
 
@@ -55,3 +59,12 @@ class ClientList(dict[int, Client]):
     @property
     def info(self) -> bytes:
         return b"\r".join([c.info for c in self.all().values()])
+
+    def create_client(self, host: bytes, port: int):
+        current_client_id = next(self.client_ids)
+        self[current_client_id] = Client(
+            client_id=current_client_id,
+            host=host,
+            port=port,
+        )
+        return self[current_client_id]

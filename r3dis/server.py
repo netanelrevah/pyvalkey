@@ -14,7 +14,7 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
-from r3dis.commands.core import CommandContext
+from r3dis.commands.core import ClientContext
 from r3dis.commands.router import Router, create_base_router
 from r3dis.configurations import Configurations
 from r3dis.databases import Database, RedisString
@@ -91,81 +91,6 @@ class RedisHandler:
                 names = self.configurations.get_names(*parameters)
                 return self.configurations.info(names)
 
-    def handle_client_command(self, *command: bytes):
-        match command:
-            case [b"LIST"]:
-                return self.clients.info
-            case [b"LIST", b"TYPE", type_]:
-                return self.clients.filter_(client_type=type_).info
-            case [b"ID"]:
-                return self.client.client_id
-            case [b"SETNAME", name]:
-                self.client.name = name
-                return RESP_OK
-            case [b"GETNAME"]:
-                return self.client.name or None
-            case [b"KILL", *filters]:
-                if len(filters) == 1:
-                    (addr,) = filters
-                    clients = self.clients.filter_(address=addr).values()
-                    if not clients:
-                        return RespError(b"ERR No such client")
-                    (client,) = clients
-                    client.is_killed = True
-                    return RESP_OK
-                else:
-                    filters_dict = {}
-                    for filter_ in zip(filters[::2], filters[1::2]):
-                        match filter_:
-                            case b"ID", id_:
-                                filters_dict["client_id"] = int(id_)
-                            case b"ADDR", addr:
-                                filters_dict["address"] = addr
-
-                    clients = self.clients.filter_(**filters_dict).values()
-                    for client in clients:
-                        client.is_killed = True
-                    return len(clients)
-            case [b"PAUSE", timeout_seconds]:
-                if not timeout_seconds.isdigit():
-                    return RespError(b"ERR timeout is not an integer or out of range")
-                self.pause_timeout: float = time.time() + int(timeout_seconds)
-                self.client.is_paused = True
-                return RESP_OK
-            case [b"UNPAUSE"]:
-                for client in self.clients.values():
-                    client.is_paused = False
-            case [b"REPLY", mode]:
-                if mode not in (b"ON", b"OFF", b"SKIP"):
-                    return RespError(b"ERR syntax error")
-                self.client.reply_mode = mode.decode().lower()
-                if mode == b"ON":
-                    return RESP_OK
-
-    def handle_acl_command(self, *command: bytes):
-        match command:
-            case [b"HELP"]:
-                return [b"genpass"]
-            case [b"GENPASS"]:
-                return urandom(64)
-            case [b"GENPASS", length]:
-                return urandom(length)
-            case [b"CAT"]:
-                return ACL.get_categories()
-            case [b"CAT", category]:
-                return ACL.get_category_commands(category)
-            case [b"DELUSER", *user_names]:
-                user_deleted = 0
-                for user_name in user_names:
-                    if user_name == b"default":
-                        pass
-                    user_deleted += 1 if self.acl.pop(user_name, None) is not None else 0
-                return user_deleted
-            case [b"GETUSER", user_name]:
-                if user_name not in self.acl:
-                    return
-                return self.acl[user_name].info
-
     def handle_command(self, *command: bytes):
         try:
             return self.commands_router.execute(list(command))
@@ -175,10 +100,6 @@ class RedisHandler:
         match command:
             case [b"CONFIG", *sub_command]:
                 return self.handle_config_command(*sub_command)
-            case [b"ACL", *sub_command]:
-                return self.handle_acl_command(*sub_command)
-            case [b"CLIENT", *sub_command]:
-                return self.handle_client_command(*sub_command)
             case [b"INFO"]:
                 return self.information.all()
             case [b"AUTH", password]:
@@ -371,22 +292,23 @@ class RedisConnectionHandler(StreamRequestHandler):
     def setup(self) -> None:
         super().setup()
 
-        current_client_id = next(self.server.client_ids)
+        client = self.clients.create_client(
+            host=self.client_address[0].encode(),
+            port=self.client_address[1],
+        )
+
         self.handler = RedisHandler(
-            Client(
-                client_id=current_client_id,
-                host=self.client_address[0].encode(),
-                port=self.client_address[1],
-            ),
+            client,
             self.databases[0],
             self.configurations,
             self.acl,
             self.server.information,
             self.clients,
             self.databases,
-            create_base_router(CommandContext(self.databases, self.acl)),
+            create_base_router(
+                ClientContext(databases=self.databases, acl=self.acl, clients=self.clients, current_client=client)
+            ),
         )
-        self.clients[current_client_id] = self.handler.client
 
     def dump(self, value):
         dumped = BytesIO()

@@ -161,7 +161,7 @@ class HashMapSet(CommandHandler):
 
 
 @dataclass
-class HashMapMultiSet(CommandHandler):
+class HashMapSetMultiple(CommandHandler):
     def handle(self, key: bytes, fields_values: Iterator[tuple[bytes, bytes]]):
         hash_map = self.database.get_or_create_hash_table(key)
 
