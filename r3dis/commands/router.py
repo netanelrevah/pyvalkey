@@ -17,7 +17,26 @@ from r3dis.commands.clients import (
     ClientSetName,
     ClientUnpause,
 )
+from r3dis.commands.configs import ConfigGet, ConfigSet
 from r3dis.commands.core import ClientContext, CommandHandler
+from r3dis.commands.databases import (
+    Append,
+    Authorize,
+    BitCount,
+    BitOperation,
+    DatabaseSize,
+    Delete,
+    Echo,
+    FlushDatabase,
+    Get,
+    GetBit,
+    IncrementBy,
+    Information,
+    Keys,
+    SelectDatabase,
+    Set,
+    SetBit,
+)
 from r3dis.commands.hash_maps import (
     HashMapDelete,
     HashMapExists,
@@ -85,20 +104,20 @@ class Router(CommandHandler):
 def create_base_router(command_context: ClientContext):
     router = Router(command_context)
     # String
-    router.routes[Command.Get] = None
-    router.routes[Command.Delete] = None
-    router.routes[Command.Set] = None
-    router.routes[Command.Increment] = None
-    router.routes[Command.IncrementBy] = None
-    router.routes[Command.IncrementByFloat] = None
-    router.routes[Command.Decrement] = None
-    router.routes[Command.DecrementBy] = None
-    router.routes[Command.Append] = None
+    router.routes[Command.Get] = Get(command_context)
+    router.routes[Command.Delete] = Delete(command_context)
+    router.routes[Command.Set] = Set(command_context)
+    router.routes[Command.Increment] = IncrementBy(command_context, 1)
+    router.routes[Command.IncrementBy] = IncrementBy(command_context)
+    router.routes[Command.IncrementByFloat] = IncrementBy(command_context, float_allowed=True)
+    router.routes[Command.Decrement] = IncrementBy(command_context, -1)
+    router.routes[Command.DecrementBy] = IncrementBy(command_context, increment_sign=-1)
+    router.routes[Command.Append] = Append(command_context)
     # # Bitmap
-    router.routes[Command.GetBit] = None
-    router.routes[Command.SetBit] = None
-    router.routes[Command.BitCount] = None
-    router.routes[Command.BitOperation] = None
+    router.routes[Command.GetBit] = GetBit(command_context)
+    router.routes[Command.SetBit] = SetBit(command_context)
+    router.routes[Command.BitCount] = BitCount(command_context)
+    router.routes[Command.BitOperation] = BitOperation(command_context)
     # Hash Map
     router.routes[Command.HashMapGet] = HashMapGet(command_context)
     router.routes[Command.HashMapValues] = HashMapValues(command_context)
@@ -180,19 +199,19 @@ def create_base_router(command_context: ClientContext):
     # ACL
     router.routes[Command.Acl] = create_acl_router(command_context)
     # Config
-    router.routes[Command.Config] = None
+    router.routes[Command.Config] = create_config_router(command_context)
     # Client
-    router.routes[Command.Client] = None
+    router.routes[Command.Client] = create_client_router(command_context)
     # Database
-    router.routes[Command.FlushDatabase] = None
-    router.routes[Command.Select] = None
-    router.routes[Command.Keys] = None
-    router.routes[Command.DatabaseSize] = None
+    router.routes[Command.FlushDatabase] = FlushDatabase(command_context)
+    router.routes[Command.Select] = SelectDatabase(command_context)
+    router.routes[Command.Keys] = Keys(command_context)
+    router.routes[Command.DatabaseSize] = DatabaseSize(command_context)
     # Management
-    router.routes[Command.Authorize] = None
-    router.routes[Command.Information] = None
-    router.routes[Command.Ping] = None
-    router.routes[Command.Echo] = None
+    router.routes[Command.Authorize] = Authorize(command_context)
+    router.routes[Command.Information] = Information(command_context)
+    router.routes[Command.Ping] = Echo(command_context, ping_mode=True)
+    router.routes[Command.Echo] = Echo(command_context)
 
     return router
 
@@ -228,5 +247,14 @@ def create_client_router(command_context: ClientContext):
     router.routes[Command.ClientGetName] = ClientGetName(command_context)
     router.routes[Command.ClientId] = ClientId(command_context)
     router.routes[Command.ClientList] = ClientList(command_context)
+
+    return router
+
+
+def create_config_router(command_context: ClientContext):
+    router = Router(command_context, parent_command=Command.Config)
+    # Acl
+    router.routes[Command.ConfigGet] = ConfigGet(command_context)
+    router.routes[Command.ConfigSet] = ConfigSet(command_context)
 
     return router

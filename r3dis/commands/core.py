@@ -3,7 +3,9 @@ from dataclasses import dataclass
 
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
+from r3dis.configurations import Configurations
 from r3dis.databases import Database
+from r3dis.information import Information
 
 
 @dataclass
@@ -11,6 +13,8 @@ class ServerContext:
     databases: defaultdict[int, Database]
     acl: ACL
     clients: ClientList
+    configurations: Configurations
+    information: Information
 
     is_paused: bool = False
     pause_timeout: float = 0
@@ -58,3 +62,11 @@ class CommandHandler:
     @property
     def current_client(self):
         return self.command_context.current_client
+
+    @property
+    def configurations(self):
+        return self.command_context.server_context.configurations
+
+    @property
+    def information(self):
+        return self.command_context.server_context.information
