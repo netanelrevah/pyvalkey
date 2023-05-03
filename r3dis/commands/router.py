@@ -78,13 +78,13 @@ from r3dis.errors import RouterKeyError
 
 @dataclass
 class Router(CommandHandler):
-    routes: dict[bytes, CommandHandler] = field(default_factory=dict)
+    routes: dict[Command, CommandHandler] = field(default_factory=dict)
     parent_command: Command | None = None
 
     def handle(self, command: bytes, parameters: list[bytes]):
         command_to_route = Command(command)
         if self.parent_command:
-            command_to_route = Command(self.parent_command + b"|" + command)
+            command_to_route = Command(self.parent_command.value + b"|" + command)
 
         try:
             command_handler = self.routes[command_to_route]

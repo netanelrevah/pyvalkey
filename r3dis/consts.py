@@ -1,9 +1,7 @@
-from enum import StrEnum, auto
-
-from r3dis.utils import BytesEnum
+from enum import Enum, auto
 
 
-class ACLCategories(BytesEnum):
+class ACLCategories(Enum):
     keyspace = auto()
     read = auto()
     write = auto()
@@ -27,7 +25,7 @@ class ACLCategories(BytesEnum):
     scripting = auto()
 
 
-class Command(BytesEnum):
+class Command(Enum):
     llen = auto()
     smismember = auto()
     xread = auto()

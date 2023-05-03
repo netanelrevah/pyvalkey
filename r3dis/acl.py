@@ -45,7 +45,7 @@ class ACL(dict[bytes, ACLUser]):
 
     @classmethod
     def get_categories(cls):
-        return [acl_category.encode() for acl_category in ACLCategories]
+        return [acl_category.value.encode() for acl_category in ACLCategories]
 
     @classmethod
     def get_category_commands(cls, category: bytes):
