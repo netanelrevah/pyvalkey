@@ -28,10 +28,9 @@ class AclGeneratePassword(CommandHandler):
     def parse(cls, parameters: list[bytes]):
         if len(parameters) > 1:
             raise RedisSyntaxError()
-        try:
+        if len(parameters) == 1:
             return int(parameters.pop(0))
-        except:
-            return 64
+        return 64
 
 
 @dataclass
