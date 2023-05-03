@@ -20,10 +20,10 @@ class ListLength(CommandHandler):
 @dataclass
 class ListIndex(CommandHandler):
     def handle(self, key: bytes, index: int):
-        l = self.database.get_list(key)
+        redis_list = self.database.get_list(key)
 
         try:
-            return l[index]
+            return redis_list[index]
         except IndexError:
             return None
 
