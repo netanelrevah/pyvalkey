@@ -16,7 +16,7 @@ typer = "^0.7.0"
 [tool.poetry.group.dev.dependencies]
 redis = "^4.5.1"
 pytest = "^7.2.2"
-ruff = ">=0.0.257,<0.0.259"
+ruff = ">=0.0.257,<0.0.265"
 black = "^23.1.0"
 isort = "^5.12.0"
 mypy = "^1.1.1"
