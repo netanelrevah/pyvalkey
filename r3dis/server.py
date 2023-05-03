@@ -132,7 +132,8 @@ class RedisConnectionHandler(StreamRequestHandler):
                     self.server_context.pause_timeout = 0
             except RouterKeyError:
                 return RespError(
-                    f"ERR unknown command '{command[0]}', with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
+                    f"ERR unknown command '{command[0]}', "
+                    f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
                 )
             except RedisWrongType:
                 self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
