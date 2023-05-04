@@ -139,9 +139,9 @@ class SetBit(CommandHandler):
         if len(parameters) == 2:
             key = parameters.pop(0)
             offset = parameters.pop(0)
-            value = parameters.pop(0)
+            bytes_value = parameters.pop(0)
 
-            if value not in (b"1", b"0"):
+            if bytes_value not in (b"1", b"0"):
                 raise RedisSyntaxError()
 
             value = True if b"1" else False
@@ -340,12 +340,12 @@ class IncrementBy(CommandHandler):
     float_allowed: bool = False
 
     def handle(self, key: bytes, increment: int | None = None):
-        increment = increment if increment is not None else self.default_increment
+        calculated_increment = (increment * self.increment_sign) if increment is not None else self.default_increment
 
         s = self.database.get_or_create_string(key)
         if s.numeric_value is None:
             raise RedisException(b"ERR value is not an integer or out of range")
-        s.update_with_numeric_value(s.numeric_value + (increment * self.increment_sign))
+        s.update_with_numeric_value(s.numeric_value + calculated_increment)
         return s.bytes_value
 
     def parse(self, parameters: list[bytes]):

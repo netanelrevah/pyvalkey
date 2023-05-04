@@ -4,29 +4,29 @@ from typing import Iterator
 
 from r3dis.commands.core import CommandHandler
 from r3dis.commands.utils import parse_range_parameters
-from r3dis.databases import MAX_STRING, RangeLimit, RedisSortedSet
+from r3dis.databases import MAX_STRING, RangeLimit, RedisMaxString, RedisSortedSet
 from r3dis.errors import RedisSyntaxError
 
 
-def parse_score_parameter(score: bytes):
+def parse_score_parameter(score: bytes) -> tuple[bytes | RedisMaxString | float, bool]:
     min_inclusive = True
     if score == b"-":
-        score = b""
+        result_score = b""
     elif score == b"+":
-        score = MAX_STRING
+        result_score = MAX_STRING
     elif score == b"-inf":
-        score = -math.inf
+        result_score = -math.inf
     elif score == b"+inf":
-        score = -math.inf
+        result_score = -math.inf
     elif b"(" in score:
-        score = score[1:]
+        result_score = score[1:]
         min_inclusive = False
     elif b"[" in score:
-        score = score[1:]
+        result_score = score[1:]
     else:
-        score = score
+        result_score = score
 
-    return score, min_inclusive
+    return result_score, min_inclusive
 
 
 def parse_ordered_range_parameters(min_score: bytes, max_score: bytes):

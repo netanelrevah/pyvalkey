@@ -49,9 +49,7 @@ class ACL(dict[bytes, ACLUser]):
 
     @classmethod
     def get_category_commands(cls, category: bytes):
-        return [
-            command_name.encode() for command_name in COMMANDS_PER_CATEGORY.get(ACLCategories(category.decode()), [])
-        ]
+        return [command.name for command in COMMANDS_PER_CATEGORY.get(ACLCategories(category.decode()), [])]
 
     @classmethod
     def create(cls):

@@ -53,14 +53,13 @@ class Configurations:
 
         if field_type == "password":
             (value,) = values
-            value = sha256(value).hexdigest().encode()
+            setattr(self, name.decode(), sha256(value).hexdigest().encode())
         elif field_type == "integer":
             (value,) = values
-            value = int(value.decode())
+            setattr(self, name.decode(), int(value.decode()))
         else:
             (value,) = values
-
-        setattr(self, name.decode(), value)
+            setattr(self, name.decode(), value)
 
     def get_names(self, *patterns: bytes) -> set[bytes]:
         names: set[bytes] = set([])

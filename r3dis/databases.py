@@ -1,7 +1,7 @@
 import functools
 import itertools
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, Iterable
 
 from sortedcontainers import SortedDict, SortedSet
 
@@ -73,7 +73,7 @@ class RangeLimit:
 
 
 class RedisSortedSet:
-    def __init__(self, members_and_scores: Iterator[tuple[bytes, float]] | None = None):
+    def __init__(self, members_and_scores: Iterable[tuple[bytes, float]] | None = None):
         members_and_scores = members_and_scores or []
         self.members = SortedSet({(score, member) for member, score in members_and_scores})
         self.members_scores = SortedDict({member: score for member, score in members_and_scores})
@@ -106,7 +106,7 @@ class RedisSortedSet:
         max_inclusive: bool,
         with_scores: bool = False,
         is_reversed: bool = False,
-        limit: RangeLimit = None,
+        limit: RangeLimit | None = None,
     ):
         if not is_reversed:
             minimum = (min_score, (b"" if min_inclusive else MAX_STRING))
