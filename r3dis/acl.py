@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from hashlib import sha256
 
-from r3dis.consts import COMMANDS_PER_CATEGORY, ACLCategories, Command
+from r3dis.consts import COMMANDS_PER_CATEGORY, ACLCategories, Commands
 
 
 @dataclass
@@ -10,7 +10,7 @@ class ACLUser:
 
     is_active: bool = False
     passwords: set[bytes] = field(default_factory=set)
-    allowed_commands: dict[Command, bytes] = field(default_factory=dict)
+    allowed_commands: dict[Commands, bytes] = field(default_factory=dict)
 
     def add_password(self, password: bytes):
         self.passwords.add(sha256(password).hexdigest().encode())
@@ -40,7 +40,7 @@ class ACL(dict[bytes, ACLUser]):
             deleted_users += 1 if self.delete_user(user_name) is not None else 0
         return deleted_users
 
-    def add_allowed_command(self, command: Command, first_parameter: bytes):
+    def add_allowed_command(self, command: Commands, first_parameter: bytes):
         pass
 
     @classmethod

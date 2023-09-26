@@ -2,7 +2,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from r3dis.commands.core import CommandHandler
+from r3dis.commands.handlers import CommandHandler
 from r3dis.errors import RedisSyntaxError, RedisWrongNumberOfArguments
 from r3dis.resp import RESP_OK, RespError
 

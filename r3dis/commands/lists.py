@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from r3dis.commands.core import CommandHandler
+from r3dis.commands.handlers import CommandHandler
 from r3dis.commands.utils import parse_range_parameters
 from r3dis.errors import RedisSyntaxError
 
@@ -116,11 +116,10 @@ class ListPop(CommandHandler):
     @classmethod
     def parse(cls, parameters: list[bytes]):
         key = parameters.pop(0)
-        count = None
         if parameters:
             count = parameters.pop(0)
-
-        return key, int(count)
+            return key, int(count)
+        return key, None
 
 
 @dataclass

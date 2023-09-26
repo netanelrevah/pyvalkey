@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from os import urandom
 
 from r3dis.acl import ACL
-from r3dis.commands.core import CommandHandler
-from r3dis.consts import Command
+from r3dis.commands.handlers import CommandHandler
+from r3dis.consts import Commands
 from r3dis.errors import RedisSyntaxError
 from r3dis.resp import RESP_OK
 
@@ -100,7 +100,7 @@ class AclSetUser(CommandHandler):
                 command = rule[1:].lower()
                 first_parameter = None
                 try:
-                    command = Command(command)
+                    command = Commands(command)
                 except TypeError:
                     if b"|" in command:
                         command, first_parameter = command.split(b"|")

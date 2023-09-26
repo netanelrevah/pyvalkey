@@ -10,8 +10,8 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
-from r3dis.commands.core import ClientContext, ServerContext
-from r3dis.commands.router import Router, create_base_router
+from r3dis.commands.core import ClientContext, CommandParser, ServerContext
+from r3dis.commands.router import RouteParser, create_base_router
 from r3dis.configurations import Configurations
 from r3dis.databases import Database
 from r3dis.errors import (
@@ -43,7 +43,7 @@ class RedisHandler:
     information: Information
     databases: dict[int, Database]
 
-    commands_router: Router
+    commands_router: RouteParser
 
     pause_timeout: float = 0
 
@@ -89,7 +89,7 @@ class RedisConnectionHandler(StreamRequestHandler):
             information=self.server.information,
         )
 
-        self.router = create_base_router(
+        self.router: CommandParser = create_base_router(
             ClientContext(
                 self.server_context,
                 current_client=self.current_client,
@@ -125,7 +125,7 @@ class RedisConnectionHandler(StreamRequestHandler):
             print(self.current_client.client_id, command)
 
             try:
-                self.dump(self.router.execute(list(command)))
+                self.dump(self.router.parse(list(command)).execute())
                 if self.server_context.pause_timeout:
                     while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                         time.sleep(0.1)
@@ -157,7 +157,7 @@ class RedisConnectionHandler(StreamRequestHandler):
 class RedisServer(ThreadingTCPServer):
     def __init__(self, server_address, bind_and_activate=True):
         super().__init__(server_address, RedisConnectionHandler, bind_and_activate)
-        self.databases: defaultdict[int, Database] = defaultdict(Database, {0: {}})
+        self.databases: defaultdict[int, Database] = defaultdict(Database, {0: Database()})
         self.acl: ACL = ACL.create()
         self.client_ids = itertools.count(0)
         self.clients: ClientList = ClientList()

@@ -5,6 +5,7 @@ from typing import Any, Iterable
 
 from sortedcontainers import SortedDict, SortedSet
 
+from r3dis.commands.parsers import redis_positional_parameter
 from r3dis.errors import RedisWrongType
 from r3dis.utils import flatten
 
@@ -66,10 +67,10 @@ class RedisString:
         return len(self.bytes_value)
 
 
-@dataclass
+@dataclass(eq=True)
 class RangeLimit:
-    offset: int
-    count: int
+    offset: int = redis_positional_parameter()
+    count: int = redis_positional_parameter()
 
 
 class RedisSortedSet:
