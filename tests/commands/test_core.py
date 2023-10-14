@@ -1,93 +1,105 @@
-from dataclasses import dataclass
+from typing import Any
 
 import pytest
 from parametrization import Parametrization
 
 from r3dis.commands.core import Command
-from r3dis.commands.parsers import SmartCommandParser, redis_positional_parameter
-from r3dis.commands.sorted_sets import RangeMode, SortedSetAdd, SortedSetRange
+from r3dis.commands.database_context.sorted_sets import (
+    AddMode,
+    RangeMode,
+    SortedSetAdd,
+    SortedSetRange,
+)
+from r3dis.commands.parsers import redis_command, redis_positional_parameter
 from r3dis.errors import RedisSyntaxError, RedisWrongNumberOfArguments
 
 
-@dataclass(eq=True)
+@redis_command()
 class BytesCommand(Command):
     a: bytes = redis_positional_parameter()
     b: bytes = redis_positional_parameter()
 
 
-@dataclass(eq=True)
+@redis_command()
 class ByteIntCommand(Command):
     a: bytes = redis_positional_parameter()
     c: bool = redis_positional_parameter()
     b: int = redis_positional_parameter()
 
 
-@dataclass(eq=True)
+@redis_command()
 class ListCommand(Command):
     a: bytes = redis_positional_parameter()
     d: list[int] = redis_positional_parameter()
 
 
 @Parametrization.autodetect_parameters()
-@Parametrization.default_parameters(command_creator=None)
 @Parametrization.case(
     name="",
     parameters=[b"a", b"b"],
-    expected_command=BytesCommand(b"a", b"b"),
+    command_cls=BytesCommand,
+    expected_kwargs={"a": b"a", "b": b"b"},
 )
 @Parametrization.case(
     name="",
     parameters=[b"a", b"1", b"2"],
-    expected_command=ByteIntCommand(b"a", True, 2),
+    command_cls=ByteIntCommand,
+    expected_kwargs={"a": b"a", "b": 2, "c": True},
 )
 @Parametrization.case(
     name="",
     parameters=[b"a", b"1", b"2"],
-    expected_command=ListCommand(b"a", [1, 2]),
+    command_cls=ListCommand,
+    expected_kwargs={"a": b"a", "d": [1, 2]},
 )
 @Parametrization.case(
     name="",
     parameters=b"zset (1 5 BYSCORE".split(),
-    expected_command=SortedSetRange(None, b"zset", b"(1", b"5", range_mode=RangeMode.BY_SCORE),
-    command_creator=lambda *args, **kwargs: SortedSetRange(None, *args, **kwargs),
+    command_cls=SortedSetRange,
+    expected_kwargs={"key": b"zset", "start": b"(1", "stop": b"5", "range_mode": RangeMode.BY_SCORE},
 )
 @Parametrization.case(
     name="",
     parameters=b"zset (1 5 BYSCORE rev".split(),
-    expected_command=SortedSetRange(None, b"zset", b"(1", b"5", range_mode=RangeMode.BY_SCORE, rev=True),
-    command_creator=lambda *args, **kwargs: SortedSetRange(None, *args, **kwargs),
+    command_cls=SortedSetRange,
+    expected_kwargs={"key": b"zset", "start": b"(1", "stop": b"5", "range_mode": RangeMode.BY_SCORE, "rev": True},
 )
 @Parametrization.case(
     name="",
-    parameters=b'myzset 2 "two" 3 "three',
-    expected_command=SortedSetAdd(
-        None,
-        key=b"myzset",
-    ),
-    command_creator=lambda *args, **kwargs: SortedSetAdd(None, *args, **kwargs),
+    parameters=b"myzset 2 two 3 three".split(),
+    command_cls=SortedSetAdd,
+    expected_kwargs={"key": b"myzset", "scores_members": [(2, b"two"), (3, b"three")]},
 )
-def test_parser__successful(parameters, expected_command, command_creator):
-    if not command_creator:
-        command_creator = type(expected_command)
-    parser = SmartCommandParser(type(expected_command), command_creator)
-    cmd = parser.parse(parameters)
-    assert cmd == expected_command
+@Parametrization.case(
+    name="",
+    parameters=b"myzset NX 2 two 3 three".split(),
+    command_cls=SortedSetAdd,
+    expected_kwargs={"key": b"myzset", "scores_members": [(2, b"two"), (3, b"three")], "add_mode": AddMode.INSERT_ONLY},
+)
+def test_parser__successful(parameters, command_cls: Command, expected_kwargs: dict[str, Any]):
+    actual_kwargs = command_cls.parse(parameters)
+    assert actual_kwargs == expected_kwargs
 
 
 @Parametrization.autodetect_parameters()
 @Parametrization.case(
     name="",
-    command_cls=ByteIntCommand,
     parameters=[b"a", b"a", b"2"],
     expected_exception=RedisSyntaxError,
+    command_cls=ByteIntCommand,
 )
 @Parametrization.case(
     name="",
-    command_cls=ByteIntCommand,
     parameters=[b"a", b"1"],
     expected_exception=RedisWrongNumberOfArguments,
+    command_cls=ByteIntCommand,
 )
-def test_parser__failure(command_cls, parameters, expected_exception):
-    parser = SmartCommandParser.from_command_cls(command_cls)
+@Parametrization.case(
+    name="",
+    parameters=b"myzset NX XX 2 two 3 three".split(),
+    expected_exception=RedisSyntaxError,
+    command_cls=SortedSetAdd,
+)
+def test_parser__failure(parameters, expected_exception, command_cls: Command):
     with pytest.raises(expected_exception):
-        parser.parse(parameters)
+        command_cls.parse(parameters)

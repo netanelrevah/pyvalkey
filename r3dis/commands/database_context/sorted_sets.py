@@ -1,11 +1,13 @@
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterator
 
-from r3dis.commands.database.core import DatabaseCommand
-from r3dis.commands.handlers import CommandHandler
-from r3dis.commands.parsers import redis_keyword_parameter, redis_positional_parameter
+from r3dis.commands.database_context.core import DatabaseCommand
+from r3dis.commands.parsers import (
+    redis_command,
+    redis_keyword_parameter,
+    redis_positional_parameter,
+)
 from r3dis.commands.utils import parse_range_parameters
 from r3dis.databases import (
     MAX_STRING,
@@ -107,21 +109,28 @@ class ScoreUpdateMode(Enum):
     GREATER_THAN = b"GT"
 
 
-@dataclass
+@redis_command
 class SortedSetAdd(DatabaseCommand):
     key: bytes = redis_positional_parameter()
-    add_mode: RangeMode = redis_keyword_parameter(
+    add_mode: AddMode = redis_keyword_parameter(
         default=AddMode.ALL, flag={b"XX": AddMode.UPDATE_ONLY, b"NX": AddMode.INSERT_ONLY}
     )
-    score_update: RangeMode = redis_keyword_parameter(
+    score_update: ScoreUpdateMode = redis_keyword_parameter(
         default=ScoreUpdateMode.ALL, flag={b"LT": ScoreUpdateMode.LESS_THAN, b"GT": ScoreUpdateMode.GREATER_THAN}
     )
     return_changed_elements: bool = redis_keyword_parameter(flag=b"CH")
     increment_mode: bool = redis_keyword_parameter(flag=b"INCR")
-    score_member: list[tuple[int, bytes]] = redis_keyword_parameter()
+    scores_members: list[tuple[int, bytes]] = redis_positional_parameter()
+
+    def execute(self):
+        z = self.database.get_or_create_sorted_set(self.key)
+        length_before = len(z)
+        for score, member in self.scores_members:
+            z.add(score, member)
+        return len(z) - length_before
 
 
-@dataclass
+@redis_command
 class SortedSetRange(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     start: bytes = redis_positional_parameter()
@@ -266,27 +275,6 @@ class SortedSetReversedRangeByLexical(DatabaseCommand):
             is_reversed=True,
             range_mode=RangeMode.BY_LEX,
         )
-
-
-@dataclass
-class SortedSetAdd2(CommandHandler):
-    def handle(self, key: bytes, scores_members: Iterator[tuple[float, bytes]]):
-        z = self.database.get_or_create_sorted_set(key)
-        length_before = len(z)
-        for score, member in scores_members:
-            z.add(score, member)
-        return len(z) - length_before
-
-    def parse(self, parameters: list[bytes]):
-        key = parameters.pop(0)
-        scores_members = []
-        while parameters:
-            score = float(parameters.pop(0))
-            member = parameters.pop(0)
-
-            scores_members.append((score, member))
-
-        return key, scores_members
 
 
 @dataclass

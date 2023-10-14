@@ -1,12 +1,8 @@
 import fnmatch
 from dataclasses import dataclass
-from functools import partial
 from typing import Callable
 
 from r3dis.commands.core import Command, CommandParser
-from r3dis.commands.handlers import CommandHandler
-from r3dis.commands.parsers import SmartCommandParser
-from r3dis.consts import Commands
 from r3dis.databases import Database
 from r3dis.errors import RedisWrongNumberOfArguments
 from r3dis.resp import RESP_OK
@@ -40,15 +36,10 @@ class DatabaseCommandParser(CommandParser):
 
 
 @dataclass
-class FlushDatabase(CommandHandler):
-    def handle(self):
+class FlushDatabase(DatabaseCommand):
+    def execute(self):
         self.database.clear()
         return RESP_OK
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if parameters:
-            return RedisWrongNumberOfArguments()
 
 
 @dataclass
@@ -103,11 +94,3 @@ class Append(DatabaseCommand):
         s = self.database.get_or_create_string(self.key)
         s.update_with_bytes_value(s.bytes_value + self.value)
         return len(s)
-
-
-def create_smart_command_parser(
-    router, command: Commands, database_command_cls: type[DatabaseCommand], database, *args, **kwargs
-):
-    router.routes[command] = SmartCommandParser(
-        database_command_cls, partial(database_command_cls, database, *args, **kwargs)
-    )

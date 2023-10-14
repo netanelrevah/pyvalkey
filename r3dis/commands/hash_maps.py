@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from r3dis.commands.core import redis_argument
-from r3dis.commands.database.core import DatabaseCommand
+from r3dis.commands.database_context.core import DatabaseCommand
 from r3dis.databases import Database
 from r3dis.errors import RedisInvalidIntegerError
 from r3dis.resp import RESP_OK

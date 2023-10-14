@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 
-from r3dis.commands.acl.core import Authorize
 from r3dis.commands.acls import (
     AclCategory,
     AclDeleteUser,
@@ -8,7 +7,6 @@ from r3dis.commands.acls import (
     AclGetUser,
     AclSetUser,
 )
-from r3dis.commands.client.core import Echo, SelectDatabase
 from r3dis.commands.clients import (
     ClientGetName,
     ClientId,
@@ -20,19 +18,9 @@ from r3dis.commands.clients import (
     ClientUnpause,
 )
 from r3dis.commands.configs import ConfigGet, ConfigSet
-from r3dis.commands.core import BytesParametersParser, ClientContext, CommandParser
-from r3dis.commands.database.core import DatabaseSize, FlushDatabase, Keys
-from r3dis.commands.database.routes import fill_database_string_commands
-from r3dis.commands.information.core import Information
-from r3dis.commands.lists import (
-    ListIndex,
-    ListInsert,
-    ListLength,
-    ListPop,
-    ListPush,
-    ListRange,
-    ListRemove,
-)
+from r3dis.commands.context import ClientContext
+from r3dis.commands.core import CommandParser
+from r3dis.commands.database_context.routes import fill_database_string_commands
 from r3dis.consts import Commands
 from r3dis.errors import RouterKeyError
 
@@ -63,31 +51,12 @@ def create_base_router(client_context: ClientContext):
     router = RouteParser()
 
     fill_database_string_commands(router, client_context.database)
-    # List
-    router.routes[Commands.ListRange] = ListRange(client_context)
-    router.routes[Commands.ListPush] = ListPush(client_context)
-    router.routes[Commands.ListPop] = ListPop(client_context)
-    router.routes[Commands.ListRemove] = ListRemove(client_context)
-    router.routes[Commands.ListPushAtTail] = ListPush(client_context, at_tail=True)
-    router.routes[Commands.ListLength] = ListLength(client_context)
-    router.routes[Commands.ListIndex] = ListIndex(client_context)
-    router.routes[Commands.ListInsert] = ListInsert(client_context)
     # ACL
     router.routes[Commands.Acl] = create_acl_router(client_context)
     # Config
     router.routes[Commands.Config] = create_config_router(client_context)
     # Client
     router.routes[Commands.Client] = create_client_router(client_context)
-    # Database
-    router.routes[Commands.FlushDatabase] = FlushDatabase(client_context)
-    router.routes[Commands.Select] = SelectDatabase(client_context)
-    router.routes[Commands.Keys] = BytesParametersParser(client_context, Keys, 1)
-    router.routes[Commands.DatabaseSize] = BytesParametersParser(client_context, DatabaseSize, 0)
-    # Management
-    router.routes[Commands.Authorize] = Authorize(client_context)
-    router.routes[Commands.Information] = Information(client_context)
-    router.routes[Commands.Ping] = Echo(client_context, ping_mode=True)
-    router.routes[Commands.Echo] = Echo(client_context)
 
     return router
 

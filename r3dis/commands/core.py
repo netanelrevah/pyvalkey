@@ -1,13 +1,20 @@
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any
 
-from r3dis.errors import RedisWrongNumberOfArguments
+from black.linegen import partial
+
+from r3dis.commands.parsers import redis_positional_parameter
+from r3dis.consts import Commands
 
 
 @dataclass
 class Command:
     def execute(self):
         raise NotImplementedError()
+
+    @staticmethod
+    def parse(parameters: list[bytes]) -> dict[str, Any]:
+        pass
 
 
 class CommandParser:
@@ -16,12 +23,22 @@ class CommandParser:
 
 
 @dataclass
-class BytesParametersParser(CommandParser):
-    command_creator: Callable[[bytes, ...], Command]
+class Echo(Command):
+    message: bytes = redis_positional_parameter()
 
-    number_of_parameters: int = None
+    def execute(self):
+        return self.message
 
-    def parse(self, parameters: list[bytes]) -> Command:
-        if self.number_of_parameters and len(parameters) != self.number_of_parameters:
-            raise RedisWrongNumberOfArguments()
-        return self.command_creator(*parameters)
+
+@dataclass
+class Ping(Command):
+    message: bytes = redis_positional_parameter(default=None)
+
+    def execute(self):
+        if self.message:
+            return self.message
+        return b"PONG"
+
+
+def create_smart_command_parser(router, command: Commands, command_cls: type[Command], *args, **kwargs):
+    router.routes[command] = SmartCommandParser(command_cls, partial(command_cls, *args, **kwargs))

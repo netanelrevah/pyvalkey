@@ -10,7 +10,8 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
-from r3dis.commands.core import ClientContext, CommandParser, ServerContext
+from r3dis.commands.context import ClientContext, ServerContext
+from r3dis.commands.core import CommandParser
 from r3dis.commands.router import RouteParser, create_base_router
 from r3dis.configurations import Configurations
 from r3dis.databases import Database

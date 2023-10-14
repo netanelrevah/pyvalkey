@@ -1,4 +1,4 @@
-from r3dis.commands.database.bits import (
+from r3dis.commands.database_context.bits import (
     BitCount,
     BitOperation,
     Decrement,
@@ -9,13 +9,54 @@ from r3dis.commands.database.bits import (
     IncrementByFloat,
     SetBit,
 )
-from r3dis.commands.database.core import (
+from r3dis.commands.database_context.core import (
     Append,
     DatabaseCommand,
+    DatabaseSize,
     Delete,
+    FlushDatabase,
     Get,
+    Keys,
     Set,
     create_smart_command_parser,
+)
+from r3dis.commands.database_context.lists import (
+    ListIndex,
+    ListInsert,
+    ListLength,
+    ListPop,
+    ListPush,
+    ListPushAtTail,
+    ListRange,
+    ListRemove,
+)
+from r3dis.commands.database_context.sets import (
+    SetAdd,
+    SetAreMembers,
+    SetCardinality,
+    SetDifference,
+    SetDifferenceStore,
+    SetIntersection,
+    SetIntersectionStore,
+    SetIsMember,
+    SetMembers,
+    SetMove,
+    SetPop,
+    SetRemove,
+    SetUnion,
+    SetUnionStore,
+)
+from r3dis.commands.database_context.sorted_sets import (
+    SortedSetAdd,
+    SortedSetCardinality,
+    SortedSetCount,
+    SortedSetRange,
+    SortedSetRangeByLexical,
+    SortedSetRangeByScore,
+    SortedSetRangeStore,
+    SortedSetReversedRange,
+    SortedSetReversedRangeByLexical,
+    SortedSetReversedRangeByScore,
 )
 from r3dis.commands.hash_maps import (
     HashMapDelete,
@@ -33,33 +74,6 @@ from r3dis.commands.hash_maps import (
     HashMapValues,
 )
 from r3dis.commands.router import RouteParser
-from r3dis.commands.sets import (
-    SetAdd,
-    SetAreMembers,
-    SetCardinality,
-    SetDifference,
-    SetDifferenceStore,
-    SetIntersection,
-    SetIntersectionStore,
-    SetIsMember,
-    SetMembers,
-    SetMove,
-    SetPop,
-    SetRemove,
-    SetUnion,
-    SetUnionStore,
-)
-from r3dis.commands.sorted_sets import (
-    SortedSetRange,
-    SortedSetRangeStore,
-    SortedSetReversedRange,
-    SortedSetRangeByScore,
-    SortedSetReversedRangeByScore,
-    SortedSetRangeByLexical,
-    SortedSetReversedRangeByLexical,
-    SortedSetCount,
-    SortedSetCardinality,
-)
 from r3dis.consts import Commands
 from r3dis.databases import Database
 
@@ -118,6 +132,20 @@ COMMAND_TO_COMMAND_CLS: dict[Commands, type[DatabaseCommand]] = {
     Commands.SortedSetReversedRangeByLexical: SortedSetReversedRangeByLexical,
     Commands.SortedSetCount: SortedSetCount,
     Commands.SortedSetCardinality: SortedSetCardinality,
+    Commands.SortedSetAdd: SortedSetAdd,
+    # List
+    Commands.ListRange: ListRange,
+    Commands.ListPush: ListPush,
+    Commands.ListPop: ListPop,
+    Commands.ListRemove: ListRemove,
+    Commands.ListPushAtTail: ListPushAtTail,
+    Commands.ListLength: ListLength,
+    Commands.ListIndex: ListIndex,
+    Commands.ListInsert: ListInsert,
+    # Database
+    Commands.FlushDatabase: FlushDatabase,
+    Commands.DatabaseSize: DatabaseSize,
+    Commands.Keys: Keys,
 }
 
 

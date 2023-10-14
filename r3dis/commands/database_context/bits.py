@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import Any, ClassVar
 
-from r3dis.commands.database.core import DatabaseCommand
+from r3dis.commands.database_context.core import DatabaseCommand
 from r3dis.commands.parsers import redis_positional_parameter
 from r3dis.databases import Database
 from r3dis.errors import RedisException
