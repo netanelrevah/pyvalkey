@@ -5,7 +5,7 @@ from typing import Any, Iterable
 
 from sortedcontainers import SortedDict, SortedSet
 
-from r3dis.commands.parsers import redis_positional_parameter
+from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.errors import RedisWrongType
 from r3dis.utils import flatten
 

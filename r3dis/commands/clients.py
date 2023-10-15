@@ -1,143 +1,118 @@
 import time
 from dataclasses import dataclass
-from typing import Any
+from enum import Enum
 
+from r3dis.commands.context import ClientContext
+from r3dis.commands.core import Command
 from r3dis.commands.handlers import CommandHandler
-from r3dis.errors import RedisSyntaxError, RedisWrongNumberOfArguments
+from r3dis.commands.parameters import redis_positional_parameter, redis_keyword_parameter
+from r3dis.commands.router import RedisCommandsRouter
+from r3dis.consts import Commands
 from r3dis.resp import RESP_OK, RespError
 
+client_commands_router = RedisCommandsRouter()
 
-@dataclass
-class ClientList(CommandHandler):
-    def handle(self, type_: bytes | None = None):
-        if type_:
-            return self.clients.filter_(client_type=type_).info
-        return self.clients.info
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        type_ = None
-        while parameters:
-            match parameters.pop(0):
-                case b"TYPE":
-                    type_ = parameters.pop(0)
-                case _:
-                    raise RedisSyntaxError()
-
-        return type_
+client_sub_commands_router = client_commands_router.child(Commands.Client)
 
 
 @dataclass
-class ClientId(CommandHandler):
-    def handle(self):
-        return self.current_client.client_id
+class ClientCommand(Command):
+    client_context: ClientContext
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        while parameters:
-            match parameters.pop(0):
-                case _:
-                    raise RedisSyntaxError()
+    def execute(self):
+        raise NotImplementedError()
 
 
-@dataclass
-class ClientSetName(CommandHandler):
-    def handle(self, name: bytes):
-        self.current_client.name = name
+@client_commands_router.command(Commands.Select)
+class SelectDatabase(ClientCommand):
+    index: int = redis_positional_parameter()
+
+    def execute(self):
+        self.client_context.current_database = self.index
         return RESP_OK
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 1:
-            raise RedisWrongNumberOfArguments()
-        return parameters.pop(0)
+
+@client_commands_router.command(Commands.ClientList)
+class ClientList(CommandHandler):
+    client_type: bytes | None = redis_keyword_parameter(flag=b"TYPE", default=None)
+
+    def execute(self):
+        if self.client_type:
+            return self.clients.filter_(client_type=self.client_type).info
+        return self.clients.info
 
 
-@dataclass
-class ClientGetName(CommandHandler):
-    def handle(self):
-        return self.current_client.name or None
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if parameters:
-            raise RedisWrongNumberOfArguments()
+@client_sub_commands_router.command(Commands.ClientId)
+class ClientId(ClientCommand):
+    def execute(self):
+        return self.client_context.current_client.client_id
 
 
-@dataclass
-class ClientKill(CommandHandler):
-    def handle(self, filters: dict[str, Any], old_format: bool = False):
-        if old_format:
-            clients = self.clients.filter_(**filters).values()
+@client_sub_commands_router.command(Commands.ClientSetName)
+class ClientSetName(ClientCommand):
+    name: bytes = redis_positional_parameter()
+
+    def execute(self):
+        self.client_context.current_client.name = self.name
+        return RESP_OK
+
+
+@client_sub_commands_router.command(Commands.ClientGetName)
+class ClientGetName(ClientCommand):
+    def execute(self):
+        return self.client_context.current_client.name or None
+
+
+@client_sub_commands_router.command(Commands.ClientKill)
+class ClientKill(ClientCommand):
+    old_format_address: bytes | None = redis_positional_parameter(default=None)
+    client_id: int = redis_keyword_parameter(flag=b"ID", default=None)
+    address: bytes = redis_keyword_parameter(flag=b"ADDR", default=None)
+
+    def execute(self):
+        if self.old_format_address:
+            clients = self.client_context.server_context.clients.filter_(address=self.old_format_address).values()
             if not clients:
                 return RespError(b"ERR No such client")
             (client,) = clients
             client.is_killed = True
             return RESP_OK
 
-        clients = self.clients.filter_(**filters).values()
+        clients = self.client_context.server_context.clients.filter_(
+            client_id=self.client_id, address=self.address
+        ).values()
         for client in clients:
             client.is_killed = True
         return len(clients)
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) == 1:
-            return {"address": parameters.pop(0)}, True
 
-        filters = {}
-        while parameters:
-            match parameters.pop(0):
-                case b"ID":
-                    filters["client_id"] = int(parameters.pop(0))
-                case b"ADDR":
-                    filters["address"] = parameters.pop(0)
-                case _:
-                    raise RedisSyntaxError()
+@client_sub_commands_router.command(Commands.ClientPause)
+class ClientPause(ClientCommand):
+    timeout_seconds: int = redis_positional_parameter()
 
-        return filters, False
-
-
-@dataclass
-class ClientPause(CommandHandler):
-    def handle(self, timeout_seconds: int):
-        self.command_context.server_context.pause_timeout = time.time() + int(timeout_seconds)
-        self.command_context.server_context.is_paused = True
+    def handle(self):
+        self.client_context.server_context.pause_timeout = time.time() + self.timeout_seconds
+        self.client_context.server_context.is_paused = True
         return RESP_OK
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 1:
-            raise RedisWrongNumberOfArguments()
-        timeout_seconds = parameters.pop(0)
-        if not timeout_seconds.isdigit():
-            return RespError(b"ERR timeout is not an integer or out of range")
-        return timeout_seconds
 
-
-@dataclass
-class ClientUnpause(CommandHandler):
+@client_sub_commands_router.command(Commands.ClientUnpause)
+class ClientUnpause(ClientCommand):
     def handle(self, timeout_seconds: int):
-        self.command_context.server_context.is_paused = False
+        self.client_context.server_context.is_paused = False
         return RESP_OK
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 0:
-            raise RedisWrongNumberOfArguments()
+
+class ReplyMode(Enum):
+    ON = b"ON"
+    OFF = b"OFF"
+    SKIP = b"SKIP"
 
 
-@dataclass
-class ClientReply(CommandHandler):
-    def handle(self, mode: bytes):
-        if mode == b"ON":
+@client_sub_commands_router.command(Commands.ClientReply)
+class ClientReply(ClientCommand):
+    mode: ReplyMode = redis_positional_parameter()
+
+    def execute(self):
+        if self.mode == ReplyMode.ON:
             return RESP_OK
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 1:
-            raise RedisWrongNumberOfArguments()
-        mode = parameters.pop(0)
-        if mode not in (b"ON", b"OFF", b"SKIP"):
-            raise RedisSyntaxError()
-        return mode.lower()

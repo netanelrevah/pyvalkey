@@ -1,9 +1,10 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from black.linegen import partial
 
-from r3dis.commands.parsers import redis_positional_parameter
+from r3dis.commands.context import ClientContext
+from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.consts import Commands
 
 
@@ -14,6 +15,10 @@ class Command:
 
     @staticmethod
     def parse(parameters: list[bytes]) -> dict[str, Any]:
+        pass
+
+    @classmethod
+    def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
         pass
 
 

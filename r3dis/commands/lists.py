@@ -1,12 +1,15 @@
-from dataclasses import dataclass
 from enum import Enum
 
-from r3dis.commands.database_context.core import DatabaseCommand
-from r3dis.commands.parsers import redis_positional_parameter
+from r3dis.commands.databases import DatabaseCommand
+from r3dis.commands.parameters import redis_positional_parameter
+from r3dis.commands.router import RedisCommandsRouter
 from r3dis.commands.utils import parse_range_parameters
+from r3dis.consts import Commands
+
+list_commands_router = RedisCommandsRouter()
 
 
-@dataclass
+@list_commands_router.command(Commands.ListLength)
 class ListLength(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -14,7 +17,7 @@ class ListLength(DatabaseCommand):
         return len(self.database.get_list(self.key))
 
 
-@dataclass
+@list_commands_router.command(Commands.ListIndex)
 class ListIndex(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     index: int = redis_positional_parameter()
@@ -28,7 +31,7 @@ class ListIndex(DatabaseCommand):
             return None
 
 
-@dataclass
+@list_commands_router.command(Commands.ListRange)
 class ListRange(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     start: int = redis_positional_parameter()
@@ -43,7 +46,7 @@ class DirectionMode(Enum):
     AFTER = b"after"
 
 
-@dataclass
+@list_commands_router.command(Commands.ListInsert)
 class ListInsert(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     direction: DirectionMode = redis_positional_parameter()
@@ -63,7 +66,7 @@ class ListInsert(DatabaseCommand):
         return len(a_list)
 
 
-@dataclass
+@list_commands_router.command(Commands.ListPush)
 class ListPush(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     values: list[bytes] = redis_positional_parameter()
@@ -76,7 +79,7 @@ class ListPush(DatabaseCommand):
         return len(a_list)
 
 
-@dataclass
+@list_commands_router.command(Commands.ListPushAtTail)
 class ListPushAtTail(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     values: list[bytes] = redis_positional_parameter()
@@ -89,7 +92,7 @@ class ListPushAtTail(DatabaseCommand):
         return len(a_list)
 
 
-@dataclass
+@list_commands_router.command(Commands.ListPop)
 class ListPop(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     count: int = redis_positional_parameter(default=None)
@@ -104,7 +107,7 @@ class ListPop(DatabaseCommand):
         return a_list.pop(0)
 
 
-@dataclass
+@list_commands_router.command(Commands.ListRemove)
 class ListRemove(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     count: int = redis_positional_parameter()

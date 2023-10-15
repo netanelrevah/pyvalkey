@@ -1,92 +1,11 @@
-from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
-from enum import Enum, StrEnum, auto
+from dataclasses import Field, dataclass, field, fields, is_dataclass
+from enum import Enum
 from types import UnionType
-from typing import Any, T, Union, dataclass_transform, get_args, get_origin
+from typing import Any, Self, Union, get_args, get_origin
 
+from r3dis.commands.creators import CommandCreator
+from r3dis.commands.parameters import ParameterMetadata
 from r3dis.errors import RedisException, RedisSyntaxError, RedisWrongNumberOfArguments
-
-
-class ParameterMetadata(StrEnum):
-    REDIS_PARAMETER = auto()
-    VALUES_MAPPING = auto()
-    FLAG = auto()
-
-
-def redis_parameter(
-    values_mapping: dict[bool:bytes] = None,
-    default=MISSING,
-    flag: bytes = None,
-):
-    metadata = {ParameterMetadata.REDIS_PARAMETER: True}
-    if values_mapping:
-        metadata[ParameterMetadata.VALUES_MAPPING] = {
-            values_mapping[True].upper(): True,
-            values_mapping[False].upper(): False,
-        }
-    if flag:
-        if isinstance(flag, dict):
-            metadata[ParameterMetadata.FLAG] = {key.upper(): value for key, value in flag.items()}
-            default = None
-        else:
-            metadata[ParameterMetadata.FLAG] = flag.upper()
-            metadata[ParameterMetadata.VALUES_MAPPING] = {
-                flag.upper(): True,
-            }
-            default = False
-    return field(metadata=metadata, default=default, kw_only=bool(flag))
-
-
-def redis_positional_parameter(
-    bool_map: dict[bool:bytes] = None,
-    default=MISSING,
-):
-    return redis_parameter(
-        values_mapping=bool_map,
-        default=default,
-    )
-
-
-def redis_keyword_parameter(
-    bool_map: dict[bool:bytes] = None,
-    default=MISSING,
-    flag: bytes | dict[bytes, Any] = None,
-):
-    return redis_parameter(values_mapping=bool_map, default=default, flag=flag)
-
-
-@dataclass_transform()
-def redis_command(cls: type[T] = None) -> type[T]:
-    def wrap(_cls):
-        original_order = []
-
-        for name in list(_cls.__dict__.keys()):
-            value = getattr(_cls, name)
-
-            if not isinstance(value, Field):
-                continue
-
-            if not value.metadata.get(ParameterMetadata.REDIS_PARAMETER):
-                continue
-
-            original_order.append(name)
-
-            if not value.kw_only:
-                continue
-
-            delattr(_cls, name)
-            setattr(_cls, name, value)
-
-        _cls = dataclass(_cls)
-
-        setattr(_cls, "__original_order__", original_order)
-        setattr(_cls, "parse", CommandParserCreator.create(_cls))
-
-        return _cls
-
-    if cls is None:
-        return wrap
-
-    return wrap(cls)
 
 
 class ParameterParser:
@@ -99,6 +18,48 @@ class ParameterParser:
 
     def parse(self, parameters: list[bytes]) -> Any:
         return self.next_parameter(parameters)
+
+    @classmethod
+    def _extract_optional_type(cls, parameter_type):
+        if get_origin(parameter_type) == Union or get_origin(parameter_type) == UnionType:
+            items = get_args(parameter_type)
+            items = set([arg for arg in items if arg is not type(None)])
+            if len(items) > 1:
+                raise TypeError(items)
+            parameter_type = items.pop()
+        return parameter_type
+
+    @classmethod
+    def create(cls, parameter_field: Field):
+        parameter_type = cls._extract_optional_type(parameter_field.type)
+
+        if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
+            return EnumParameterParser(parameter_type)
+
+        if is_dataclass(parameter_type):
+            return ObjectParser.create(parameter_type)
+
+        match parameter_type():
+            case bytes():
+                return ParameterParser()
+            case bool():
+                return BoolParameterParser(
+                    parameter_field.metadata.get(
+                        ParameterMetadata.VALUES_MAPPING, BoolParameterParser.DEFAULT_VALUES_MAPPING
+                    )
+                )
+            case int():
+                return IntParameterParser()
+            case float():
+                return FloatParameterParser()
+            case list():
+                return ListParameterParser.create(get_args(parameter_type)[0])
+            case set():
+                return SetParameterParser.create(get_args(parameter_type)[0])
+            case tuple():
+                return TupleParameterParser.create(get_args(parameter_type))
+            case default:
+                raise TypeError(default)
 
 
 class ParametersGroup(ParameterParser):
@@ -125,6 +86,18 @@ class ListParameterParser(ParameterParser):
             list_parameter.append(self.parameter_parser.parse(parameters))
         return list_parameter
 
+    @classmethod
+    def create(cls, list_type) -> "ListParameterParser":
+        match list_type():
+            case bytes():
+                return ListParameterParser(ParameterParser())
+            case int():
+                return ListParameterParser(IntParameterParser())
+            case tuple():
+                return ListParameterParser(TupleParameterParser.create(get_args(list_type)))
+            case default:
+                raise TypeError(default)
+
 
 @dataclass
 class SetParameterParser(ParameterParser):
@@ -136,6 +109,16 @@ class SetParameterParser(ParameterParser):
             set_value.add(self.parameter_parser.parse(parameters))
         return set_value
 
+    @classmethod
+    def create(cls, set_type) -> "SetParameterParser":
+        match set_type():
+            case bytes():
+                return SetParameterParser(ParameterParser())
+            case int():
+                return SetParameterParser(IntParameterParser())
+            case default:
+                raise TypeError(default)
+
 
 @dataclass
 class TupleParameterParser(ParameterParser):
@@ -146,6 +129,19 @@ class TupleParameterParser(ParameterParser):
         for parameter_parser in self.parameter_parser_tuple:
             tuple_parameter += (parameter_parser.parse(parameters),)
         return tuple_parameter
+
+    @classmethod
+    def create(cls, tuple_types) -> Self:
+        parameter_parser_tuple = ()
+        for arg in tuple_types:
+            match arg():
+                case bytes():
+                    parameter_parser_tuple += (ParameterParser(),)
+                case int():
+                    parameter_parser_tuple += (IntParameterParser(),)
+                case _:
+                    raise TypeError()
+        return TupleParameterParser(parameter_parser_tuple)
 
 
 class IntParameterParser(ParameterParser):
@@ -233,100 +229,8 @@ class ObjectParametersParser(ParametersGroup):
     def __call__(self, parameters: list[bytes]):
         return self.parse(list(parameters))
 
-
-@dataclass
-class ObjectParser(ParametersGroup):
-    object_cls: Any
-    object_parameters_parser: ObjectParametersParser
-
-    def parse(self, parameters: list[bytes]) -> Any:
-        return self.object_cls(self.object_parameters_parser.parse(parameters))
-
-
-class CommandParserCreator:
     @classmethod
-    def extract_optional_type(cls, parameter_type):
-        if get_origin(parameter_type) == Union or get_origin(parameter_type) == UnionType:
-            items = get_args(parameter_type)
-            items = set([arg for arg in items if arg is not type(None)])
-            if len(items) > 1:
-                raise TypeError(items)
-            parameter_type = items.pop()
-        return parameter_type
-
-    @classmethod
-    def create_parameter_from_field(cls, parameter_field: Field):
-        parameter_type = cls.extract_optional_type(parameter_field.type)
-
-        if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
-            return EnumParameterParser(parameter_type)
-
-        if is_dataclass(parameter_type):
-            return cls.create_object_parser(parameter_type)
-
-        match parameter_type():
-            case bytes():
-                return ParameterParser()
-            case bool():
-                return BoolParameterParser(
-                    parameter_field.metadata.get(
-                        ParameterMetadata.VALUES_MAPPING, BoolParameterParser.DEFAULT_VALUES_MAPPING
-                    )
-                )
-            case int():
-                return IntParameterParser()
-            case float():
-                return FloatParameterParser()
-            case list():
-                return cls.create_list_parameter(parameter_field.type.__args__[0])
-            case set():
-                return cls.create_set_parameter(parameter_field.type.__args__[0])
-            case tuple():
-                return cls.create_tuple_parameter(parameter_field.type.__args__)
-            case default:
-                raise TypeError(default)
-
-    @classmethod
-    def create_set_parameter(cls, set_type) -> "SetParameterParser":
-        match set_type():
-            case bytes():
-                return SetParameterParser(ParameterParser())
-            case int():
-                return SetParameterParser(IntParameterParser())
-            case default:
-                raise TypeError(default)
-
-    @classmethod
-    def create_list_parameter(cls, list_type) -> "ListParameterParser":
-        match list_type():
-            case bytes():
-                return ListParameterParser(ParameterParser())
-            case int():
-                return ListParameterParser(IntParameterParser())
-            case tuple():
-                return ListParameterParser(cls.create_tuple_parameter(get_args(list_type)))
-            case default:
-                raise TypeError(default)
-
-    @classmethod
-    def create_tuple_parameter(cls, tuple_types) -> "TupleParameterParser":
-        parameter_parser_tuple = ()
-        for arg in tuple_types:
-            match arg():
-                case bytes():
-                    parameter_parser_tuple += (ParameterParser(),)
-                case int():
-                    parameter_parser_tuple += (IntParameterParser(),)
-                case _:
-                    raise TypeError()
-        return TupleParameterParser(parameter_parser_tuple)
-
-    @classmethod
-    def create_object_parser(cls, object_cls) -> "ObjectParser":
-        return ObjectParser(object_cls, cls.create(object_cls))
-
-    @classmethod
-    def create(cls, object_cls) -> ObjectParametersParser:
+    def create(cls, object_cls) -> Self:
         parameter_fields = {
             parameter_field.name: parameter_field
             for parameter_field in fields(object_cls)
@@ -344,7 +248,7 @@ class CommandParserCreator:
             flag = parameter_field.metadata.get(ParameterMetadata.FLAG)
             if flag:
                 named_parameter_parser = NamedParameterParser(
-                    parameter_field_name, cls.create_parameter_from_field(parameter_field)
+                    parameter_field_name, ParameterParser.create(parameter_field)
                 )
                 if isinstance(flag, dict):
                     for flag_key in flag.keys():
@@ -357,10 +261,58 @@ class CommandParserCreator:
                     flagged_fields = {}
 
                 parameters_parsers.append(
-                    NamedParameterParser(parameter_field.name, cls.create_parameter_from_field(parameter_field))
+                    NamedParameterParser(parameter_field.name, ParameterParser.create(parameter_field))
                 )
 
         if flagged_fields:
             parameters_parsers.append(OptionalParametersGroup(flagged_fields))
 
         return ObjectParametersParser(parameters_parsers)
+
+
+@dataclass
+class ObjectParser(ParametersGroup):
+    object_cls: Any
+    object_parameters_parser: ObjectParametersParser
+
+    def parse(self, parameters: list[bytes]) -> Any:
+        return self.object_cls(self.object_parameters_parser.parse(parameters))
+
+    @classmethod
+    def create(cls, object_cls) -> "ObjectParser":
+        return ObjectParser(object_cls, ObjectParametersParser.create(object_cls))
+
+
+def _redis_command_wrapper(command_cls):
+    original_order = []
+
+    for name in list(command_cls.__dict__.keys()):
+        value = getattr(command_cls, name)
+
+        if not isinstance(value, Field):
+            continue
+
+        if not value.metadata.get(ParameterMetadata.REDIS_PARAMETER):
+            continue
+
+        original_order.append(name)
+
+        if not value.kw_only:
+            continue
+
+        delattr(command_cls, name)
+        setattr(command_cls, name, value)
+
+    command_cls = dataclass(command_cls)
+
+    setattr(command_cls, "__original_order__", original_order)
+    setattr(command_cls, "parse", ObjectParametersParser.create(command_cls))
+    setattr(command_cls, "create", CommandCreator.create(command_cls))
+
+    return command_cls
+
+
+def redis_command(command_cls=None):
+    if command_cls is None:
+        return _redis_command_wrapper
+    return _redis_command_wrapper(command_cls)

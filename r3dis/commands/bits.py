@@ -1,15 +1,19 @@
 import operator
-from dataclasses import dataclass
+from enum import Enum
 from functools import reduce
 from typing import Any, ClassVar
 
-from r3dis.commands.database_context.core import DatabaseCommand
-from r3dis.commands.parsers import redis_positional_parameter
+from r3dis.commands.databases import DatabaseCommand
+from r3dis.commands.parameters import redis_positional_parameter
+from r3dis.commands.router import RedisCommandsRouter
+from r3dis.consts import Commands
 from r3dis.databases import Database
 from r3dis.errors import RedisException
 
+bits_commands_router = RedisCommandsRouter()
 
-@dataclass
+
+@bits_commands_router.command(Commands.GetBit)
 class GetBit(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     offset: int = redis_positional_parameter()
@@ -23,7 +27,7 @@ class GetBit(DatabaseCommand):
         return (s.bytes_value[bytes_offset] >> byte_offset) & 1
 
 
-@dataclass
+@bits_commands_router.command(Commands.SetBit)
 class SetBit(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     offset: int = redis_positional_parameter()
@@ -50,15 +54,22 @@ class SetBit(DatabaseCommand):
         return previous_value
 
 
-@dataclass
+class BitOperationMode(Enum):
+    AND = b"AND"
+    OR = b"OR"
+    XOR = b"XOR"
+    NOT = b"NOT"
+
+
+@bits_commands_router.command(Commands.BitOperation)
 class BitOperation(DatabaseCommand):
-    OPERATION_TO_OPERATOR: ClassVar[dict[bytes, Any]] = {
-        b"AND": operator.and_,
-        b"OR": operator.or_,
-        b"XOR": operator.xor,
+    OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
+        BitOperationMode.AND: operator.and_,
+        BitOperationMode.OR: operator.or_,
+        BitOperationMode.XOR: operator.xor,
     }
 
-    operation: bytes = redis_positional_parameter(bytes_options=[b"AND", b"OR", b"XOR", b"NOT"])
+    operation: BitOperationMode = redis_positional_parameter()
     destination_key: bytes = redis_positional_parameter()
     source_keys: list[bytes] = redis_positional_parameter()
 
@@ -80,11 +91,11 @@ class BitOperation(DatabaseCommand):
         return len(destination_s)
 
 
-@dataclass
+@bits_commands_router.command(Commands.BitCount)
 class BitCount(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     count_range: tuple[int, int] | None = redis_positional_parameter(default=None)
-    bit_mode: bool = redis_positional_parameter(default=False, bool_map={b"BYTE": False, b"BIT": True})
+    bit_mode: bool = redis_positional_parameter(default=False, values_mapping={b"BYTE": False, b"BIT": True})
 
     def handle_byte_mode(self, key: bytes, start: int, end: int):
         s = self.database.get_string(key)
@@ -139,7 +150,7 @@ def apply_increment(database: Database, key: bytes, increment: int | float = 1):
     return s.bytes_value
 
 
-@dataclass
+@bits_commands_router.command(Commands.Increment)
 class Increment(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -147,7 +158,7 @@ class Increment(DatabaseCommand):
         return apply_increment(self.database, self.key)
 
 
-@dataclass
+@bits_commands_router.command(Commands.IncrementBy)
 class IncrementBy(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     increment: int = redis_positional_parameter()
@@ -156,7 +167,7 @@ class IncrementBy(DatabaseCommand):
         return apply_increment(self.database, self.key, self.increment)
 
 
-@dataclass
+@bits_commands_router.command(Commands.IncrementByFloat)
 class IncrementByFloat(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     increment: float = redis_positional_parameter()
@@ -165,7 +176,7 @@ class IncrementByFloat(DatabaseCommand):
         return apply_increment(self.database, self.key, self.increment)
 
 
-@dataclass
+@bits_commands_router.command(Commands.Decrement)
 class Decrement(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -173,7 +184,7 @@ class Decrement(DatabaseCommand):
         return apply_increment(self.database, self.key, -1)
 
 
-@dataclass
+@bits_commands_router.command(Commands.DecrementBy)
 class DecrementBy(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     decrement: float = redis_positional_parameter()

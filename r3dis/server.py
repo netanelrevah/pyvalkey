@@ -11,8 +11,7 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 from r3dis.acl import ACL
 from r3dis.clients import Client, ClientList
 from r3dis.commands.context import ClientContext, ServerContext
-from r3dis.commands.core import CommandParser
-from r3dis.commands.router import RouteParser, create_base_router
+from r3dis.commands.routes import router
 from r3dis.configurations import Configurations
 from r3dis.databases import Database
 from r3dis.errors import (
@@ -43,8 +42,6 @@ class RedisHandler:
 
     information: Information
     databases: dict[int, Database]
-
-    commands_router: RouteParser
 
     pause_timeout: float = 0
 
@@ -90,11 +87,9 @@ class RedisConnectionHandler(StreamRequestHandler):
             information=self.server.information,
         )
 
-        self.router: CommandParser = create_base_router(
-            ClientContext(
-                self.server_context,
-                current_client=self.current_client,
-            )
+        self.client_context = ClientContext(
+            self.server_context,
+            current_client=self.current_client,
         )
 
     def dump(self, value):
@@ -126,7 +121,7 @@ class RedisConnectionHandler(StreamRequestHandler):
             print(self.current_client.client_id, command)
 
             try:
-                self.dump(self.router.parse(list(command)).execute())
+                self.dump(router.route(list(command), self.client_context).execute())
                 if self.server_context.pause_timeout:
                     while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                         time.sleep(0.1)

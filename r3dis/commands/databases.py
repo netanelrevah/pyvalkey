@@ -1,48 +1,32 @@
 import fnmatch
 from dataclasses import dataclass
-from typing import Callable
 
-from r3dis.commands.core import Command, CommandParser
+from r3dis.commands.core import Command
+from r3dis.commands.dependencies import redis_command_dependency
+from r3dis.commands.router import RedisCommandsRouter
+from r3dis.consts import Commands
 from r3dis.databases import Database
-from r3dis.errors import RedisWrongNumberOfArguments
 from r3dis.resp import RESP_OK
+
+database_commands_router = RedisCommandsRouter()
 
 
 @dataclass
 class DatabaseCommand(Command):
-    database: Database
+    database: Database = redis_command_dependency()
 
     def execute(self):
         raise NotImplementedError()
 
 
-@dataclass
-class DatabaseBytesParametersCommandParser(CommandParser):
-    database: Database
-
-    command_creator: Callable[[Database, bytes, ...], DatabaseCommand]
-
-    number_of_parameters: int = None
-
-    def parse(self, parameters: list[bytes]) -> Command:
-        if self.number_of_parameters and len(parameters) != self.number_of_parameters:
-            raise RedisWrongNumberOfArguments()
-        return self.command_creator(self.database, *parameters)
-
-
-@dataclass
-class DatabaseCommandParser(CommandParser):
-    database: Database
-
-
-@dataclass
+@database_commands_router.command(Commands.FlushDatabase)
 class FlushDatabase(DatabaseCommand):
     def execute(self):
         self.database.clear()
         return RESP_OK
 
 
-@dataclass
+@database_commands_router.command(Commands.Get)
 class Get(DatabaseCommand):
     key: bytes
 
@@ -52,7 +36,7 @@ class Get(DatabaseCommand):
         return None
 
 
-@dataclass
+@database_commands_router.command(Commands.Set)
 class Set(DatabaseCommand):
     key: bytes
     value: bytes
@@ -63,7 +47,7 @@ class Set(DatabaseCommand):
         return RESP_OK
 
 
-@dataclass
+@database_commands_router.command(Commands.Delete)
 class Delete(DatabaseCommand):
     keys: list[bytes]
 
@@ -71,7 +55,7 @@ class Delete(DatabaseCommand):
         return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
 
 
-@dataclass
+@database_commands_router.command(Commands.Keys)
 class Keys(DatabaseCommand):
     pattern: bytes
 
@@ -79,13 +63,13 @@ class Keys(DatabaseCommand):
         return list(fnmatch.filter(self.database.keys(), self.pattern))
 
 
-@dataclass
+@database_commands_router.command(Commands.DatabaseSize)
 class DatabaseSize(DatabaseCommand):
     def execute(self):
         return len(self.database.keys())
 
 
-@dataclass
+@database_commands_router.command(Commands.Append)
 class Append(DatabaseCommand):
     key: bytes
     value: bytes

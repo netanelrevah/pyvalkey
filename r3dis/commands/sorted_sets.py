@@ -2,12 +2,12 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from r3dis.commands.database_context.core import DatabaseCommand
-from r3dis.commands.parsers import (
-    redis_command,
+from r3dis.commands.databases import DatabaseCommand
+from r3dis.commands.parameters import (
     redis_keyword_parameter,
     redis_positional_parameter,
 )
+from r3dis.commands.parsers import redis_command
 from r3dis.commands.utils import parse_range_parameters
 from r3dis.databases import (
     MAX_STRING,
@@ -155,7 +155,7 @@ class SortedSetRange(DatabaseCommand):
         )
 
 
-@dataclass
+@redis_command
 class SortedSetRangeStore(DatabaseCommand):
     destination: bytes = redis_positional_parameter()
     key: bytes = redis_positional_parameter()
