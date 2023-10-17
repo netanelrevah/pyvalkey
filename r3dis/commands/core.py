@@ -1,12 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-from black.linegen import partial
 from typing_extensions import Self
 
 from r3dis.commands.context import ClientContext
 from r3dis.commands.parameters import redis_positional_parameter
-from r3dis.consts import Commands
 
 
 @dataclass
@@ -44,7 +42,3 @@ class Ping(Command):
         if self.message:
             return self.message
         return b"PONG"
-
-
-def create_smart_command_parser(router, command: Commands, command_cls: type[Command], *args, **kwargs):
-    router.routes[command] = SmartCommandParser(command_cls, partial(command_cls, *args, **kwargs))
