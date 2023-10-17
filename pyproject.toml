@@ -12,7 +12,8 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.10"
 typer = "^0.9.0"
-sortedcontainers ="^2.4.0"
+sortedcontainers = "^2.4.0"
+typing-extensions = "^4.8.0"
 
 [tool.poetry.group.dev.dependencies]
 redis = "^4.5.4"

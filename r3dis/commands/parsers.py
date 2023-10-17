@@ -1,7 +1,9 @@
 from dataclasses import Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
-from typing import Any, Self, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
+
+from typing_extensions import Self
 
 from r3dis.commands.creators import CommandCreator
 from r3dis.commands.parameters import ParameterMetadata

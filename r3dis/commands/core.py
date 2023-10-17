@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import Any, Self
 
 from black.linegen import partial
+from typing import Any
+from typing_extensions import Self
 
 from r3dis.commands.context import ClientContext
 from r3dis.commands.parameters import redis_positional_parameter
