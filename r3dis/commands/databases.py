@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from r3dis.commands.core import Command
 from r3dis.commands.dependencies import redis_command_dependency
+from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.commands.router import RedisCommandsRouter
 from r3dis.consts import Commands
 from r3dis.databases import Database
@@ -28,7 +29,7 @@ class FlushDatabase(DatabaseCommand):
 
 @database_commands_router.command(Commands.Get)
 class Get(DatabaseCommand):
-    key: bytes
+    key: bytes = redis_positional_parameter()
 
     def execute(self):
         if s := self.database.get_string_or_none(self.key):
@@ -38,8 +39,8 @@ class Get(DatabaseCommand):
 
 @database_commands_router.command(Commands.Set)
 class Set(DatabaseCommand):
-    key: bytes
-    value: bytes
+    key: bytes = redis_positional_parameter()
+    value: bytes = redis_positional_parameter()
 
     def execute(self):
         s = self.database.get_or_create_string(self.key)
@@ -49,7 +50,7 @@ class Set(DatabaseCommand):
 
 @database_commands_router.command(Commands.Delete)
 class Delete(DatabaseCommand):
-    keys: list[bytes]
+    keys: list[bytes] = redis_positional_parameter()
 
     def execute(self):
         return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
@@ -57,7 +58,7 @@ class Delete(DatabaseCommand):
 
 @database_commands_router.command(Commands.Keys)
 class Keys(DatabaseCommand):
-    pattern: bytes
+    pattern: bytes = redis_positional_parameter()
 
     def execute(self):
         return list(fnmatch.filter(self.database.keys(), self.pattern))
@@ -71,8 +72,8 @@ class DatabaseSize(DatabaseCommand):
 
 @database_commands_router.command(Commands.Append)
 class Append(DatabaseCommand):
-    key: bytes
-    value: bytes
+    key: bytes = redis_positional_parameter()
+    value: bytes = redis_positional_parameter()
 
     def execute(self):
         s = self.database.get_or_create_string(self.key)

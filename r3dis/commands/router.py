@@ -47,6 +47,6 @@ class RedisCommandsRouter:
     def child(self, command: Commands) -> "RedisCommandsRouter":
         if command not in self.routes:
             self.routes[command] = RedisCommandsRouter()
-        if not isinstance(command, RedisCommandsRouter):
+        if not isinstance(self.routes[command], RedisCommandsRouter):
             raise TypeError()
         return self.routes[command]
