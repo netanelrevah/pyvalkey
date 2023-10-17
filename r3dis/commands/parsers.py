@@ -127,23 +127,23 @@ class TupleParameterParser(ParameterParser):
     parameter_parser_tuple: tuple[ParameterParser, ...]
 
     def parse(self, parameters: list[bytes]) -> tuple:
-        tuple_parameter = ()
+        tuple_parameter = []
         for parameter_parser in self.parameter_parser_tuple:
-            tuple_parameter += (parameter_parser.parse(parameters),)
-        return tuple_parameter
+            tuple_parameter.append(parameter_parser.parse(parameters))
+        return tuple(tuple_parameter)
 
     @classmethod
     def create(cls, tuple_types) -> Self:
-        parameter_parser_tuple = ()
+        parameter_parser_tuple = []
         for arg in tuple_types:
             match arg():
                 case bytes():
-                    parameter_parser_tuple += (ParameterParser(),)
+                    parameter_parser_tuple.append(ParameterParser())
                 case int():
-                    parameter_parser_tuple += (IntParameterParser(),)
+                    parameter_parser_tuple.append(IntParameterParser())
                 case _:
                     raise TypeError()
-        return TupleParameterParser(parameter_parser_tuple)
+        return cls(tuple(parameter_parser_tuple))
 
 
 class IntParameterParser(ParameterParser):
@@ -178,7 +178,7 @@ class EnumParameterParser(ParameterParser):
 class BoolParameterParser(ParameterParser):
     DEFAULT_VALUES_MAPPING = {b"1": True, b"0": False}
 
-    values_mapping: dict[bytes:bool] = field(default_factory=lambda: BoolParameterParser.DEFAULT_VALUES_MAPPING)
+    values_mapping: dict[bytes, bool] = field(default_factory=lambda: BoolParameterParser.DEFAULT_VALUES_MAPPING)
 
     def parse(self, parameters: list[bytes]) -> bool:
         bytes_value = self.next_parameter(parameters).upper()
@@ -198,7 +198,7 @@ class OptionalParametersGroup(ParametersGroup):
     parameters_parsers_map: dict[bytes, NamedParameterParser]
 
     def parse(self, parameters: list[bytes]) -> dict[str, Any]:
-        parsed_kw_parameters = {}
+        parsed_kw_parameters: dict[str, Any] = {}
 
         while parameters:
             top_parameter = parameters[0].upper()
@@ -269,7 +269,7 @@ class ObjectParametersParser(ParametersGroup):
         if flagged_fields:
             parameters_parsers.append(OptionalParametersGroup(flagged_fields))
 
-        return ObjectParametersParser(parameters_parsers)
+        return cls(parameters_parsers)
 
 
 @dataclass

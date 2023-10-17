@@ -14,11 +14,11 @@ class Command:
 
     @staticmethod
     def parse(parameters: list[bytes]) -> dict[str, Any]:
-        pass
+        raise NotImplementedError()
 
     @classmethod
     def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
-        pass
+        raise NotImplementedError()
 
 
 class CommandParser:

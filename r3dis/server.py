@@ -125,7 +125,7 @@ class RedisConnectionHandler(StreamRequestHandler):
         print(self.current_client.client_id, "exited")
 
     def finish(self) -> None:
-        del self.clients[self.current_client.client.client_id]
+        del self.clients[self.current_client.client_id]
         super().finish()
 
 

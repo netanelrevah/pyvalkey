@@ -9,7 +9,7 @@ class Information:
     arch_bits: bytes = b"64"
     cluster_enabled: bool = False
     enterprise: bool = False
-    total_commands_processed: bytes = 0
+    total_commands_processed: int = 0
 
     def all(self):
         return b"\r\n".join(

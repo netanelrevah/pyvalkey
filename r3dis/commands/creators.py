@@ -16,11 +16,12 @@ class DependencyMetadata(Enum):
 
 @dataclass
 class CommandCreator:
-    command_creator: Callable[[...], type[Command]] | type[Command]
+    command_cls: type[Command]
+    command_creator: Callable[..., Command]
     dependencies: list[Field]
 
     def __call__(self, parameters: list[bytes], client_context: ClientContext):
-        command_kwargs = self.command_creator.parse(parameters)
+        command_kwargs = self.command_cls.parse(parameters)
 
         for command_dependency in self.dependencies:
             if command_dependency.type == Database:
@@ -48,4 +49,4 @@ class CommandCreator:
 
             command_dependencies.append(command_dependency)
 
-        return CommandCreator(command_cls, command_dependencies)
+        return CommandCreator(command_cls, command_cls, command_dependencies)

@@ -8,7 +8,7 @@ information_commands_router = RedisCommandsRouter()
 
 
 @information_commands_router.command(Commands.Information)
-class Information(Command):
+class GetInformation(Command):
     information: Information = redis_command_dependency()
 
     def execute(self):

@@ -89,7 +89,7 @@ class SetPop(DatabaseCommand):
 @set_commands_router.command(Commands.SetRemove)
 class SetRemove(DatabaseCommand):
     key: bytes = redis_positional_parameter()
-    members: set[bytes] == redis_positional_parameter()
+    members: set[bytes] = redis_positional_parameter()
 
     def execute(self):
         a_set = self.database.get_set(self.key)
@@ -98,7 +98,7 @@ class SetRemove(DatabaseCommand):
 
 
 def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: list[bytes]):
-    return list(functools.reduce(operation, map(database.get_set, keys)))
+    return list(functools.reduce(operation, map(database.get_set, keys)))  # type: ignore
 
 
 @set_commands_router.command(Commands.SetUnion)

@@ -10,11 +10,11 @@ class ParameterMetadata(Enum):
 
 
 def redis_parameter(
-    values_mapping: dict[bool:bytes] = None,
+    values_mapping: dict[bytes, Any] | None = None,
     default=MISSING,
-    flag: bytes = None,
+    flag: bytes | dict[bytes, Any] | None = None,
 ):
-    metadata = {ParameterMetadata.REDIS_PARAMETER: True}
+    metadata: dict[ParameterMetadata, Any] = {ParameterMetadata.REDIS_PARAMETER: True}
     if values_mapping:
         metadata[ParameterMetadata.VALUES_MAPPING] = values_mapping
     if flag:
@@ -31,7 +31,7 @@ def redis_parameter(
 
 
 def redis_positional_parameter(
-    values_mapping: dict[bool:bytes] = None,
+    values_mapping: dict[bytes, Any] | None = None,
     default=MISSING,
 ):
     return redis_parameter(
@@ -41,8 +41,8 @@ def redis_positional_parameter(
 
 
 def redis_keyword_parameter(
-    values_mapping: dict[bool:bytes] = None,
+    values_mapping: dict[bytes, Any] | None = None,
     default=MISSING,
-    flag: bytes | dict[bytes, Any] = None,
+    flag: bytes | dict[bytes, Any] | None = None,
 ):
     return redis_parameter(values_mapping=values_mapping, default=default, flag=flag)
