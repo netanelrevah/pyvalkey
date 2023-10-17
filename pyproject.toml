@@ -18,7 +18,7 @@ typing-extensions = "^4.8.0"
 [tool.poetry.group.dev.dependencies]
 redis = "^4.5.4"
 pytest = "^7.3.1"
-ruff = "^0.0.264"
+ruff = ">=0.0.264,<0.1.1"
 black = "^23.3.0"
 isort = "^5.12.0"
 mypy = "^1.1.1"
