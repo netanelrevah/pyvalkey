@@ -11,15 +11,18 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.10"
-typer = "^0.7.0"
+typer = "^0.9.0"
+sortedcontainers = "^2.4.0"
+typing-extensions = "^4.8.0"
 
 [tool.poetry.group.dev.dependencies]
-redis = "^4.5.1"
-pytest = "^7.2.2"
-ruff = ">=0.0.257,<0.0.259"
-black = "^23.1.0"
+redis = "^4.5.4"
+pytest = "^7.3.1"
+ruff = "^0.0.264"
+black = "^23.3.0"
 isort = "^5.12.0"
 mypy = "^1.1.1"
+pytest-parametrization = "*"
 
 [build-system]
 requires = ["poetry-core"]
@@ -36,3 +39,9 @@ profile = "black"
 line-length = 120
 
 ignore = ["E731"]
+
+[[tool.mypy.overrides]]
+module = [
+    "sortedcontainers",
+]
+ignore_missing_imports = true
