@@ -1,9 +1,9 @@
-from dataclasses import MISSING, Field, field
-from enum import StrEnum, auto
+from dataclasses import MISSING, field
+from enum import Enum, auto
 from typing import Any
 
 
-class ParameterMetadata(StrEnum):
+class ParameterMetadata(Enum):
     REDIS_PARAMETER = auto()
     VALUES_MAPPING = auto()
     FLAG = auto()
@@ -33,7 +33,7 @@ def redis_parameter(
 def redis_positional_parameter(
     values_mapping: dict[bool:bytes] = None,
     default=MISSING,
-) -> Field:
+):
     return redis_parameter(
         values_mapping=values_mapping,
         default=default,
@@ -44,5 +44,5 @@ def redis_keyword_parameter(
     values_mapping: dict[bool:bytes] = None,
     default=MISSING,
     flag: bytes | dict[bytes, Any] = None,
-) -> Field:
+):
     return redis_parameter(values_mapping=values_mapping, default=default, flag=flag)

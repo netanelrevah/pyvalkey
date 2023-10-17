@@ -1,5 +1,5 @@
 from dataclasses import Field, dataclass, fields
-from enum import StrEnum, auto
+from enum import Enum, auto
 from typing import Callable
 
 from r3dis.acl import ACL
@@ -10,7 +10,7 @@ from r3dis.databases import Database
 from r3dis.information import Information
 
 
-class DependencyMetadata(StrEnum):
+class DependencyMetadata(Enum):
     DEPENDENCY = auto()
 
 
