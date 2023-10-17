@@ -114,9 +114,9 @@ class Commands(Enum):
     zlexcount = auto()
     Acl = b"server_context"
     AclCategory = b"server_context|category"
-    AclDelUser = b"server_context|deluser"
+    AclDeleteUser = b"server_context|deluser"
     AclDryRun = b"server_context|dryrun"
-    AclGenPass = b"server_context|genpass"
+    AclGeneratePassword = b"server_context|genpass"
     AclGetUser = b"server_context|getuser"
     AclList = b"server_context|list"
     AclLoad = b"server_context|load"

@@ -1,89 +1,75 @@
-from dataclasses import dataclass
 from os import urandom
 
 from r3dis.acl import ACL
-from r3dis.commands.handlers import CommandHandler
+from r3dis.commands.core import Command
+from r3dis.commands.dependencies import redis_command_dependency
+from r3dis.commands.parameters import redis_positional_parameter
+from r3dis.commands.router import RedisCommandsRouter
 from r3dis.consts import Commands
-from r3dis.errors import RedisSyntaxError
 from r3dis.resp import RESP_OK
 
+acl_commands_router = RedisCommandsRouter()
 
-@dataclass
-class AclHelp(CommandHandler):
-    def handle(self):
+
+@acl_commands_router.command(Commands.AclHelp)
+class AclHelp(Command):
+    def execute(self):
         return ["genpass"]
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if parameters:
-            raise RedisSyntaxError()
+
+@acl_commands_router.command(Commands.AclGeneratePassword)
+class AclGeneratePassword(Command):
+    length: int = redis_positional_parameter(default=64)
+
+    def execute(self):
+        return urandom(self.length)
 
 
-@dataclass
-class AclGeneratePassword(CommandHandler):
-    def handle(self, length: int):
-        return urandom(length)
+@acl_commands_router.command(Commands.AclCategory)
+class AclCategory(Command):
+    category: bytes | None = redis_positional_parameter(default=None)
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 1:
-            raise RedisSyntaxError()
-        if len(parameters) == 1:
-            return int(parameters.pop(0))
-        return 64
-
-
-@dataclass
-class AclCategory(CommandHandler):
-    def handle(self, category: bytes | None):
-        if category is not None:
-            return ACL.get_category_commands(category)
+    def execute(self):
+        if self.category is not None:
+            return ACL.get_category_commands(self.category)
         return ACL.get_categories()
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 1:
-            raise RedisSyntaxError()
-        if len(parameters) == 1:
-            return parameters.pop(0)
-        return None
 
+@acl_commands_router.command(Commands.AclDeleteUser)
+class AclDeleteUser(Command):
+    acl: ACL = redis_command_dependency()
+    user_names: list[bytes] = redis_positional_parameter()
 
-@dataclass
-class AclDeleteUser(CommandHandler):
-    def handle(self, user_names: list[bytes]):
+    def execute(self):
         user_deleted = 0
-        for user_name in user_names:
+        for user_name in self.user_names:
             if user_name == b"default":
                 pass
             user_deleted += 1 if self.acl.pop(user_name, None) is not None else 0
         return user_deleted
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        return parameters
 
+@acl_commands_router.command(Commands.AclGetUser)
+class AclGetUser(Command):
+    acl: ACL = redis_command_dependency()
+    user_name: bytes = redis_positional_parameter()
 
-@dataclass
-class AclGetUser(CommandHandler):
-    def handle(self, user_name: bytes):
-        if user_name not in self.acl:
+    def execute(self):
+        if self.user_name not in self.acl:
             return
-        return self.acl[user_name].info
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) > 1:
-            raise RedisSyntaxError()
-        return parameters.pop(0)
+        return self.acl[self.user_name].info
 
 
-@dataclass
-class AclSetUser(CommandHandler):
-    def handle(self, user_name: bytes, rules: list[bytes]):
-        acl_user = self.acl.get_or_create_user(user_name)
+@acl_commands_router.command(Commands.AclSetUser)
+class AclSetUser(Command):
+    acl: ACL = redis_command_dependency()
+    user_name: bytes = redis_positional_parameter()
+    rules: list[bytes] = redis_positional_parameter()
 
-        for rule in rules:
+    def execute(self):
+        acl_user = self.acl.get_or_create_user(self.user_name)
+
+        for rule in self.rules:
             if rule == b"reset":
                 acl_user.reset()
                 continue
@@ -107,9 +93,3 @@ class AclSetUser(CommandHandler):
                 acl_user.add_allowed_command(command, first_parameter)
                 continue
         return RESP_OK
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        user_name = parameters.pop(0)
-
-        return user_name, parameters

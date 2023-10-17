@@ -1,9 +1,7 @@
 import itertools
 import logging
-import operator
 import time
 from collections import defaultdict
-from dataclasses import dataclass
 from io import BytesIO
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
@@ -25,25 +23,6 @@ from r3dis.information import Information
 from r3dis.resp import RESP_OK, RespError, dump, load
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class RedisHandler:
-    OPERATION_TO_OPERATOR = {
-        b"AND": operator.and_,
-        b"OR": operator.or_,
-        b"XOR": operator.xor,
-    }
-
-    client: Client
-    database: Database
-    configurations: Configurations
-    acl: ACL
-
-    information: Information
-    databases: dict[int, Database]
-
-    pause_timeout: float = 0
 
 
 class RedisConnectionHandler(StreamRequestHandler):

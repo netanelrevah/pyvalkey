@@ -5,9 +5,9 @@ from typing import Callable
 from r3dis.acl import ACL
 from r3dis.commands.context import ClientContext
 from r3dis.commands.core import Command
-from r3dis.commands.informations import Information
 from r3dis.configurations import Configurations
 from r3dis.databases import Database
+from r3dis.information import Information
 
 
 class DependencyMetadata(StrEnum):

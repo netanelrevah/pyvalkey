@@ -9,7 +9,7 @@ from r3dis.errors import RouterKeyError
 
 @dataclass
 class RedisCommandsRouter:
-    routes: dict[Commands, type[Command] | "RedisCommandsRouter"] = field(default_factory=dict)
+    routes: dict = field(default_factory=dict)
     parent_command: Commands | None = None
 
     def route(self, parameters: list[bytes], client_context: ClientContext):
@@ -44,65 +44,9 @@ class RedisCommandsRouter:
             else:
                 self.routes[command] = command_cls
 
-    def child(self, command: Commands):
+    def child(self, command: Commands) -> "RedisCommandsRouter":
         if command not in self.routes:
             self.routes[command] = RedisCommandsRouter()
+        if not isinstance(command, RedisCommandsRouter):
+            raise TypeError()
         return self.routes[command]
-
-
-# def create_base_router():
-#     router = RedisCommandsRouter()
-#
-#     fill_database_string_commands(router, client_context.database)
-#     # ACL
-#     router.routes[Commands.Acl] = create_acl_router(client_context)
-#     # Config
-#     router.routes[Commands.Config] = create_config_router(client_context)
-#     # Client
-#     router.routes[Commands.Client] = create_client_router(client_context)
-#
-#     return router
-#
-#
-# def create_acl_router(command_context: ClientContext):
-#     router = RedisCommandsRouter(command_context, parent_command=Commands.Acl)
-#     # Acl
-#     router.routes[Commands.AclCategory] = AclCategory(command_context)
-#     router.routes[Commands.AclDelUser] = AclDeleteUser(command_context)
-#     router.routes[Commands.AclDryRun] = None
-#     router.routes[Commands.AclGenPass] = AclGeneratePassword(command_context)
-#     router.routes[Commands.AclGetUser] = AclGetUser(command_context)
-#     router.routes[Commands.AclList] = None
-#     router.routes[Commands.AclLoad] = None
-#     router.routes[Commands.AclLog] = None
-#     router.routes[Commands.AclSave] = None
-#     router.routes[Commands.AclSetUser] = AclSetUser(command_context)
-#     router.routes[Commands.AclUsers] = None
-#     router.routes[Commands.AclWhoAmI] = None
-#     router.routes[Commands.AclHelp] = None
-#
-#     return router
-#
-#
-# def create_client_router(command_context: ClientContext):
-#     router = RedisCommandsRouter(command_context, parent_command=Commands.Client)
-#     # Acl
-#     router.routes[Commands.ClientSetName] = ClientSetName(command_context)
-#     router.routes[Commands.ClientPause] = ClientPause(command_context)
-#     router.routes[Commands.ClientUnpause] = ClientUnpause(command_context)
-#     router.routes[Commands.ClientReply] = ClientReply(command_context)
-#     router.routes[Commands.ClientKill] = ClientKill(command_context)
-#     router.routes[Commands.ClientGetName] = ClientGetName(command_context)
-#     router.routes[Commands.ClientId] = ClientId(command_context)
-#     router.routes[Commands.ClientList] = ClientList(command_context)
-#
-#     return router
-#
-#
-# def create_config_router(command_context: ClientContext):
-#     router = RedisCommandsRouter(command_context, parent_command=Commands.Config)
-#     # Acl
-#     router.routes[Commands.ConfigGet] = ConfigGet(command_context)
-#     router.routes[Commands.ConfigSet] = ConfigSet(command_context)
-#
-#     return router

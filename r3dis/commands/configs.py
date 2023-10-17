@@ -1,40 +1,30 @@
-from dataclasses import dataclass
-
-from r3dis.commands.handlers import CommandHandler
+from r3dis.commands.core import Command
+from r3dis.commands.dependencies import redis_command_dependency
+from r3dis.commands.parameters import redis_positional_parameter
+from r3dis.commands.router import RedisCommandsRouter
 from r3dis.configurations import Configurations
-from r3dis.errors import RedisSyntaxError, RedisWrongNumberOfArguments
+from r3dis.consts import Commands
 from r3dis.resp import RESP_OK
 
+config_commands_router = RedisCommandsRouter()
 
-@dataclass
-class ConfigGet(CommandHandler):
-    def handle(self, parameters: list[bytes]):
-        names = self.configurations.get_names(*parameters)
+
+@config_commands_router.command(Commands.ConfigGet)
+class ConfigGet(Command):
+    configurations: Configurations = redis_command_dependency()
+    parameters: list[bytes] = redis_positional_parameter()
+
+    def execute(self):
+        names = self.configurations.get_names(*self.parameters)
         return self.configurations.info(names)
 
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        return parameters
 
+@config_commands_router.command(Commands.ConfigSet)
+class ConfigSet(Command):
+    configurations: Configurations = redis_command_dependency()
+    parameters_values: list[tuple[bytes, bytes]] = redis_command_dependency()
 
-@dataclass
-class ConfigSet(CommandHandler):
-    def handle(self, parameters_dict: dict[bytes, bytes]):
-        for name, values in parameters_dict.items():
-            self.configurations.set_values(name, *values)
+    def execute(self):
+        for name, value in self.parameters_values:
+            self.configurations.set_values(name, value)
         return RESP_OK
-
-    @classmethod
-    def parse(cls, parameters: list[bytes]):
-        if len(parameters) == 0:
-            raise RedisWrongNumberOfArguments()
-
-        parameters_dict = {}
-        while parameters:
-            name = parameters.pop(0)
-            number_of_values = Configurations.get_number_of_values(name)
-            if number_of_values <= 0:
-                return RedisSyntaxError()
-            parameters_dict[name] = [parameters.pop(0) for _ in range(number_of_values)]
-
-        return parameters_dict

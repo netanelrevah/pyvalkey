@@ -13,7 +13,7 @@ def redis_parameter(
     values_mapping: dict[bool:bytes] = None,
     default=MISSING,
     flag: bytes = None,
-) -> Field:
+):
     metadata = {ParameterMetadata.REDIS_PARAMETER: True}
     if values_mapping:
         metadata[ParameterMetadata.VALUES_MAPPING] = values_mapping

@@ -1,19 +1,6 @@
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
 
 from r3dis.utils import to_bytes
-
-
-def configuration(
-    default: int | bytes, type_: Literal["string", "password", "integer"] = "string", number_of_values: int = 1
-):
-    return field(
-        default=default,
-        metadata={
-            "type": type_,
-            "number_of_values": number_of_values,
-        },
-    )
 
 
 @dataclass
