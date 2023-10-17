@@ -5,7 +5,10 @@ from enum import Enum
 from r3dis.commands.context import ClientContext
 from r3dis.commands.core import Command
 from r3dis.commands.handlers import CommandHandler
-from r3dis.commands.parameters import redis_positional_parameter, redis_keyword_parameter
+from r3dis.commands.parameters import (
+    redis_keyword_parameter,
+    redis_positional_parameter,
+)
 from r3dis.commands.router import RedisCommandsRouter
 from r3dis.consts import Commands
 from r3dis.resp import RESP_OK, RespError
