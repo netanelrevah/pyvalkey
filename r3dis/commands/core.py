@@ -1,7 +1,7 @@
 from dataclasses import dataclass
+from typing import Any
 
 from black.linegen import partial
-from typing import Any
 from typing_extensions import Self
 
 from r3dis.commands.context import ClientContext
