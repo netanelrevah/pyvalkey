@@ -13,9 +13,10 @@ from r3dis.server import RedisServer
 @yield_fixture
 def s():
     server = RedisServer(("127.0.0.1", 6379))
-    t = Thread(target=server.serve_forever, daemon=True)
+    t = Thread(target=server.serve_forever)
     t.start()
     yield t
+    server.shutdown()
 
 
 @fixture

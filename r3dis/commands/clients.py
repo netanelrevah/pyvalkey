@@ -4,6 +4,7 @@ from enum import Enum
 
 from r3dis.commands.context import ClientContext
 from r3dis.commands.core import Command
+from r3dis.commands.dependencies import redis_command_dependency
 from r3dis.commands.handlers import CommandHandler
 from r3dis.commands.parameters import (
     redis_keyword_parameter,
@@ -20,7 +21,7 @@ client_sub_commands_router = client_commands_router.child(Commands.Client)
 
 @dataclass
 class ClientCommand(Command):
-    client_context: ClientContext
+    client_context: ClientContext = redis_command_dependency()
 
     def execute(self):
         raise NotImplementedError()
@@ -119,3 +120,15 @@ class ClientReply(ClientCommand):
     def execute(self):
         if self.mode == ReplyMode.ON:
             return RESP_OK
+
+
+@client_sub_commands_router.command(Commands.ClientSetInformation)
+class ClientSetInformation(ClientCommand):
+    library_name: bytes | None = redis_keyword_parameter(flag=b"LIB-NAME", default=None)
+    library_version: bytes | None = redis_keyword_parameter(flag=b"LIB-VER", default=None)
+
+    def execute(self):
+        if self.library_name:
+            self.client_context.current_client.library_name = self.library_name
+        if self.library_version:
+            self.client_context.current_client.library_version = self.library_version
