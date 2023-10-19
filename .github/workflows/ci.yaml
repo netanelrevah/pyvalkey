@@ -23,7 +23,7 @@ jobs:
       - run: |-
           cd r3dis \
           poetry install --no-interaction --no-root \
-          poetry run r3dis & \
+          poetry run python -m r3dis & \
           cd ..
       - run: |-
           cd redis-py &&
