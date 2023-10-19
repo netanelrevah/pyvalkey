@@ -20,17 +20,13 @@ jobs:
         with:
           python-version: "3.12"
       - uses: snok/install-poetry@v1
-      - run: |-
-          cd r3dis \
-          poetry install --no-interaction --no-root \
-          poetry run python -m r3dis & \
-          cd ..
-      - run: |-
-          cd redis-py &&
-          pip install -r requirements.txt -r dev_requirements.txt &&
-          pytest -v tests/test_commands.py
-          
-
+      - run: cd r3dis
+      - run: poetry install --no-interaction --no-root
+      - run: poetry run python -m r3dis &
+      - run: cd ..
+      - run: cd redis-py
+      - run: pip install -r requirements.txt -r dev_requirements.txt
+      - run: pytest -v tests/test_commands.py &&
 
   lint-outside-of-matrix:
     runs-on: ubuntu-latest
