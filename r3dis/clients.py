@@ -17,6 +17,9 @@ class Client:
     is_killed: bool = False
     reply_mode: str = "on"
 
+    library_name: bytes = b""
+    library_version: bytes = b""
+
     @property
     def address(self) -> bytes:
         return self.host + b":" + str(self.port).encode()

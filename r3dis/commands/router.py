@@ -15,8 +15,9 @@ class RedisCommandsRouter:
     def route(self, parameters: list[bytes], client_context: ClientContext):
         command = parameters.pop(0).upper()
 
-        command_to_route = Commands(command)
-        if self.parent_command:
+        if not self.parent_command:
+            command_to_route = Commands(command)
+        else:
             command_to_route = Commands(self.parent_command.value + b"|" + command)
 
         try:
@@ -46,7 +47,7 @@ class RedisCommandsRouter:
 
     def child(self, command: Commands) -> "RedisCommandsRouter":
         if command not in self.routes:
-            self.routes[command] = RedisCommandsRouter()
+            self.routes[command] = RedisCommandsRouter(parent_command=command)
         if not isinstance(self.routes[command], RedisCommandsRouter):
             raise TypeError()
         return self.routes[command]
