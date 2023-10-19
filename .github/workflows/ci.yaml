@@ -49,8 +49,9 @@ jobs:
         run: poetry install --with dev --no-interaction --no-root
       - run: poetry check
       - run: poetry lock --check
-      - run: poetry run ruff check --format=github .
       - run: poetry run mypy r3dis
+      - uses: chartboost/ruff-action@v1
+
   lint:
     runs-on: ${{ matrix.image }}
     name: ${{ matrix.os }} / ${{ matrix.python-version }}
