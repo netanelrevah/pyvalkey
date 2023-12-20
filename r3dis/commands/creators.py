@@ -2,12 +2,12 @@ from dataclasses import Field, dataclass, fields
 from enum import Enum, auto
 from typing import Callable
 
-from r3dis.acl import ACL
 from r3dis.commands.context import ClientContext
 from r3dis.commands.core import Command
-from r3dis.configurations import Configurations
-from r3dis.databases import Database
-from r3dis.information import Information
+from r3dis.database_objects.acl import ACL
+from r3dis.database_objects.configurations import Configurations
+from r3dis.database_objects.databases import Database
+from r3dis.database_objects.information import Information
 
 
 class DependencyMetadata(Enum):

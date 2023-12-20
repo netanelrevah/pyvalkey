@@ -4,12 +4,9 @@ from r3dis.commands.databases import DatabaseCommand
 from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.commands.router import RedisCommandsRouter
 from r3dis.commands.utils import parse_range_parameters
-from r3dis.consts import Commands
-
-list_commands_router = RedisCommandsRouter()
 
 
-@list_commands_router.command(Commands.ListLength)
+@RedisCommandsRouter.command(b"llen", [b"read", b"list", b"fast"])
 class ListLength(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -17,7 +14,7 @@ class ListLength(DatabaseCommand):
         return len(self.database.get_list(self.key))
 
 
-@list_commands_router.command(Commands.ListIndex)
+@RedisCommandsRouter.command(b"lindex", [b"read", b"list", b"slow"])
 class ListIndex(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     index: int = redis_positional_parameter()
@@ -31,7 +28,7 @@ class ListIndex(DatabaseCommand):
             return None
 
 
-@list_commands_router.command(Commands.ListRange)
+@RedisCommandsRouter.command(b"lrange", [b"read", b"list", b"slow"])
 class ListRange(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     start: int = redis_positional_parameter()
@@ -46,7 +43,7 @@ class DirectionMode(Enum):
     AFTER = b"after"
 
 
-@list_commands_router.command(Commands.ListInsert)
+@RedisCommandsRouter.command(b"linsert", [b"write", b"list", b"slow"])
 class ListInsert(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     direction: DirectionMode = redis_positional_parameter()
@@ -66,7 +63,7 @@ class ListInsert(DatabaseCommand):
         return len(a_list)
 
 
-@list_commands_router.command(Commands.ListPush)
+@RedisCommandsRouter.command(b"lpush", [b"write", b"list", b"fast"])
 class ListPush(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     values: list[bytes] = redis_positional_parameter()
@@ -79,7 +76,7 @@ class ListPush(DatabaseCommand):
         return len(a_list)
 
 
-@list_commands_router.command(Commands.ListPushAtTail)
+@RedisCommandsRouter.command(b"rpush", [b"write", b"list", b"fast"])
 class ListPushAtTail(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     values: list[bytes] = redis_positional_parameter()
@@ -92,7 +89,7 @@ class ListPushAtTail(DatabaseCommand):
         return len(a_list)
 
 
-@list_commands_router.command(Commands.ListPop)
+@RedisCommandsRouter.command(b"lpop", [b"write", b"list", b"fast"])
 class ListPop(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     count: int = redis_positional_parameter(default=None)
@@ -107,7 +104,7 @@ class ListPop(DatabaseCommand):
         return a_list.pop(0)
 
 
-@list_commands_router.command(Commands.ListRemove)
+@RedisCommandsRouter.command(b"lrem", [b"write", b"list", b"slow"])
 class ListRemove(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     count: int = redis_positional_parameter()

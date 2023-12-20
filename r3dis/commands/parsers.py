@@ -1,4 +1,4 @@
-from dataclasses import Field, dataclass, field, fields, is_dataclass
+from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
@@ -7,7 +7,11 @@ from typing_extensions import Self
 
 from r3dis.commands.creators import CommandCreator
 from r3dis.commands.parameters import ParameterMetadata
-from r3dis.errors import RedisException, RedisSyntaxError, RedisWrongNumberOfArguments
+from r3dis.database_objects.errors import (
+    RedisException,
+    RedisSyntaxError,
+    RedisWrongNumberOfArguments,
+)
 
 
 class ParameterParser:
@@ -220,7 +224,10 @@ class ObjectParametersParser(ParametersGroup):
     def parse(self, parameters: list[bytes]) -> Any:
         parsed_parameters: dict[str, Any] = {}
 
-        for parameter_parser in self.parameters_parsers:
+        for index, parameter_parser in enumerate(self.parameters_parsers):
+            if len(parameters) <= (len(self.parameters_parsers) - index - 1):
+                continue
+
             if isinstance(parameter_parser, NamedParameterParser):
                 parsed_parameters[parameter_parser.name] = parameter_parser.parse(parameters)
             else:
@@ -288,6 +295,8 @@ class ObjectParser(ParametersGroup):
 def _redis_command_wrapper(command_cls):
     original_order = []
 
+    annotations = getattr(command_cls, "__annotations__", {})
+
     for name in list(command_cls.__dict__.keys()):
         value = getattr(command_cls, name)
 
@@ -299,8 +308,13 @@ def _redis_command_wrapper(command_cls):
 
         original_order.append(name)
 
-        if not value.kw_only:
+        if not value.kw_only and value.default == MISSING:
             continue
+
+        if name in annotations:
+            annotation = annotations[name]
+            del annotations[name]
+            annotations[name] = annotation
 
         delattr(command_cls, name)
         setattr(command_cls, name, value)

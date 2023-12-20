@@ -1,13 +1,10 @@
 from r3dis.commands.core import Command
 from r3dis.commands.dependencies import redis_command_dependency
 from r3dis.commands.router import RedisCommandsRouter
-from r3dis.consts import Commands
-from r3dis.information import Information
-
-information_commands_router = RedisCommandsRouter()
+from r3dis.database_objects.information import Information
 
 
-@information_commands_router.command(Commands.Information)
+@RedisCommandsRouter.command(b"info", [b"slow", b"dangerous"])
 class GetInformation(Command):
     information: Information = redis_command_dependency()
 

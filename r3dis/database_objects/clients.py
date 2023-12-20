@@ -1,7 +1,7 @@
 import itertools
 from dataclasses import dataclass
 
-from r3dis.utils import to_bytes
+from r3dis.database_objects.utils import to_bytes
 
 
 @dataclass

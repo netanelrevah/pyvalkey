@@ -1,12 +1,9 @@
 from r3dis.commands.databases import DatabaseCommand
 from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.commands.router import RedisCommandsRouter
-from r3dis.consts import Commands
-from r3dis.databases import Database
-from r3dis.errors import RedisInvalidIntegerError
+from r3dis.database_objects.databases import Database
+from r3dis.database_objects.errors import RedisInvalidIntegerError
 from r3dis.resp import RESP_OK
-
-hash_map_commands_router = RedisCommandsRouter()
 
 
 def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, increment: int | float):
@@ -20,7 +17,7 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
     return hash_get[field]
 
 
-@hash_map_commands_router.command(Commands.HashMapIncreaseBy)
+@RedisCommandsRouter.command(b"hincrby", [b"write", b"hash", b"fast"])
 class HashMapIncreaseBy(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     field: bytes = redis_positional_parameter()
@@ -30,7 +27,7 @@ class HashMapIncreaseBy(DatabaseCommand):
         return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
 
 
-@hash_map_commands_router.command(Commands.HashMapIncreaseByFloat)
+@RedisCommandsRouter.command(b"hincrbyfloat", [b"write", b"hash", b"fast"])
 class HashMapIncreaseByFloat(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     field: bytes = redis_positional_parameter()
@@ -40,7 +37,7 @@ class HashMapIncreaseByFloat(DatabaseCommand):
         return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
 
 
-@hash_map_commands_router.command(Commands.HashMapExists)
+@RedisCommandsRouter.command(b"hexists", [b"read", b"hash", b"fast"])
 class HashMapExists(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     field: bytes = redis_positional_parameter()
@@ -49,7 +46,7 @@ class HashMapExists(DatabaseCommand):
         return self.field in self.database.get_hash_table(self.key)
 
 
-@hash_map_commands_router.command(Commands.HashMapGet)
+@RedisCommandsRouter.command(b"hget", [b"read", b"hash", b"fast"])
 class HashMapGet(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     field: bytes = redis_positional_parameter()
@@ -58,7 +55,7 @@ class HashMapGet(DatabaseCommand):
         return self.database.get_hash_table(self.key).get(self.field)
 
 
-@hash_map_commands_router.command(Commands.HashMapGetMultiple)
+@RedisCommandsRouter.command(b"hmget", [b"read", b"hash", b"fast"])
 class HashMapGetMultiple(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     fields: list[bytes] = redis_positional_parameter()
@@ -68,7 +65,7 @@ class HashMapGetMultiple(DatabaseCommand):
         return [hash_map.get(f, None) for f in self.fields]
 
 
-@hash_map_commands_router.command(Commands.HashMapGetAll)
+@RedisCommandsRouter.command(b"hgetall", [b"read", b"hash", b"slow"])
 class HashMapGetAll(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -81,7 +78,7 @@ class HashMapGetAll(DatabaseCommand):
         return response
 
 
-@hash_map_commands_router.command(Commands.HashMapKeys)
+@RedisCommandsRouter.command(b"hkeys", [b"read", b"hash", b"slow"])
 class HashMapKeys(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -89,7 +86,7 @@ class HashMapKeys(DatabaseCommand):
         return list(self.database.get_hash_table(self.key).keys())
 
 
-@hash_map_commands_router.command(Commands.HashMapLength)
+@RedisCommandsRouter.command(b"hlen", [b"read", b"hash", b"fast"])
 class HashMapLength(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -97,7 +94,7 @@ class HashMapLength(DatabaseCommand):
         return len(self.database.get_hash_table(self.key))
 
 
-@hash_map_commands_router.command(Commands.HashMapValues)
+@RedisCommandsRouter.command(b"hvals", [b"read", b"hash", b"slow"])
 class HashMapValues(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -105,7 +102,7 @@ class HashMapValues(DatabaseCommand):
         return list(self.database.get_hash_table(self.key).values())
 
 
-@hash_map_commands_router.command(Commands.HashMapStringLength)
+@RedisCommandsRouter.command(b"hstrlen", [b"read", b"hash", b"fast"])
 class HashMapStringLength(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     field: bytes = redis_positional_parameter()
@@ -114,7 +111,7 @@ class HashMapStringLength(DatabaseCommand):
         return len(self.database.get_hash_table(self.key).get(self.field, b""))
 
 
-@hash_map_commands_router.command(Commands.HashMapDelete)
+@RedisCommandsRouter.command(b"hdel", [b"write", b"hash", b"fast"])
 class HashMapDelete(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     fields: list[bytes] = redis_positional_parameter()
@@ -125,7 +122,7 @@ class HashMapDelete(DatabaseCommand):
         return sum([1 if hash_map.pop(f, None) is not None else 0 for f in self.fields])
 
 
-@hash_map_commands_router.command(Commands.HashMapSet)
+@RedisCommandsRouter.command(b"hset", [b"write", b"hash", b"fast"])
 class HashMapSet(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = redis_positional_parameter()
@@ -141,7 +138,7 @@ class HashMapSet(DatabaseCommand):
         return added_fields
 
 
-@hash_map_commands_router.command(Commands.HashMapSetMultiple)
+@RedisCommandsRouter.command(b"hmset", [b"write", b"hash", b"fast"])
 class HashMapSetMultiple(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = redis_positional_parameter()

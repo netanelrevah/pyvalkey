@@ -6,14 +6,11 @@ from typing import Any, ClassVar
 from r3dis.commands.databases import DatabaseCommand
 from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.commands.router import RedisCommandsRouter
-from r3dis.consts import Commands
-from r3dis.databases import Database
-from r3dis.errors import RedisException
-
-bits_commands_router = RedisCommandsRouter()
+from r3dis.database_objects.databases import Database
+from r3dis.database_objects.errors import RedisException
 
 
-@bits_commands_router.command(Commands.GetBit)
+@RedisCommandsRouter.command(b"getbit", [b"read", b"bitmap", b"fast"])
 class GetBit(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     offset: int = redis_positional_parameter()
@@ -27,7 +24,7 @@ class GetBit(DatabaseCommand):
         return (s.bytes_value[bytes_offset] >> byte_offset) & 1
 
 
-@bits_commands_router.command(Commands.SetBit)
+@RedisCommandsRouter.command(b"setbit", [b"write", b"bitmap", b"slow"])
 class SetBit(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     offset: int = redis_positional_parameter()
@@ -61,7 +58,7 @@ class BitOperationMode(Enum):
     NOT = b"NOT"
 
 
-@bits_commands_router.command(Commands.BitOperation)
+@RedisCommandsRouter.command(b"bitop", [b"write", b"bitmap", b"slow"])
 class BitOperation(DatabaseCommand):
     OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
         BitOperationMode.AND: operator.and_,
@@ -91,7 +88,7 @@ class BitOperation(DatabaseCommand):
         return len(destination_s)
 
 
-@bits_commands_router.command(Commands.BitCount)
+@RedisCommandsRouter.command(b"bitcount", [b"read", b"bitmap", b"slow"])
 class BitCount(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     count_range: tuple[int, int] | None = redis_positional_parameter(default=None)
@@ -150,7 +147,7 @@ def apply_increment(database: Database, key: bytes, increment: int | float = 1):
     return s.bytes_value
 
 
-@bits_commands_router.command(Commands.Increment)
+@RedisCommandsRouter.command(b"incr", [b"write", b"string", b"fast"])
 class Increment(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -158,7 +155,7 @@ class Increment(DatabaseCommand):
         return apply_increment(self.database, self.key)
 
 
-@bits_commands_router.command(Commands.IncrementBy)
+@RedisCommandsRouter.command(b"incrby", [b"write", b"string", b"fast"])
 class IncrementBy(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     increment: int = redis_positional_parameter()
@@ -167,7 +164,7 @@ class IncrementBy(DatabaseCommand):
         return apply_increment(self.database, self.key, self.increment)
 
 
-@bits_commands_router.command(Commands.IncrementByFloat)
+@RedisCommandsRouter.command(b"incrbyfloat", [b"write", b"string", b"fast"])
 class IncrementByFloat(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     increment: float = redis_positional_parameter()
@@ -176,7 +173,7 @@ class IncrementByFloat(DatabaseCommand):
         return apply_increment(self.database, self.key, self.increment)
 
 
-@bits_commands_router.command(Commands.Decrement)
+@RedisCommandsRouter.command(b"decr", [b"write", b"string", b"fast"])
 class Decrement(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -184,7 +181,7 @@ class Decrement(DatabaseCommand):
         return apply_increment(self.database, self.key, -1)
 
 
-@bits_commands_router.command(Commands.DecrementBy)
+@RedisCommandsRouter.command(b"decrby", [b"write", b"string", b"fast"])
 class DecrementBy(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     decrement: float = redis_positional_parameter()

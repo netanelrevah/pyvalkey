@@ -7,7 +7,7 @@ from r3dis.commands.core import Command
 from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.commands.parsers import redis_command
 from r3dis.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from r3dis.errors import RedisSyntaxError, RedisWrongNumberOfArguments
+from r3dis.database_objects.errors import RedisSyntaxError, RedisWrongNumberOfArguments
 
 
 @redis_command()

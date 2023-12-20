@@ -3,7 +3,7 @@ from dataclasses import Field, dataclass, field, fields
 from hashlib import sha256
 from typing import Literal
 
-from r3dis.utils import to_bytes
+from r3dis.database_objects.utils import to_bytes
 
 
 def configuration(

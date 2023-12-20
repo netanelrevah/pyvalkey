@@ -1,11 +1,11 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from r3dis.acl import ACL
-from r3dis.clients import Client, ClientList
-from r3dis.configurations import Configurations
-from r3dis.databases import Database
-from r3dis.information import Information
+from r3dis.database_objects.acl import ACL
+from r3dis.database_objects.clients import Client, ClientList
+from r3dis.database_objects.configurations import Configurations
+from r3dis.database_objects.databases import Database
+from r3dis.database_objects.information import Information
 
 
 @dataclass

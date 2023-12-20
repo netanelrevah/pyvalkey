@@ -5,11 +5,8 @@ from r3dis.commands.core import Command
 from r3dis.commands.dependencies import redis_command_dependency
 from r3dis.commands.parameters import redis_positional_parameter
 from r3dis.commands.router import RedisCommandsRouter
-from r3dis.consts import Commands
-from r3dis.databases import Database
+from r3dis.database_objects.databases import Database
 from r3dis.resp import RESP_OK
-
-database_commands_router = RedisCommandsRouter()
 
 
 @dataclass
@@ -20,14 +17,32 @@ class DatabaseCommand(Command):
         raise NotImplementedError()
 
 
-@database_commands_router.command(Commands.FlushDatabase)
+@RedisCommandsRouter.command(b"echo", [b"fast", b"connection"])
+class Echo(Command):
+    message: bytes = redis_positional_parameter()
+
+    def execute(self):
+        return self.message
+
+
+@RedisCommandsRouter.command(b"ping", [b"fast", b"connection"])
+class Ping(Command):
+    message: bytes = redis_positional_parameter(default=None)
+
+    def execute(self):
+        if self.message:
+            return self.message
+        return b"PONG"
+
+
+@RedisCommandsRouter.command(b"flushdb", [b"keyspace", b"write", b"slow", b"dangerous"])
 class FlushDatabase(DatabaseCommand):
     def execute(self):
         self.database.clear()
         return RESP_OK
 
 
-@database_commands_router.command(Commands.Get)
+@RedisCommandsRouter.command(b"get", [b"read", b"string", b"fast"])
 class Get(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 
@@ -37,7 +52,7 @@ class Get(DatabaseCommand):
         return None
 
 
-@database_commands_router.command(Commands.Set)
+@RedisCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
 class Set(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     value: bytes = redis_positional_parameter()
@@ -48,7 +63,7 @@ class Set(DatabaseCommand):
         return RESP_OK
 
 
-@database_commands_router.command(Commands.Delete)
+@RedisCommandsRouter.command(b"del", [b"keyspace", b"write", b"slow"])
 class Delete(DatabaseCommand):
     keys: list[bytes] = redis_positional_parameter()
 
@@ -56,7 +71,7 @@ class Delete(DatabaseCommand):
         return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
 
 
-@database_commands_router.command(Commands.Keys)
+@RedisCommandsRouter.command(b"keys", [b"keyspace", b"read", b"slow", b"dangerous"])
 class Keys(DatabaseCommand):
     pattern: bytes = redis_positional_parameter()
 
@@ -64,13 +79,13 @@ class Keys(DatabaseCommand):
         return list(fnmatch.filter(self.database.keys(), self.pattern))
 
 
-@database_commands_router.command(Commands.DatabaseSize)
+@RedisCommandsRouter.command(b"dbsize", [b"keyspace", b"read", b"fast"])
 class DatabaseSize(DatabaseCommand):
     def execute(self):
         return len(self.database.keys())
 
 
-@database_commands_router.command(Commands.Append)
+@RedisCommandsRouter.command(b"append", [b"write", b"string", b"fast"])
 class Append(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     value: bytes = redis_positional_parameter()

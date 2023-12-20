@@ -6,7 +6,7 @@ from parametrization import Parametrization
 from pytest import fixture
 
 from r3dis.commands.utils import parse_range_parameters
-from r3dis.databases import MAX_STRING
+from r3dis.database_objects.databases import MAX_STRING
 from r3dis.server import RedisServer
 
 

@@ -8,16 +8,13 @@ from r3dis.commands.parameters import (
 )
 from r3dis.commands.router import RedisCommandsRouter
 from r3dis.commands.utils import parse_range_parameters
-from r3dis.consts import Commands
-from r3dis.databases import (
+from r3dis.database_objects.databases import (
     MAX_STRING,
     Database,
     RangeLimit,
     RedisMaxString,
     RedisSortedSet,
 )
-
-sorted_set_commands_router = RedisCommandsRouter()
 
 
 def parse_score_parameter(score: bytes) -> tuple[bytes | RedisMaxString | float, bool]:
@@ -111,7 +108,7 @@ class ScoreUpdateMode(Enum):
     GREATER_THAN = b"GT"
 
 
-@sorted_set_commands_router.command(Commands.SortedSetAdd)
+@RedisCommandsRouter.command(b"zadd", [b"write", b"sortedset", b"fast"])
 class SortedSetAdd(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     add_mode: AddMode = redis_keyword_parameter(
@@ -132,7 +129,7 @@ class SortedSetAdd(DatabaseCommand):
         return len(z) - length_before
 
 
-@sorted_set_commands_router.command(Commands.SortedSetRange)
+@RedisCommandsRouter.command(b"zrange", [b"read", b"sortedset", b"slow"])
 class SortedSetRange(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     start: bytes = redis_positional_parameter()
@@ -157,7 +154,7 @@ class SortedSetRange(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetRangeStore)
+@RedisCommandsRouter.command(b"zrangestore", [b"write", b"sortedset", b"slow"])
 class SortedSetRangeStore(DatabaseCommand):
     destination: bytes = redis_positional_parameter()
     key: bytes = redis_positional_parameter()
@@ -184,7 +181,7 @@ class SortedSetRangeStore(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetReversedRange)
+@RedisCommandsRouter.command(b"zrevrange", [b"read", b"sortedset", b"slow"])
 class SortedSetReversedRange(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     start: bytes = redis_positional_parameter()
@@ -201,7 +198,7 @@ class SortedSetReversedRange(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetRangeByScore)
+@RedisCommandsRouter.command(b"zrangebyscore", [b"read", b"sortedset", b"slow"])
 class SortedSetRangeByScore(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     min: bytes = redis_positional_parameter()
@@ -221,7 +218,7 @@ class SortedSetRangeByScore(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetReversedRangeByScore)
+@RedisCommandsRouter.command(b"zrevrangebyscore", [b"read", b"sortedset", b"slow"])
 class SortedSetReversedRangeByScore(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     max: bytes = redis_positional_parameter()
@@ -242,7 +239,7 @@ class SortedSetReversedRangeByScore(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetRangeByLexical)
+@RedisCommandsRouter.command(b"zrangebylex", [b"read", b"sortedset", b"slow"])
 class SortedSetRangeByLexical(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     min: bytes = redis_positional_parameter()
@@ -260,7 +257,7 @@ class SortedSetRangeByLexical(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetReversedRangeByLexical)
+@RedisCommandsRouter.command(b"zrevrangebylex", [b"read", b"sortedset", b"slow"])
 class SortedSetReversedRangeByLexical(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     max: bytes = redis_positional_parameter()
@@ -279,7 +276,7 @@ class SortedSetReversedRangeByLexical(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetCount)
+@RedisCommandsRouter.command(b"zcount", [b"read", b"sortedset", b"fast"])
 class SortedSetCount(DatabaseCommand):
     key: bytes = redis_positional_parameter()
     min: bytes = redis_positional_parameter()
@@ -298,7 +295,7 @@ class SortedSetCount(DatabaseCommand):
         )
 
 
-@sorted_set_commands_router.command(Commands.SortedSetCardinality)
+@RedisCommandsRouter.command(b"zcard", [b"read", b"sortedset", b"fast"])
 class SortedSetCardinality(DatabaseCommand):
     key: bytes = redis_positional_parameter()
 

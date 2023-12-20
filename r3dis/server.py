@@ -6,20 +6,20 @@ from io import BytesIO
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 
-from r3dis.acl import ACL
-from r3dis.clients import Client, ClientList
 from r3dis.commands.context import ClientContext, ServerContext
-from r3dis.commands.routes import router
-from r3dis.configurations import Configurations
-from r3dis.databases import Database
-from r3dis.errors import (
+from r3dis.commands.router import RedisCommandsRouter
+from r3dis.database_objects.acl import ACL
+from r3dis.database_objects.clients import Client, ClientList
+from r3dis.database_objects.configurations import Configurations
+from r3dis.database_objects.databases import Database
+from r3dis.database_objects.errors import (
     RedisException,
     RedisInvalidIntegerError,
     RedisSyntaxError,
     RedisWrongType,
     RouterKeyError,
 )
-from r3dis.information import Information
+from r3dis.database_objects.information import Information
 from r3dis.resp import RESP_OK, RespError, dump, load
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,8 @@ class RedisConnectionHandler(StreamRequestHandler):
             current_client=self.current_client,
         )
 
+        self.router = RedisCommandsRouter()
+
     def dump(self, value):
         dumped = BytesIO()
         dump(value, dumped)
@@ -100,7 +102,7 @@ class RedisConnectionHandler(StreamRequestHandler):
             print(self.current_client.client_id, command)
 
             try:
-                self.dump(router.route(list(command), self.client_context).execute())
+                self.dump(self.router.route(list(command), self.client_context).execute())
                 if self.server_context.pause_timeout:
                     while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                         time.sleep(0.1)
