@@ -17,7 +17,7 @@ typing-extensions = "^4.8.0"
 
 [tool.poetry.group.dev.dependencies]
 redis = "^5.0.0"
-pytest = "^7.3.1"
+pytest = ">=7.3.1,<9.0.0"
 ruff = "^0.1.0"
 mypy = "^1.6.0"
 pytest-parametrization = "*"
