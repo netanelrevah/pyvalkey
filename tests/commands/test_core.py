@@ -3,30 +3,30 @@ from typing import Any
 import pytest
 from parametrization import Parametrization
 
-from r3dis.commands.core import Command
-from r3dis.commands.parameters import redis_positional_parameter
-from r3dis.commands.parsers import redis_command
-from r3dis.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from r3dis.database_objects.errors import RedisSyntaxError, RedisWrongNumberOfArguments
+from pyvalkey.commands.core import Command
+from pyvalkey.commands.parameters import positional_parameter
+from pyvalkey.commands.parsers import server_command
+from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
+from pyvalkey.database_objects.errors import ServerSyntaxError, ServerWrongNumberOfArguments
 
 
-@redis_command()
+@server_command()
 class BytesCommand(Command):
-    a: bytes = redis_positional_parameter()
-    b: bytes = redis_positional_parameter()
+    a: bytes = positional_parameter()
+    b: bytes = positional_parameter()
 
 
-@redis_command()
+@server_command()
 class ByteIntCommand(Command):
-    a: bytes = redis_positional_parameter()
-    c: bool = redis_positional_parameter()
-    b: int = redis_positional_parameter()
+    a: bytes = positional_parameter()
+    c: bool = positional_parameter()
+    b: int = positional_parameter()
 
 
-@redis_command()
+@server_command()
 class ListCommand(Command):
-    a: bytes = redis_positional_parameter()
-    d: list[int] = redis_positional_parameter()
+    a: bytes = positional_parameter()
+    d: list[int] = positional_parameter()
 
 
 @Parametrization.autodetect_parameters()
@@ -81,19 +81,19 @@ def test_parser__successful(parameters, command_cls: Command, expected_kwargs: d
 @Parametrization.case(
     name="",
     parameters=[b"a", b"a", b"2"],
-    expected_exception=RedisSyntaxError,
+    expected_exception=ServerSyntaxError,
     command_cls=ByteIntCommand,
 )
 @Parametrization.case(
     name="",
     parameters=[b"a", b"1"],
-    expected_exception=RedisWrongNumberOfArguments,
+    expected_exception=ServerWrongNumberOfArguments,
     command_cls=ByteIntCommand,
 )
 @Parametrization.case(
     name="",
     parameters=b"myzset NX XX 2 two 3 three".split(),
-    expected_exception=RedisSyntaxError,
+    expected_exception=ServerSyntaxError,
     command_cls=SortedSetAdd,
 )
 def test_parser__failure(parameters, expected_exception, command_cls: Command):

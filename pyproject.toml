@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "r3dis"
+name = "pyvalkey"
 version = "0.0.4"
-description = "r3dis: Python implemented Redis server"
+description = "pyvalkey: Python implemented Valkey server"
 authors = ["Netanel Revah <netanelrevah@outlook.com>"]
 license = "MIT License"
 readme = "README.md"
 packages = [
-    { include = "r3dis" },
+    { include = "valkey" },
 ]
 
 [tool.poetry.dependencies]

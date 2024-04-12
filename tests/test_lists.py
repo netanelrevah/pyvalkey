@@ -1,6 +1,6 @@
 from unittest.mock import Mock, call
 
-from r3dis.commands.lists import ListLength
+from pyvalkey.commands.lists import ListLength
 
 
 class TestListLength:

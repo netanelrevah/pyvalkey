@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: r3dis
+          path: pyvalkey
       - uses: actions/checkout@v4
         with:
           repository: redis/redis-py
@@ -20,10 +20,10 @@ jobs:
         with:
           python-version: "3.12"
       - uses: snok/install-poetry@v1
-      - working-directory: ./r3dis
+      - working-directory: ./pyvalkey
         run: poetry install --no-interaction --no-root
-      - working-directory: ./r3dis
-        run: poetry run python -m r3dis &
+      - working-directory: ./pyvalkey
+        run: poetry run python -m pyvalkey &
       - working-directory: ./redis-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./redis-py
@@ -49,7 +49,7 @@ jobs:
         run: poetry install --with dev --no-interaction --no-root
       - run: poetry check
       - run: poetry lock --check
-      - run: poetry run mypy r3dis
+      - run: poetry run mypy pyvalkey
       - run: poetry run ruff check --output-format=github .
       - run: poetry run ruff format --check
 
