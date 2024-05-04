@@ -1,4 +1,4 @@
-# r3dis: Python implemented Valkey server
+# pyvalkey: Python implemented Valkey server
 
 [![PyPI version](https://img.shields.io/pypi/v/r3dis.svg)](https://pypi.python.org/pypi/r3dis/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/r3dis.svg)](https://pypi.python.org/pypi/r3dis/)
