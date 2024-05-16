@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from black.trans import defaultdict
+from collections import defaultdict
 
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command

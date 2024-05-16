@@ -6,7 +6,7 @@ authors = ["Netanel Revah <netanelrevah@outlook.com>"]
 license = "MIT License"
 readme = "README.md"
 packages = [
-    { include = "valkey" },
+    { include = "pyvalkey" },
 ]
 
 [tool.poetry.dependencies]
