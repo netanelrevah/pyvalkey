@@ -8,7 +8,7 @@
 Tired of DevOps telling you not deploy Valkey on your system?
 Stuck in python environment but still want simple data structure store to sync between you threads?
 
-r3dis is a pure python implementation of the popular data store. it's create tcp server that support resp protocol and can be used as regular server.
+pyvalkey is a pure python implementation of the popular data store. it's create tcp server that support RESP protocol and can be used as regular server.
 
 to install, run:
 ```shell
