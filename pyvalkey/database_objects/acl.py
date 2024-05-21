@@ -45,15 +45,12 @@ class CommandRule:
     is_category: bool
 
     def check(self, command_name: bytes):
-        print(f"checking rule {self.to_bytes()} for command {command_name}")
         if self.is_category:
-            print(f"rule for command {command_name} is category rule")
             if self.allowed:
                 return self.rule == b"all" or check_command_by_category(command_name, self.rule)
             else:
                 return self.rule != b"all" and check_command_by_category(command_name, self.rule)
         if command_name == self.rule:
-            print(f"rule for command {command_name} is command rule")
             return self.allowed
         return not self.allowed
 
@@ -72,17 +69,13 @@ class Permission:
     channel_rules: set[bytes] = field(default_factory=set)
 
     def check_keys_patterns(self, key: bytes, key_mode: bytes):
-        print(f"checking keys patterns of {key} for key_mode {key_mode}")
         for key_pattern in self.keys_patterns:
             if key_pattern.check(key, key_mode):
-                print(f"patterns of {key} for key mode {key_mode} allowed")
                 return True
-        print(f"patterns of {key} for key mode {key_mode} denied")
         return False
 
     def check_permissions(self, command: Command):
         command_name = ACL.COMMANDS_NAMES[command.__class__]
-        print(f"check permission {self.info()} for command {command_name}")
 
         is_fields_allowed = {}
         for command_field in fields(command):
@@ -94,21 +87,19 @@ class Permission:
             if self.check_keys_patterns(getattr(command, command_field.name), key_mode):
                 is_fields_allowed[command_field.name] = True
         key_allowed = not self.keys_patterns or not is_fields_allowed or any(is_fields_allowed.values())
-        print(f"-for command {command_name} key permission: {key_allowed}")
 
         results = []
         for command_rule in self.command_rules:
             results.append(command_rule.check(command_name))
             print(f"for command rule {command_rule.to_bytes()} permission is {results[-1]}")
         command_allowed = (results[0] and all(results)) or (not results[0] and any(results))
-        print(f"-for command {command_name} command permission: {command_allowed}")
 
         if not command_allowed:
             raise CommandPermissionError(command_name)
         if not key_allowed:
             raise KeyPermissionError()
 
-    def info(self) -> bytes:
+    def info(self) -> dict[bytes, bytes]:
         return {
             b"commands": b" ".join(map(CommandRule.to_bytes, self.command_rules)),
             b"keys": b" ".join(map(KeyPattern.to_bytes, self.keys_patterns)),
@@ -159,10 +150,7 @@ class ACLUser:
         self.is_no_password_user = True
         self.passwords = set()
 
-    def add_category_rule(self, rule: bytes):
-        self.category_rules.add(rule)
-
-    def check_permissions(self, command: list[bytes]):
+    def check_permissions(self, command: Command):
         exception = None
         for selector in [self.root_permissions] + self.selectors:
             try:
@@ -171,13 +159,14 @@ class ACLUser:
             except NoPermissionError as e:
                 if exception is None or isinstance(e, KeyPermissionError):
                     exception = e
-        raise exception
+        if exception:
+            raise exception
 
 
 class ACL(dict[bytes, ACLUser]):
     CATEGORIES: dict[bytes, set[bytes]] = defaultdict(set)
-    COMMANDS_NAMES: dict[bytes, Command] = {}
-    COMMAND_CATEGORIES: dict[Command, set] = {}
+    COMMANDS_NAMES: dict[type[Command], bytes] = {}
+    COMMAND_CATEGORIES: dict[bytes, set] = {}
 
     def get_or_create_user(self, user_name: bytes) -> ACLUser:
         if user_name not in self:

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any
 
 from typing_extensions import Self
@@ -5,6 +6,7 @@ from typing_extensions import Self
 from pyvalkey.commands.context import ClientContext
 
 
+@dataclass
 class Command:
     def execute(self):
         raise NotImplementedError()
