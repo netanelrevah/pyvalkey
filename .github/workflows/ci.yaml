@@ -49,7 +49,7 @@ jobs:
       - run: poetry lock --check
       - run: poetry run mypy pyvalkey
       - run: poetry run ruff check --output-format=github .
-      - run: poetry run ruff format --check --output-format=github .
+      - run: poetry run ruff format --check .
 
   lint:
     runs-on: ${{ matrix.image }}
