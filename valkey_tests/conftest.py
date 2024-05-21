@@ -4,5 +4,5 @@ def pytest_addoption(parser):
 
 def pytest_generate_tests(metafunc):
     option_value = metafunc.config.option.external
-    if 'external' in metafunc.fixturenames and option_value is not None:
+    if "external" in metafunc.fixturenames and option_value is not None:
         metafunc.parametrize("external", [option_value])

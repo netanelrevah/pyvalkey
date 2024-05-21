@@ -36,7 +36,7 @@ testpaths = "tests valkey_tests"
 [tool.ruff]
 line-length = 120
 
-ignore = ["E731"]
+lint.ignore = ["E731"]
 
 [[tool.mypy.overrides]]
 module = [
