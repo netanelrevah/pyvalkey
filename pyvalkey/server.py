@@ -150,7 +150,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
 
 class ValkeyServer(ThreadingTCPServer):
-    def __init__(self, server_address, bind_and_activate=True):
+    def __init__(self, server_address: tuple[str, int], bind_and_activate:bool=True):
         super().__init__(server_address, ServerConnectionHandler, bind_and_activate)
         self.databases: defaultdict[int, Database] = defaultdict(Database, {0: Database()})
         self.acl: ACL = ACL.create()
