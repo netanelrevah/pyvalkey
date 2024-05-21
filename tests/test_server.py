@@ -1,7 +1,6 @@
 from threading import Thread
 
 import redis
-from _pytest.fixtures import yield_fixture
 from parametrization import Parametrization
 from pytest import fixture
 
@@ -10,7 +9,7 @@ from pyvalkey.database_objects.databases import MAX_STRING
 from pyvalkey.server import ValkeyServer
 
 
-@yield_fixture
+@fixture
 def s():
     server = ValkeyServer(("127.0.0.1", 6379))
     t = Thread(target=server.serve_forever)

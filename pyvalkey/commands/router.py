@@ -1,13 +1,16 @@
-from dataclasses import dataclass
-from typing import ClassVar
+from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar
 
-from pyvalkey.commands.context import ClientContext
-from pyvalkey.commands.core import Command
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
+
+if TYPE_CHECKING:
+    from pyvalkey.commands.context import ClientContext
+    from pyvalkey.commands.core import Command
 
 
 @dataclass
@@ -27,7 +30,7 @@ class ServerCommandsRouter:
 
         return routed_command
 
-    def route(self, parameters: list[bytes], client_context: ClientContext):
+    def route(self, parameters: list[bytes], client_context: ClientContext) -> Command:
         routed_command: Command = self.internal_route(parameters, self.ROUTES)
 
         return routed_command.create(parameters, client_context)
@@ -40,8 +43,13 @@ class ServerCommandsRouter:
             if not acl_categories:
                 raise TypeError("command must have at least one acl_categories")
 
+            command_name = parent_command + b"|" + command if parent_command else command
+
+            ACL.COMMAND_CATEGORIES[command_name] = set(acl_categories)
             for acl_category in acl_categories:
                 ACL.CATEGORIES[acl_category].add(command)
+
+            ACL.COMMANDS_NAMES[command_cls] = command_name
 
             routes = cls.ROUTES
             if parent_command is not None:

@@ -24,12 +24,12 @@ class RespLoader:
         return array
 
     def load(self):
-        line = self.reader.readline().strip()
+        line = self.reader.readline().strip(b"\r\n")
         match line[0:1], line[1:]:
             case b"*", length:
                 return self.load_array(int(length))
             case b"$", length:
-                bulk_string = self.reader.read(int(length) + 2).strip()
+                bulk_string = self.reader.read(int(length) + 2).strip(b"\r\n")
                 if len(bulk_string) != int(length):
                     raise ValueError()
                 return bulk_string

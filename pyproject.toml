@@ -17,14 +17,19 @@ typing-extensions = "^4.8.0"
 
 [tool.poetry.group.dev.dependencies]
 redis = "^5.0.0"
-pytest = "^7.3.1"
-ruff = "^0.1.0"
-mypy = "^1.6.0"
+pytest = "^8"
 pytest-parametrization = "*"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+
+testpaths = "tests valkey_tests"
 
 [tool.ruff]
 line-length = 120

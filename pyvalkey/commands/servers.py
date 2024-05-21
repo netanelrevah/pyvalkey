@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from hashlib import sha256
 
-from pyvalkey.commands.context import ServerContext
+from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import positional_parameter
@@ -24,6 +24,7 @@ class ServerCommand(Command):
 class Authorize(Command):
     acl: ACL = server_command_dependency()
     configurations: Configurations = server_command_dependency()
+    client_context: ClientContext = server_command_dependency()
 
     username: bytes | None = positional_parameter(default=None)
     password: bytes = positional_parameter()
@@ -35,8 +36,10 @@ class Authorize(Command):
                 raise ServerException(b"WRONGPASS invalid username-password pair or user is disabled.")
             if self.username == b"default" and password_hash == self.configurations.requirepass:
                 return RESP_OK
-            if password_hash not in self.acl[self.username].passwords:
+            acl_user = self.acl[self.username]
+            if not acl_user.is_no_password_user and password_hash not in acl_user.passwords:
                 return RespError(b"WRONGPASS invalid username-password pair or user is disabled.")
+            self.client_context.current_user = acl_user
             return RESP_OK
 
         if self.configurations.requirepass and password_hash == self.configurations.requirepass:

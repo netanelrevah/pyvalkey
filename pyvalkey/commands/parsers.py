@@ -47,6 +47,8 @@ class ParameterParser:
 
         match parameter_type():
             case bytes():
+                if parameter_field.metadata.get(ParameterMetadata.KEY_MODE, False):
+                    return KeyParameterParser()
                 return ParameterParser()
             case bool():
                 return BoolParameterParser(
@@ -66,6 +68,11 @@ class ParameterParser:
                 return TupleParameterParser.create(get_args(parameter_type))
             case default:
                 raise TypeError(default)
+
+
+class KeyParameterParser(ParameterParser):
+    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
+        return self.next_parameter(parameters)
 
 
 class ParametersGroup(ParameterParser):
@@ -224,8 +231,10 @@ class ObjectParametersParser(ParametersGroup):
     def parse(self, parameters: list[bytes]) -> Any:
         parsed_parameters: dict[str, Any] = {}
 
+        non_optional_paramters = sum(1 for p in self.parameters_parsers if not isinstance(p, OptionalParametersGroup))
+
         for index, parameter_parser in enumerate(self.parameters_parsers):
-            if len(parameters) <= (len(self.parameters_parsers) - index - 1):
+            if len(parameters) <= (non_optional_paramters - index - 1):
                 continue
 
             if isinstance(parameter_parser, NamedParameterParser):

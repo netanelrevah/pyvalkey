@@ -13,11 +13,12 @@ from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
+    CommandPermissionError,
+    RouterKeyError,
     ServerException,
     ServerInvalidIntegerError,
     ServerSyntaxError,
     ServerWrongType,
-    RouterKeyError,
 )
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, dump, load
@@ -102,15 +103,22 @@ class ServerConnectionHandler(StreamRequestHandler):
             print(self.current_client.client_id, command)
 
             try:
-                self.dump(self.router.route(list(command), self.client_context).execute())
+                routed_command = self.router.route(list(command), self.client_context)
+
+                if self.client_context.current_user:
+                    self.client_context.current_user.check_permissions(routed_command)
+
+                self.dump(routed_command.execute())
                 if self.server_context.pause_timeout:
                     while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                         time.sleep(0.1)
                     self.server_context.pause_timeout = 0
             except RouterKeyError:
-                return RespError(
-                    f"ERR unknown command '{command[0]}', "
-                    f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
+                self.dump(
+                    RespError(
+                        f"ERR unknown command '{command[0]}', "
+                        f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
+                    )
                 )
             except ServerWrongType:
                 self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
@@ -118,6 +126,16 @@ class ServerConnectionHandler(StreamRequestHandler):
                 self.dump(RespError(b"ERR syntax error"))
             except ServerInvalidIntegerError:
                 self.dump(RespError(b"ERR hash value is not an integer"))
+            except CommandPermissionError as e:
+                self.dump(
+                    RespError(
+                        b"NOPERM User "
+                        + self.client_context.current_user.name
+                        + b" has no permissions to run the '"
+                        + e.command_name
+                        + b"' command"
+                    )
+                )
             except ServerException as e:
                 self.dump(RespError(e.message))
             except Exception as e:

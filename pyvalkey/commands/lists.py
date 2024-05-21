@@ -65,7 +65,7 @@ class ListInsert(DatabaseCommand):
 
 @ServerCommandsRouter.command(b"lpush", [b"write", b"list", b"fast"])
 class ListPush(DatabaseCommand):
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"W")
     values: list[bytes] = positional_parameter()
 
     def execute(self):

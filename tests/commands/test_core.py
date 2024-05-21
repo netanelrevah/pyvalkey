@@ -4,6 +4,7 @@ import pytest
 from parametrization import Parametrization
 
 from pyvalkey.commands.core import Command
+from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
@@ -71,6 +72,12 @@ class ListCommand(Command):
     parameters=b"myzset NX 2 two 3 three".split(),
     command_cls=SortedSetAdd,
     expected_kwargs={"key": b"myzset", "scores_members": [(2, b"two"), (3, b"three")], "add_mode": AddMode.INSERT_ONLY},
+)
+@Parametrization.case(
+    name="",
+    parameters=b"a b".split(),
+    command_cls=Copy,
+    expected_kwargs={"source": b"a", "destination": b"b"},
 )
 def test_parser__successful(parameters, command_cls: Command, expected_kwargs: dict[str, Any]):
     actual_kwargs = command_cls.parse(parameters)

@@ -37,7 +37,7 @@ class Ping(Command):
 
 @ServerCommandsRouter.command(b"get", [b"read", b"string", b"fast"])
 class Get(DatabaseCommand):
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self):
         if s := self.database.get_string_or_none(self.key):
@@ -47,7 +47,7 @@ class Get(DatabaseCommand):
 
 @ServerCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
 class Set(DatabaseCommand):
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"W")
     value: bytes = positional_parameter()
 
     def execute(self):
