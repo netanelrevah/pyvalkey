@@ -33,8 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: isort/isort-action@master
-      - uses: psf/black@stable
       - uses: actions/setup-python@v4
         with:
           python-version: "3.12"
@@ -51,7 +49,7 @@ jobs:
       - run: poetry lock --check
       - run: poetry run mypy pyvalkey
       - run: poetry run ruff check --output-format=github .
-      - run: poetry run ruff format --check
+      - run: poetry run ruff format --check --output-format=github .
 
   lint:
     runs-on: ${{ matrix.image }}
