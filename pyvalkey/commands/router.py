@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.database_objects.acl import ACL
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class ServerCommandsRouter:
-    ROUTES: ClassVar[dict[bytes, type[Command] | dict[bytes, type[Command]]]] = defaultdict(dict)
+    ROUTES: ClassVar[defaultdict[bytes, Any]] = defaultdict(dict)
 
     def internal_route(
         self,
@@ -56,7 +56,8 @@ class ServerCommandsRouter:
             ACL.COMMANDS_NAMES[command_cls] = command_name
 
             if parent_command is not None:
-                cast(dict[bytes, type[Command]], cls.ROUTES[parent_command])[command] = command_cls
+                sub_route = cls.ROUTES[parent_command]
+                sub_route[command] = command_cls
             else:
                 cls.ROUTES[command] = command_cls
 
