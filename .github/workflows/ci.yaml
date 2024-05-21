@@ -22,8 +22,10 @@ jobs:
       - uses: snok/install-poetry@v1
       - working-directory: ./pyvalkey
         run: poetry install --no-interaction --no-root
-      - working-directory: ./pyvalkey
-        run: poetry run python -m pyvalkey &
+      - uses: JarvusInnovations/background-action@v1
+        with:
+          run: poetry run python -m pyvalkey
+          working-directory: ./pyvalkey
       - working-directory: ./redis-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./redis-py
@@ -91,9 +93,9 @@ jobs:
       - name: Run pytest
         run: poetry run python -m pytest -v tests
 
-      - run: poetry run python -m pyvalkey &
+      - uses: JarvusInnovations/background-action@v1
+        with:
+          run: poetry run python -m pyvalkey
 
       - name: Run pytest valkey
         run: poetry run python -m pytest -v valkey_tests --external
-
-      - run: kill %1
