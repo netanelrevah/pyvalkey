@@ -88,9 +88,9 @@ jobs:
         run: poetry install --with dev --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -v tests
+        run: poetry run python -m pytest -v tests
 
       - run: poetry run python -m pyvalkey &
 
       - name: Run pytest valkey
-        run: poetry run pytest -v valkey_tests --external
+        run: poetry run python -m pytest -v valkey_tests --external
