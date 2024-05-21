@@ -234,7 +234,9 @@ class ObjectParametersParser(ParametersGroup):
         non_optional_paramters = sum(1 for p in self.parameters_parsers if not isinstance(p, OptionalParametersGroup))
 
         for index, parameter_parser in enumerate(self.parameters_parsers):
-            if len(parameters) <= (non_optional_paramters - index - 1):
+            if isinstance(parameter_parser, OptionalParametersGroup) and len(parameters) <= (
+                non_optional_paramters - index - 1
+            ):
                 continue
 
             if isinstance(parameter_parser, NamedParameterParser):
