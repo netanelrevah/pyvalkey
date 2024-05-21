@@ -71,12 +71,12 @@ class ParameterParser:
 
 
 class KeyParameterParser(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
+    def parse(self, parameters: list[bytes]) -> Any:
         return self.next_parameter(parameters)
 
 
 class ParametersGroup(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
+    def parse(self, parameters: list[bytes]) -> Any:
         raise NotImplementedError()
 
 

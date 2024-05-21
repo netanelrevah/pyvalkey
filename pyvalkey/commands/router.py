@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.database_objects.acl import ACL
@@ -15,9 +15,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class ServerCommandsRouter:
-    ROUTES: ClassVar[dict[bytes, Command | dict[bytes, Command]]] = defaultdict(dict)
+    ROUTES: ClassVar[dict[bytes, type[Command] | dict[bytes, type[Command]]]] = defaultdict(dict)
 
-    def internal_route(self, parameters: list[bytes], routes: dict[bytes, Command | dict[bytes, Command]]) -> Command:
+    def internal_route(
+        self,
+        parameters: list[bytes],
+        routes: dict[bytes, type[Command]] | dict[bytes, type[Command] | dict[bytes, type[Command]]],
+    ) -> type[Command]:
         command = parameters.pop(0).lower()
 
         if command not in routes:
@@ -31,13 +35,13 @@ class ServerCommandsRouter:
         return routed_command
 
     def route(self, parameters: list[bytes], client_context: ClientContext) -> Command:
-        routed_command: Command = self.internal_route(parameters, self.ROUTES)
+        routed_command: type[Command] = self.internal_route(parameters, self.ROUTES)
 
         return routed_command.create(parameters, client_context)
 
     @classmethod
-    def command(cls, command: bytes, acl_categories: list[bytes], parent_command: bytes = None):
-        def _command_wrapper(command_cls: Command):
+    def command(cls, command: bytes, acl_categories: list[bytes], parent_command: bytes | None = None):
+        def _command_wrapper(command_cls: type[Command]):
             command_cls = server_command(command_cls)
 
             if not acl_categories:
@@ -51,10 +55,10 @@ class ServerCommandsRouter:
 
             ACL.COMMANDS_NAMES[command_cls] = command_name
 
-            routes = cls.ROUTES
             if parent_command is not None:
-                routes = routes[parent_command]
-            routes[command] = command_cls
+                cast(dict[bytes, type[Command]], cls.ROUTES[parent_command])[command] = command_cls
+            else:
+                cls.ROUTES[command] = command_cls
 
             return command_cls
 
