@@ -2,7 +2,6 @@ import typer
 
 from pyvalkey.server import ValkeyServer
 
-
 app = typer.Typer()
 
 

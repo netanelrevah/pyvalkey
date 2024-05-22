@@ -34,9 +34,10 @@ addopts = [
 testpaths = "tests valkey_tests"
 
 [tool.ruff]
+target-version = "py38"
 line-length = 120
 
-lint.select = ["ANN"]
+lint.select = ["ANN", "I", "N", "FURB", "UP"]
 lint.ignore = ["E731", "ANN101"]
 
 [tool.ruff.lint.per-file-ignores]
