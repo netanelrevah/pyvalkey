@@ -6,6 +6,8 @@ from io import BytesIO
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 
+import select
+
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.acl import ACL
@@ -90,6 +92,9 @@ class ServerConnectionHandler(StreamRequestHandler):
 
     def handle(self):
         while not self.current_client.is_killed:
+            ready = select.select([self.connection], [], [], 1)
+            if not ready:
+                continue
             command = load(self.rfile)
 
             if command is None:

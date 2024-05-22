@@ -85,8 +85,13 @@ class NamedParameterParser(ParameterParser):
     name: str
     parameter_parser: ParameterParser
 
-    def parse(self, parameters: list[bytes]) -> Any:
-        return self.parameter_parser.parse(parameters)
+    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
+        return {self.name: self.parameter_parser.parse(parameters)}
+
+
+@dataclass
+class OptionalNamedParameterParser(NamedParameterParser):
+    pass
 
 
 @dataclass
@@ -199,13 +204,7 @@ class BoolParameterParser(ParameterParser):
 
 
 @dataclass
-class KeywordParameter(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
-        raise NotImplementedError()
-
-
-@dataclass
-class OptionalParametersGroup(ParametersGroup):
+class OptionalKeywordParametersGroup(ParametersGroup):
     parameters_parsers_map: dict[bytes, NamedParameterParser]
 
     def parse(self, parameters: list[bytes]) -> dict[str, Any]:
@@ -219,7 +218,7 @@ class OptionalParametersGroup(ParametersGroup):
 
             if parameter.name in parsed_kw_parameters:
                 raise ServerSyntaxError()
-            parsed_kw_parameters[parameter.name] = parameter.parse(parameters)
+            parsed_kw_parameters.update(parameter.parse(parameters))
 
         return parsed_kw_parameters
 
@@ -228,21 +227,20 @@ class OptionalParametersGroup(ParametersGroup):
 class ObjectParametersParser(ParametersGroup):
     parameters_parsers: list[ParameterParser]
 
+    @classmethod
+    def _is_optional(cls, parameter_parser):
+        return isinstance(parameter_parser, OptionalKeywordParametersGroup | OptionalNamedParameterParser)
+
     def parse(self, parameters: list[bytes]) -> Any:
         parsed_parameters: dict[str, Any] = {}
 
-        non_optional_paramters = sum(1 for p in self.parameters_parsers if not isinstance(p, OptionalParametersGroup))
+        non_optional_parameters = sum(1 for p in self.parameters_parsers if not self._is_optional(p))
 
         for index, parameter_parser in enumerate(self.parameters_parsers):
-            if isinstance(parameter_parser, OptionalParametersGroup) and len(parameters) <= (
-                non_optional_paramters - index - 1
-            ):
+            if self._is_optional(parameter_parser) and len(parameters) <= (non_optional_parameters - index):
                 continue
 
-            if isinstance(parameter_parser, NamedParameterParser):
-                parsed_parameters[parameter_parser.name] = parameter_parser.parse(parameters)
-            else:
-                parsed_parameters.update(parameter_parser.parse(parameters))
+            parsed_parameters.update(parameter_parser.parse(parameters))
 
         return parsed_parameters
 
@@ -262,7 +260,7 @@ class ObjectParametersParser(ParametersGroup):
 
         parameters_parsers: list[ParameterParser] = []
 
-        flagged_fields = {}
+        optional_keyword_parameters = {}
         for parameter_field_name in parameter_fields_by_order:
             parameter_field = parameter_fields[parameter_field_name]
             flag = parameter_field.metadata.get(ParameterMetadata.FLAG)
@@ -272,20 +270,25 @@ class ObjectParametersParser(ParametersGroup):
                 )
                 if isinstance(flag, dict):
                     for flag_key in flag.keys():
-                        flagged_fields[flag_key] = named_parameter_parser
+                        optional_keyword_parameters[flag_key] = named_parameter_parser
                 else:
-                    flagged_fields[flag] = named_parameter_parser
+                    optional_keyword_parameters[flag] = named_parameter_parser
             else:
-                if flagged_fields:
-                    parameters_parsers.append(OptionalParametersGroup(flagged_fields))
-                    flagged_fields = {}
+                if optional_keyword_parameters:
+                    parameters_parsers.append(OptionalKeywordParametersGroup(optional_keyword_parameters))
+                    optional_keyword_parameters = {}
 
-                parameters_parsers.append(
-                    NamedParameterParser(parameter_field.name, ParameterParser.create(parameter_field))
-                )
+                if parameter_field.default != MISSING:
+                    parameters_parsers.append(
+                        OptionalNamedParameterParser(parameter_field.name, ParameterParser.create(parameter_field))
+                    )
+                else:
+                    parameters_parsers.append(
+                        NamedParameterParser(parameter_field.name, ParameterParser.create(parameter_field))
+                    )
 
-        if flagged_fields:
-            parameters_parsers.append(OptionalParametersGroup(flagged_fields))
+        if optional_keyword_parameters:
+            parameters_parsers.append(OptionalKeywordParametersGroup(optional_keyword_parameters))
 
         return cls(parameters_parsers)
 

@@ -4,6 +4,7 @@ import pytest
 from parametrization import Parametrization
 
 from pyvalkey.commands.core import Command
+from pyvalkey.commands.databases import Ping
 from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
@@ -50,7 +51,7 @@ class ListCommand(Command):
     expected_kwargs={"a": b"a", "d": [1, 2]},
 )
 @Parametrization.case(
-    name="",
+    name="zrange_with_kw_range_mode",
     parameters=b"zset (1 5 BYSCORE".split(),
     command_cls=SortedSetRange,
     expected_kwargs={"key": b"zset", "start": b"(1", "stop": b"5", "range_mode": RangeMode.BY_SCORE},
@@ -78,6 +79,12 @@ class ListCommand(Command):
     parameters=b"a b".split(),
     command_cls=Copy,
     expected_kwargs={"source": b"a", "destination": b"b"},
+)
+@Parametrization.case(
+    name="ping_without_parameters",
+    parameters=[],
+    command_cls=Ping,
+    expected_kwargs={},
 )
 def test_parser__successful(parameters, command_cls: Command, expected_kwargs: dict[str, Any]):
     actual_kwargs = command_cls.parse(parameters)

@@ -95,6 +95,8 @@ jobs:
       - uses: JarvusInnovations/background-action@v1
         with:
           run: poetry run python -m pyvalkey
+          wait-on: |
+            tcp:localhost:6379
 
       - name: Run pytest valkey
         run: poetry run python -m pytest -v valkey_tests --external

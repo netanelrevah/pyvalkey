@@ -91,7 +91,6 @@ class Permission:
         results = []
         for command_rule in self.command_rules:
             results.append(command_rule.check(command_name))
-            print(f"for command rule {command_rule.to_bytes()} permission is {results[-1]}")
         command_allowed = (results[0] and all(results)) or (not results[0] and any(results))
 
         if not command_allowed:

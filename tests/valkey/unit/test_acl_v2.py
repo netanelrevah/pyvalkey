@@ -7,24 +7,7 @@ from pytest import fixture, raises
 from pyvalkey.server import ValkeyServer
 
 
-@fixture()
-def s(external):
-    c = redis.Redis(db=9)
 
-    if external:
-        yield c
-        c.flushall()
-        return
-    server = ValkeyServer(("127.0.0.1", 6379))
-    t = Thread(target=server.serve_forever)
-    t.start()
-    yield c
-    server.shutdown()
-
-
-@fixture
-def c():
-    return redis.Redis(db=9)
 
 
 def key_value_list_to_dict(key_value_list: list):
