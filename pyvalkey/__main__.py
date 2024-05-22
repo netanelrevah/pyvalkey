@@ -7,7 +7,7 @@ app = typer.Typer()
 
 
 @app.command()
-def main(port: int = 6379):
+def main(port: int = 6379) -> None:
     with ValkeyServer(("127.0.0.1", port)) as s:
         s.serve_forever()
 

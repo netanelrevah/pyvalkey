@@ -36,7 +36,11 @@ testpaths = "tests valkey_tests"
 [tool.ruff]
 line-length = 120
 
-lint.ignore = ["E731"]
+lint.select = ["ANN"]
+lint.ignore = ["E731", "ANN101"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/{tests}/*" = ["ANN"]
 
 [[tool.mypy.overrides]]
 module = [

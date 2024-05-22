@@ -23,34 +23,33 @@ from pyvalkey.database_objects.errors import (
     ServerWrongType,
 )
 from pyvalkey.database_objects.information import Information
-from pyvalkey.resp import RESP_OK, RespError, dump, load
+from pyvalkey.resp import RESP_OK, RespError, dump, load, ValueType
 
 logger = logging.getLogger(__name__)
 
 
 class ServerConnectionHandler(StreamRequestHandler):
-    def __init__(self, request, client_address, server: "ValkeyServer"):
+    def __init__(self, request: socket, client_address: tuple[str, int], server: "ValkeyServer") -> None:
         super().__init__(request, client_address, server)
         self.server: ValkeyServer = server
-        self.request: socket
 
         self.current_database = self.databases[0]
         self.current_client: Client
 
     @property
-    def configurations(self):
+    def configurations(self) -> Configurations:
         return self.server.configurations
 
     @property
-    def databases(self):
+    def databases(self) -> defaultdict[int, Database]:
         return self.server.databases
 
     @property
-    def clients(self):
+    def clients(self) -> ClientList:
         return self.server.clients
 
     @property
-    def acl(self):
+    def acl(self) -> ACL:
         return self.server.acl
 
     def setup(self) -> None:
@@ -76,7 +75,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
         self.router = ServerCommandsRouter()
 
-    def dump(self, value):
+    def dump(self, value: ValueType) -> None:
         dumped = BytesIO()
         dump(value, dumped)
         print(self.current_client.client_id, "result", dumped.getvalue())
@@ -90,7 +89,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
         dump(value, self.wfile)
 
-    def handle(self):
+    def handle(self) -> None:
         while not self.current_client.is_killed:
             ready = select.select([self.connection], [], [], 1)
             if not ready:
@@ -155,7 +154,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
 
 class ValkeyServer(ThreadingTCPServer):
-    def __init__(self, server_address: tuple[str, int], bind_and_activate: bool = True):
+    def __init__(self, server_address: tuple[str, int], bind_and_activate: bool = True) -> None:
         super().__init__(server_address, ServerConnectionHandler, bind_and_activate)
         self.databases: defaultdict[int, Database] = defaultdict(Database, {0: Database()})
         self.acl: ACL = ACL.create()
