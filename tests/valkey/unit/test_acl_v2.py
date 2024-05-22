@@ -1,13 +1,6 @@
-from threading import Thread
-
 import redis
 import redis.exceptions
-from pytest import fixture, raises
-
-from pyvalkey.server import ValkeyServer
-
-
-
+from pytest import raises
 
 
 def key_value_list_to_dict(key_value_list: list):
