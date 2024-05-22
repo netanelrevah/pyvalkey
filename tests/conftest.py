@@ -24,7 +24,7 @@ def next_free_port(min_port=57343, max_port=65535):
     port = randrange(min_port, max_port)
     for _ in range(10):
         try:
-            sock.bind(("", port))
+            sock.bind(("localhost", port))
             sock.close()
             return port
         except OSError:
