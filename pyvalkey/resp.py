@@ -13,20 +13,21 @@ class RespError(bytes):
     pass
 
 
-ValueType = bool | int | float | RespSimpleString | RespError | str | list | set | dict
+ValueType = bool | int | float | RespSimpleString | RespError | str | list | set | dict | None
+LoadedType = list | bytes | int | None
 
 
 @dataclass
 class RespLoader:
     reader: BinaryIO
 
-    def load_array(self, length: int) -> list:
-        array = [None] * length
+    def load_array(self, length: int) -> list[LoadedType]:
+        array: list[LoadedType] = [None] * length
         for i in range(length):
             array[i] = self.load()
         return array
 
-    def load(self) -> list | bytes | None | int:
+    def load(self) -> LoadedType:
         line = self.reader.readline().strip(b"\r\n")
         match line[0:1], line[1:]:
             case b"*", length:
@@ -101,7 +102,7 @@ class RespDumper:
                 result += [k, v]
             self.dump_array(result)
         elif value is None:
-            self.writer.write("$-1\r\n".encode())
+            self.writer.write(b"$-1\r\n")
 
 
 def dump(value: ValueType, stream: BinaryIO) -> None:
