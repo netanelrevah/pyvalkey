@@ -5,7 +5,7 @@ from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.acl import ACL
-from pyvalkey.resp import LoadedType, ValueType
+from pyvalkey.resp import ValueType
 
 
 @ServerCommandsRouter.command(b"help", [b"slow", b"connection"], b"acl")

@@ -29,7 +29,7 @@ def next_free_port(min_port=57343, max_port=65535):
             return port
         except OSError:
             port = randrange(min_port, max_port)
-    raise IOError("no free ports after 10 retries")
+    raise OSError("no free ports after 10 retries")
 
 
 @fixture()

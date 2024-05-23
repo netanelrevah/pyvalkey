@@ -96,7 +96,7 @@ class SetRemove(DatabaseCommand):
 
 
 def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: list[bytes]) -> list:
-    return list(functools.reduce(operation, map(database.get_set, keys)))  # type: ignore
+    return list(functools.reduce(operation, map(database.get_set, keys)))
 
 
 @ServerCommandsRouter.command(b"sunion", [b"read", b"set", b"slow"])

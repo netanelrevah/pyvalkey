@@ -1,4 +1,4 @@
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, TypeVar
 
 
 def to_bytes(value: bytes | int | str) -> bytes:
@@ -7,6 +7,9 @@ def to_bytes(value: bytes | int | str) -> bytes:
     return str(value).encode()
 
 
-def flatten(value: Iterable[Sequence], reverse_sub_lists: bool = False) -> Iterable[Sequence]:
+T = TypeVar("T")
+
+
+def flatten(value: Iterable[Sequence[T]], reverse_sub_lists: bool = False) -> Iterable[T]:
     for item in value:
         yield from (item if not reverse_sub_lists else reversed(item))

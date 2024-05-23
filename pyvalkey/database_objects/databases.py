@@ -177,7 +177,7 @@ class ServerSortedSet:
 
 
 class Database(dict[bytes, Any]):
-    def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa:ANN001,ANN401
+    def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
         value = type_()
         if key in self:
             value = self[key]
@@ -185,7 +185,7 @@ class Database(dict[bytes, Any]):
             raise ServerWrongTypeError()
         return value
 
-    def get_or_create_by_type(self, key: bytes, type_: type) -> Any:  # noqa:ANN001,ANN401
+    def get_or_create_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
         if key not in self:
             self[key] = type_()
         value = self[key]

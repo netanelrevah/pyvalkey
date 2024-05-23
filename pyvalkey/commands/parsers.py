@@ -1,7 +1,7 @@
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Union, get_args, get_origin, overload
 
 from typing_extensions import Self
 
@@ -10,7 +10,7 @@ from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import (
     ServerError,
     ServerSyntaxError,
-    ServerWrongNumberOfArguments,
+    ServerWrongNumberOfArgumentsError,
 )
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ class ParameterParser:
         try:
             return parameters.pop(0)
         except IndexError:
-            raise ServerWrongNumberOfArguments()
+            raise ServerWrongNumberOfArgumentsError()
 
     def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         return self.next_parameter(parameters)
@@ -345,9 +345,15 @@ def _server_command_wrapper(command_cls: type[Command]) -> type[Command]:
     return command_cls
 
 
-def server_command(
-    command_cls: type[Command] | None = None,
-) -> type[Command] | Callable[[type[Command]], type[Command]]:
-    if command_cls is None:
+@overload
+def server_command(command_cls: Callable[[type[Command]], type[Command]], /) -> type[Command]: ...
+
+
+@overload
+def server_command(*args: type[Command]) -> type[Command]: ...
+
+
+def server_command(*args: Any) -> Any:
+    if len(args) == 0:
         return _server_command_wrapper
-    return _server_command_wrapper(command_cls)
+    return _server_command_wrapper(args[0])

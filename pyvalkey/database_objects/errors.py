@@ -34,5 +34,5 @@ class ServerInvalidIntegerError(ServerError):
     pass
 
 
-class ServerWrongNumberOfArguments(ServerError):
+class ServerWrongNumberOfArgumentsError(ServerError):
     pass

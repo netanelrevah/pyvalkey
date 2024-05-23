@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, AnyStr, BinaryIO
+from typing import AnyStr, BinaryIO
 
 
 class RespSimpleString(bytes):

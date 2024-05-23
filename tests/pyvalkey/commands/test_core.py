@@ -9,7 +9,7 @@ from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from pyvalkey.database_objects.errors import ServerSyntaxError, ServerWrongNumberOfArguments
+from pyvalkey.database_objects.errors import ServerSyntaxError, ServerWrongNumberOfArgumentsError
 
 
 @server_command()
@@ -101,7 +101,7 @@ def test_parser__successful(parameters, command_cls: Command, expected_kwargs: d
 @Parametrization.case(
     name="",
     parameters=[b"a", b"1"],
-    expected_exception=ServerWrongNumberOfArguments,
+    expected_exception=ServerWrongNumberOfArgumentsError,
     command_cls=ByteIntCommand,
 )
 @Parametrization.case(

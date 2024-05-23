@@ -1,6 +1,4 @@
-import math
 from enum import Enum
-from typing import assert_type
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import (
@@ -12,7 +10,6 @@ from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import (
     MAX_BYTES,
     Database,
-    MaxBytes,
     RangeLimit,
     ServerSortedSet,
 )
