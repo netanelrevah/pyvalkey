@@ -6,33 +6,49 @@ authors = ["Netanel Revah <netanelrevah@outlook.com>"]
 license = "MIT License"
 readme = "README.md"
 packages = [
-    { include = "valkey" },
+    { include = "pyvalkey" },
 ]
 
 [tool.poetry.dependencies]
-python = "^3.10"
-typer = "^0.9.0"
+python = "^3.11"
+typer = "^0.12"
 sortedcontainers = "^2.4.0"
 typing-extensions = "^4.8.0"
 
 [tool.poetry.group.dev.dependencies]
+mypy = "*"
 redis = "^5.0.0"
-pytest = "^7.3.1"
-ruff = "^0.1.0"
-mypy = "^1.6.0"
+pytest = "^8"
 pytest-parametrization = "*"
+ruff = "*"
+sortedcontainers-stubs = "*"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+
+testpaths = "tests valkey_tests"
+
 [tool.ruff]
+target-version = "py311"
 line-length = 120
 
-ignore = ["E731"]
+lint.select = ["ANN", "I", "N", "UP", "PGH", "RUF", "F"]
+lint.ignore = ["E731", "ANN101", "ANN102", "RUF009"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/{tests}/*" = ["ANN"]
+
 
 [[tool.mypy.overrides]]
 module = [
     "sortedcontainers",
+    "typer"
 ]
 ignore_missing_imports = true
+

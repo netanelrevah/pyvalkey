@@ -1,4 +1,4 @@
-def parse_range_parameters(start: int, stop: int, is_reversed=False):
+def parse_range_parameters(start: int, stop: int, is_reversed: bool = False) -> slice:
     if not is_reversed:
         python_start = start
         if stop == -1:

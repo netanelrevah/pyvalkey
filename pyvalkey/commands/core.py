@@ -1,12 +1,13 @@
-from typing import Any
-
-from typing_extensions import Self
+from dataclasses import dataclass
+from typing import Any, Self
 
 from pyvalkey.commands.context import ClientContext
+from pyvalkey.resp import ValueType
 
 
+@dataclass
 class Command:
-    def execute(self):
+    def execute(self) -> ValueType:
         raise NotImplementedError()
 
     @staticmethod

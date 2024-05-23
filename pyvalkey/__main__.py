@@ -1,12 +1,13 @@
 import typer
 
+from pyvalkey.server import ValkeyServer
 
 app = typer.Typer()
 
 
 @app.command()
-def main(port: int = 6379):
-    with Server(("127.0.0.1", port)) as s:
+def main(port: int = 6379) -> None:
+    with ValkeyServer(("127.0.0.1", port)) as s:
         s.serve_forever()
 
 

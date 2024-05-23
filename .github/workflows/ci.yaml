@@ -27,14 +27,12 @@ jobs:
       - working-directory: ./redis-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./redis-py
-        run: pytest -v tests/test_commands.py
+        run: pytest -q  --no-summary --disable-warnings --show-capture=no --tb=no tests/test_commands.py
 
   lint-outside-of-matrix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: isort/isort-action@master
-      - uses: psf/black@stable
       - uses: actions/setup-python@v4
         with:
           python-version: "3.12"
@@ -50,8 +48,11 @@ jobs:
       - run: poetry check
       - run: poetry lock --check
       - run: poetry run mypy pyvalkey
+        if: '!cancelled()'
       - run: poetry run ruff check --output-format=github .
-      - run: poetry run ruff format --check
+        if: '!cancelled()'
+      - run: poetry run ruff format --check .
+        if: '!cancelled()'
 
   lint:
     runs-on: ${{ matrix.image }}
@@ -59,14 +60,14 @@ jobs:
     strategy:
       matrix:
         os: [ Ubuntu, macOS, Windows ]
-        python-version: [ "3.8", "3.9", "3.10", "3.11", "3.12" ]
+        python-version: [ "3.11", "3.12" ]
         include:
           - os: Ubuntu
-            image: ubuntu-22.04
+            image: ubuntu-latest
           - os: Windows
-            image: windows-2022
+            image: windows-latest
           - os: macOS
-            image: macos-12
+            image: macos-latest
       fail-fast: false
     defaults:
       run:
@@ -90,4 +91,4 @@ jobs:
         run: poetry install --with dev --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run pytest -v
+        run: poetry run python -m pytest -v tests

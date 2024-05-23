@@ -1,16 +1,15 @@
 from threading import Thread
 
 import redis
-from _pytest.fixtures import yield_fixture
 from parametrization import Parametrization
 from pytest import fixture
 
 from pyvalkey.commands.utils import parse_range_parameters
-from pyvalkey.database_objects.databases import MAX_STRING
+from pyvalkey.database_objects.databases import MAX_BYTES
 from pyvalkey.server import ValkeyServer
 
 
-@yield_fixture
+@fixture
 def s():
     server = ValkeyServer(("127.0.0.1", 6379))
     t = Thread(target=server.serve_forever)
@@ -21,7 +20,9 @@ def s():
 
 @fixture
 def c():
-    return redis.Redis()
+    c = redis.Redis()
+    yield c
+    c.close()
 
 
 def test_simple(s, c):
@@ -39,17 +40,17 @@ def test_simple(s, c):
 
 
 def test_server_max_str():
-    assert "a" < MAX_STRING
-    assert "a" <= MAX_STRING
-    assert not "\xff" > MAX_STRING
-    assert not "\xff" >= MAX_STRING
-    assert "a" != MAX_STRING
+    assert b"a" < MAX_BYTES
+    assert b"a" <= MAX_BYTES
+    assert not b"\xff" > MAX_BYTES
+    assert not b"\xff" >= MAX_BYTES
+    assert b"a" != MAX_BYTES
 
-    assert MAX_STRING > "a"
-    assert MAX_STRING >= "a"
-    assert not MAX_STRING < "\xff"
-    assert not MAX_STRING <= "\xff"
-    assert MAX_STRING != "a"
+    assert MAX_BYTES > b"a"
+    assert MAX_BYTES >= b"a"
+    assert not MAX_BYTES < b"\xff"
+    assert not MAX_BYTES <= b"\xff"
+    assert MAX_BYTES != b"a"
 
 
 N0 = []

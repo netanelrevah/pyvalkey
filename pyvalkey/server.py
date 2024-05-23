@@ -1,5 +1,6 @@
 import itertools
 import logging
+import select
 import time
 from collections import defaultdict
 from io import BytesIO
@@ -13,41 +14,41 @@ from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
-    ServerException,
+    CommandPermissionError,
+    RouterKeyError,
+    ServerError,
     ServerInvalidIntegerError,
     ServerSyntaxError,
-    ServerWrongType,
-    RouterKeyError,
+    ServerWrongTypeError,
 )
 from pyvalkey.database_objects.information import Information
-from pyvalkey.resp import RESP_OK, RespError, dump, load
+from pyvalkey.resp import RESP_OK, RespError, ValueType, dump, load
 
 logger = logging.getLogger(__name__)
 
 
 class ServerConnectionHandler(StreamRequestHandler):
-    def __init__(self, request, client_address, server: "ValkeyServer"):
+    def __init__(self, request: socket, client_address: tuple[str, int], server: "ValkeyServer") -> None:
         super().__init__(request, client_address, server)
         self.server: ValkeyServer = server
-        self.request: socket
 
         self.current_database = self.databases[0]
         self.current_client: Client
 
     @property
-    def configurations(self):
+    def configurations(self) -> Configurations:
         return self.server.configurations
 
     @property
-    def databases(self):
+    def databases(self) -> defaultdict[int, Database]:
         return self.server.databases
 
     @property
-    def clients(self):
+    def clients(self) -> ClientList:
         return self.server.clients
 
     @property
-    def acl(self):
+    def acl(self) -> ACL:
         return self.server.acl
 
     def setup(self) -> None:
@@ -73,7 +74,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
         self.router = ServerCommandsRouter()
 
-    def dump(self, value):
+    def dump(self, value: ValueType) -> None:
         dumped = BytesIO()
         dump(value, dumped)
         print(self.current_client.client_id, "result", dumped.getvalue())
@@ -87,8 +88,11 @@ class ServerConnectionHandler(StreamRequestHandler):
 
         dump(value, self.wfile)
 
-    def handle(self):
+    def handle(self) -> None:
         while not self.current_client.is_killed:
+            ready = select.select([self.connection], [], [], 1)
+            if not ready:
+                continue
             command = load(self.rfile)
 
             if command is None:
@@ -102,23 +106,42 @@ class ServerConnectionHandler(StreamRequestHandler):
             print(self.current_client.client_id, command)
 
             try:
-                self.dump(self.router.route(list(command), self.client_context).execute())
+                routed_command = self.router.route(list(command), self.client_context)
+
+                if self.client_context.current_user:
+                    self.client_context.current_user.check_permissions(routed_command)
+
+                self.dump(routed_command.execute())
                 if self.server_context.pause_timeout:
                     while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                         time.sleep(0.1)
                     self.server_context.pause_timeout = 0
             except RouterKeyError:
-                return RespError(
-                    f"ERR unknown command '{command[0]}', "
-                    f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
+                self.dump(
+                    RespError(
+                        f"ERR unknown command '{command[0]}', "
+                        f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
+                    )
                 )
-            except ServerWrongType:
+            except ServerWrongTypeError:
                 self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
             except ServerSyntaxError:
                 self.dump(RespError(b"ERR syntax error"))
             except ServerInvalidIntegerError:
                 self.dump(RespError(b"ERR hash value is not an integer"))
-            except ServerException as e:
+            except CommandPermissionError as e:
+                if not self.client_context.current_user:
+                    raise e
+                self.dump(
+                    RespError(
+                        b"NOPERM User "
+                        + self.client_context.current_user.name
+                        + b" has no permissions to run the '"
+                        + e.command_name
+                        + b"' command"
+                    )
+                )
+            except ServerError as e:
                 self.dump(RespError(e.message))
             except Exception as e:
                 self.dump(RespError(b"ERR internal"))
@@ -132,7 +155,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
 
 class ValkeyServer(ThreadingTCPServer):
-    def __init__(self, server_address, bind_and_activate=True):
+    def __init__(self, server_address: tuple[str, int], bind_and_activate: bool = True) -> None:
         super().__init__(server_address, ServerConnectionHandler, bind_and_activate)
         self.databases: defaultdict[int, Database] = defaultdict(Database, {0: Database()})
         self.acl: ACL = ACL.create()

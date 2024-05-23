@@ -11,11 +11,11 @@ class Information:
     enterprise: bool = False
     total_commands_processed: int = 0
 
-    def all(self):
+    def all(self) -> bytes:
         return b"\r\n".join(
             [
                 b"# Server",
-                b"valkey_version:" + self.server_version,
+                b"redis_version:" + self.server_version,
                 b"arch_bits:" + self.arch_bits,
                 b"",
                 b"# Cluster",

@@ -1,14 +1,14 @@
 import fnmatch
 from dataclasses import Field, dataclass, field, fields
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal
 
 from pyvalkey.database_objects.utils import to_bytes
 
 
 def configuration(
     default: int | bytes, type_: Literal["string", "password", "integer"] = "string", number_of_values: int = 1
-):
+) -> Any:  # noqa:ANN401
     return field(
         default=default,
         metadata={
@@ -48,7 +48,7 @@ class Configurations:
         except KeyError:
             return ""
 
-    def set_values(self, name: bytes, *values: bytes):
+    def set_values(self, name: bytes, *values: bytes) -> None:
         field_type = self.get_type(name)
 
         if field_type == "password":
@@ -67,7 +67,7 @@ class Configurations:
             names.update(set(fnmatch.filter((f.name.replace("_", "-").encode() for f in fields(self)), pattern)))
         return names
 
-    def info(self, names):
+    def info(self, names: set[bytes]) -> dict[bytes, bytes]:
         return {
             f.name.replace("_", "-").encode(): to_bytes(getattr(self, f.name))
             for f in fields(self)

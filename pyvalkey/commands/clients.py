@@ -6,18 +6,18 @@ from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import (
-    server_keyword_parameter,
     positional_parameter,
+    server_keyword_parameter,
 )
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.resp import RESP_OK, RespError
+from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
 @dataclass
 class ClientCommand(Command):
     client_context: ClientContext = server_command_dependency()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         raise NotImplementedError()
 
 
@@ -25,7 +25,7 @@ class ClientCommand(Command):
 class SelectDatabase(ClientCommand):
     index: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         self.client_context.current_database = self.index
         return RESP_OK
 
@@ -34,7 +34,7 @@ class SelectDatabase(ClientCommand):
 class ClientList(ClientCommand):
     client_type: bytes | None = server_keyword_parameter(flag=b"TYPE", default=None)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if self.client_type:
             return self.client_context.server_context.clients.filter_(client_type=self.client_type).info
         return self.client_context.server_context.clients.info
@@ -42,7 +42,7 @@ class ClientList(ClientCommand):
 
 @ServerCommandsRouter.command(b"id", [b"slow", b"connection"], b"client")
 class ClientId(ClientCommand):
-    def execute(self):
+    def execute(self) -> ValueType:
         return self.client_context.current_client.client_id
 
 
@@ -50,14 +50,14 @@ class ClientId(ClientCommand):
 class ClientSetName(ClientCommand):
     name: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         self.client_context.current_client.name = self.name
         return RESP_OK
 
 
 @ServerCommandsRouter.command(b"getname", [b"slow", b"connection"], b"client")
 class ClientGetName(ClientCommand):
-    def execute(self):
+    def execute(self) -> ValueType:
         return self.client_context.current_client.name or None
 
 
@@ -67,7 +67,7 @@ class ClientKill(ClientCommand):
     client_id: int = server_keyword_parameter(flag=b"ID", default=None)
     address: bytes = server_keyword_parameter(flag=b"ADDR", default=None)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if self.old_format_address:
             clients = self.client_context.server_context.clients.filter_(address=self.old_format_address).values()
             if not clients:
@@ -88,7 +88,7 @@ class ClientKill(ClientCommand):
 class ClientPause(ClientCommand):
     timeout_seconds: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         self.client_context.server_context.pause_timeout = time.time() + self.timeout_seconds
         self.client_context.server_context.is_paused = True
         return RESP_OK
@@ -98,7 +98,7 @@ class ClientPause(ClientCommand):
 class ClientUnpause(ClientCommand):
     timeout_seconds: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         self.client_context.server_context.is_paused = False
         return RESP_OK
 
@@ -113,9 +113,10 @@ class ReplyMode(Enum):
 class ClientReply(ClientCommand):
     mode: ReplyMode = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if self.mode == ReplyMode.ON:
             return RESP_OK
+        return None
 
 
 @ServerCommandsRouter.command(b"setinfo", [b"slow", b"connection"], b"client")
@@ -123,7 +124,7 @@ class ClientSetInformation(ClientCommand):
     library_name: bytes | None = server_keyword_parameter(flag=b"LIB-NAME", default=None)
     library_version: bytes | None = server_keyword_parameter(flag=b"LIB-VER", default=None)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if self.library_name:
             self.client_context.current_client.library_name = self.library_name
         if self.library_version:
