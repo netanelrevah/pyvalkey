@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, List
 
 from typing_extensions import Self
 
@@ -13,9 +13,9 @@ class Command:
         raise NotImplementedError()
 
     @staticmethod
-    def parse(parameters: list[bytes]) -> dict[str, Any]:
+    def parse(parameters: List[bytes]) -> dict[str, Any]:
         raise NotImplementedError()
 
     @classmethod
-    def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
+    def create(cls, parameters: List[bytes], client_context: ClientContext) -> Self:
         raise NotImplementedError()

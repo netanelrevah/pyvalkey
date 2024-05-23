@@ -1,7 +1,7 @@
 import operator
 from enum import Enum
 from functools import reduce
-from typing import Any, ClassVar
+from typing import Any, ClassVar, List
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
@@ -69,7 +69,7 @@ class BitOperation(DatabaseCommand):
 
     operation: BitOperationMode = positional_parameter()
     destination_key: bytes = positional_parameter()
-    source_keys: list[bytes] = positional_parameter()
+    source_keys: List[bytes] = positional_parameter()
 
     def handle(self) -> int:
         if self.operation in self.OPERATION_TO_OPERATOR:

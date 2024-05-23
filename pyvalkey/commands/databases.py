@@ -58,7 +58,7 @@ class Set(DatabaseCommand):
 
 @ServerCommandsRouter.command(b"del", [b"keyspace", b"write", b"slow"])
 class Delete(DatabaseCommand):
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])

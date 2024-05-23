@@ -1,6 +1,6 @@
 from dataclasses import Field, dataclass, fields
 from enum import Enum, auto
-from typing import Callable
+from typing import Callable, List
 
 from typing_extensions import Self
 
@@ -20,9 +20,9 @@ class DependencyMetadata(Enum):
 class CommandCreator:
     command_cls: type[Command]
     command_creator: Callable[..., Command]
-    dependencies: list[Field]
+    dependencies: List[Field]
 
-    def __call__(self, parameters: list[bytes], client_context: ClientContext) -> Command:
+    def __call__(self, parameters: List[bytes], client_context: ClientContext) -> Command:
         command_kwargs = self.command_cls.parse(parameters)
 
         for command_dependency in self.dependencies:

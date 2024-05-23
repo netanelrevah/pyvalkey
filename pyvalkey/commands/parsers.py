@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Union, get_args, get_origin, overload
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Union, get_args, get_origin, overload
 
 from typing_extensions import Self
 
@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 
 class ParameterParser:
     @classmethod
-    def next_parameter(cls, parameters: list[bytes]) -> bytes:
+    def next_parameter(cls, parameters: List[bytes]) -> bytes:
         try:
             return parameters.pop(0)
         except IndexError:
             raise ServerWrongNumberOfArgumentsError()
 
-    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
+    def parse(self, parameters: List[bytes]) -> Any:  # noqa: ANN401
         return self.next_parameter(parameters)
 
     @classmethod
@@ -76,12 +76,12 @@ class ParameterParser:
 
 
 class KeyParameterParser(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
+    def parse(self, parameters: List[bytes]) -> Any:  # noqa: ANN401
         return self.next_parameter(parameters)
 
 
 class ParametersGroup(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
+    def parse(self, parameters: List[bytes]) -> Any:  # noqa: ANN401
         raise NotImplementedError()
 
 
@@ -90,7 +90,7 @@ class NamedParameterParser(ParameterParser):
     name: str
     parameter_parser: ParameterParser
 
-    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
+    def parse(self, parameters: List[bytes]) -> dict[str, Any]:
         return {self.name: self.parameter_parser.parse(parameters)}
 
 
@@ -103,7 +103,7 @@ class OptionalNamedParameterParser(NamedParameterParser):
 class ListParameterParser(ParameterParser):
     parameter_parser: ParameterParser
 
-    def parse(self, parameters: list[bytes]) -> list:
+    def parse(self, parameters: List[bytes]) -> list:
         list_parameter = []
         while parameters:
             list_parameter.append(self.parameter_parser.parse(parameters))
@@ -126,7 +126,7 @@ class ListParameterParser(ParameterParser):
 class SetParameterParser(ParameterParser):
     parameter_parser: ParameterParser
 
-    def parse(self, parameters: list[bytes]) -> set:
+    def parse(self, parameters: List[bytes]) -> set:
         set_value = set()
         while parameters:
             set_value.add(self.parameter_parser.parse(parameters))
@@ -147,7 +147,7 @@ class SetParameterParser(ParameterParser):
 class TupleParameterParser(ParameterParser):
     parameter_parser_tuple: tuple[ParameterParser, ...]
 
-    def parse(self, parameters: list[bytes]) -> tuple:
+    def parse(self, parameters: List[bytes]) -> tuple:
         tuple_parameter = []
         for parameter_parser in self.parameter_parser_tuple:
             tuple_parameter.append(parameter_parser.parse(parameters))
@@ -168,7 +168,7 @@ class TupleParameterParser(ParameterParser):
 
 
 class IntParameterParser(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> int:
+    def parse(self, parameters: List[bytes]) -> int:
         try:
             return int(self.next_parameter(parameters))
         except ValueError:
@@ -176,7 +176,7 @@ class IntParameterParser(ParameterParser):
 
 
 class FloatParameterParser(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> float:
+    def parse(self, parameters: List[bytes]) -> float:
         try:
             return float(self.next_parameter(parameters))
         except ValueError:
@@ -187,7 +187,7 @@ class FloatParameterParser(ParameterParser):
 class EnumParameterParser(ParameterParser):
     enum_cls: type[Enum]
 
-    def parse(self, parameters: list[bytes]) -> Enum:
+    def parse(self, parameters: List[bytes]) -> Enum:
         enum_value = self.next_parameter(parameters).upper()
         try:
             return self.enum_cls(enum_value)
@@ -201,7 +201,7 @@ class BoolParameterParser(ParameterParser):
 
     values_mapping: dict[bytes, bool] = field(default_factory=lambda: BoolParameterParser.DEFAULT_VALUES_MAPPING)
 
-    def parse(self, parameters: list[bytes]) -> bool:
+    def parse(self, parameters: List[bytes]) -> bool:
         bytes_value = self.next_parameter(parameters).upper()
         if bytes_value not in self.values_mapping:
             raise ServerSyntaxError(bytes_value)
@@ -212,7 +212,7 @@ class BoolParameterParser(ParameterParser):
 class OptionalKeywordParametersGroup(ParametersGroup):
     parameters_parsers_map: dict[bytes, NamedParameterParser]
 
-    def parse(self, parameters: list[bytes]) -> dict[str, Any]:
+    def parse(self, parameters: List[bytes]) -> dict[str, Any]:
         parsed_kw_parameters: dict[str, Any] = {}
 
         while parameters:
@@ -230,13 +230,13 @@ class OptionalKeywordParametersGroup(ParametersGroup):
 
 @dataclass
 class ObjectParametersParser(ParametersGroup):
-    parameters_parsers: list[ParameterParser]
+    parameters_parsers: List[ParameterParser]
 
     @classmethod
     def _is_optional(cls, parameter_parser: ParameterParser) -> bool:
         return isinstance(parameter_parser, OptionalKeywordParametersGroup | OptionalNamedParameterParser)
 
-    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
+    def parse(self, parameters: List[bytes]) -> Any:  # noqa: ANN401
         parsed_parameters: dict[str, Any] = {}
 
         non_optional_parameters = sum(1 for p in self.parameters_parsers if not self._is_optional(p))
@@ -249,7 +249,7 @@ class ObjectParametersParser(ParametersGroup):
 
         return parsed_parameters
 
-    def __call__(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
+    def __call__(self, parameters: List[bytes]) -> Any:  # noqa: ANN401
         return self.parse(list(parameters))
 
     @classmethod
@@ -263,7 +263,7 @@ class ObjectParametersParser(ParametersGroup):
         if hasattr(object_cls, "__original_order__"):
             parameter_fields_by_order = list(getattr(object_cls, "__original_order__"))
 
-        parameters_parsers: list[ParameterParser] = []
+        parameters_parsers: List[ParameterParser] = []
 
         optional_keyword_parameters = {}
         for parameter_field_name in parameter_fields_by_order:
@@ -303,7 +303,7 @@ class ObjectParser(ParametersGroup):
     object_cls: Any
     object_parameters_parser: ObjectParametersParser
 
-    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
+    def parse(self, parameters: List[bytes]) -> Any:  # noqa: ANN401
         return self.object_cls(self.object_parameters_parser.parse(parameters))
 
     @classmethod

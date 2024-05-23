@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 
 import pytest
 from parametrization import Parametrization
@@ -28,7 +28,7 @@ class ByteIntCommand(Command):
 @server_command()
 class ListCommand(Command):
     a: bytes = positional_parameter()
-    d: list[int] = positional_parameter()
+    d: List[int] = positional_parameter()
 
 
 @Parametrization.autodetect_parameters()

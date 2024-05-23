@@ -1,5 +1,5 @@
 import functools
-from typing import Callable
+from typing import Callable, List, Set
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
@@ -27,7 +27,7 @@ class SetMove(DatabaseCommand):
 @ServerCommandsRouter.command(b"smismember", [b"read", b"set", b"slow"])
 class SetAreMembers(DatabaseCommand):
     key: bytes = positional_parameter()
-    members: set[bytes] = positional_parameter()
+    members: Set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         a_set = self.database.get_set(self.key)
@@ -62,7 +62,7 @@ class SetCardinality(DatabaseCommand):
 @ServerCommandsRouter.command(b"sadd", [b"write", b"set", b"fast"])
 class SetAdd(DatabaseCommand):
     key: bytes = positional_parameter()
-    members: set[bytes] = positional_parameter()
+    members: Set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         a_set = self.database.get_or_create_set(self.key)
@@ -87,7 +87,7 @@ class SetPop(DatabaseCommand):
 @ServerCommandsRouter.command(b"srem", [b"write", b"set", b"fast"])
 class SetRemove(DatabaseCommand):
     key: bytes = positional_parameter()
-    members: set[bytes] = positional_parameter()
+    members: Set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         a_set = self.database.get_set(self.key)
@@ -95,13 +95,13 @@ class SetRemove(DatabaseCommand):
         return len(a_set.intersection(self.members))
 
 
-def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: list[bytes]) -> list:
+def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: List[bytes]) -> list:
     return list(functools.reduce(operation, map(database.get_set, keys)))  # type: ignore[arg-type]
 
 
 @ServerCommandsRouter.command(b"sunion", [b"read", b"set", b"slow"])
 class SetUnion(DatabaseCommand):
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return apply_set_operation(self.database, set.union, self.keys)
@@ -109,7 +109,7 @@ class SetUnion(DatabaseCommand):
 
 @ServerCommandsRouter.command(b"sinter", [b"read", b"set", b"slow"])
 class SetIntersection(DatabaseCommand):
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return apply_set_operation(self.database, set.intersection, self.keys)
@@ -117,14 +117,14 @@ class SetIntersection(DatabaseCommand):
 
 @ServerCommandsRouter.command(b"sdiff", [b"read", b"set", b"slow"])
 class SetDifference(DatabaseCommand):
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return apply_set_operation(self.database, set.difference, self.keys)
 
 
 def apply_set_store_operation(
-    database: Database, operation: Callable[[set, set], set], keys: list[bytes], destination: bytes
+    database: Database, operation: Callable[[set, set], set], keys: List[bytes], destination: bytes
 ) -> int:
     database[destination] = functools.reduce(operation, map(database.get_set, keys))
     return len(database[destination])
@@ -133,7 +133,7 @@ def apply_set_store_operation(
 @ServerCommandsRouter.command(b"sunionstore", [b"write", b"set", b"slow"])
 class SetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.union, self.keys, self.destination)
@@ -142,7 +142,7 @@ class SetUnionStore(DatabaseCommand):
 @ServerCommandsRouter.command(b"sinterstore", [b"write", b"set", b"slow"])
 class SetIntersectionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.intersection, self.keys, self.destination)
@@ -151,7 +151,7 @@ class SetIntersectionStore(DatabaseCommand):
 @ServerCommandsRouter.command(b"sdiffstore", [b"write", b"set", b"slow"])
 class SetDifferenceStore(DatabaseCommand):
     destination: bytes = positional_parameter()
-    keys: list[bytes] = positional_parameter()
+    keys: List[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.difference, self.keys, self.destination)
