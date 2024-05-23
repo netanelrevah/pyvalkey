@@ -67,7 +67,7 @@ class Configurations:
             names.update(set(fnmatch.filter((f.name.replace("_", "-").encode() for f in fields(self)), pattern)))
         return names
 
-    def info(self, names: list[bytes]) -> dict[bytes, bytes]:
+    def info(self, names: set[bytes]) -> dict[bytes, bytes]:
         return {
             f.name.replace("_", "-").encode(): to_bytes(getattr(self, f.name))
             for f in fields(self)

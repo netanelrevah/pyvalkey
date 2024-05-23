@@ -108,7 +108,7 @@ class ServerSortedSet:
         with_scores: bool = False,
         is_reversed: bool = False,
         limit: RangeLimit | None = None,
-    ) -> Iterable[bytes]:
+    ) -> Iterable[bytes | float]:
         if not is_reversed:
             minimum = (min_score, (b"" if min_inclusive else MAX_BYTES))
             maximum = (max_score, (MAX_BYTES if max_inclusive else b""))
@@ -141,7 +141,7 @@ class ServerSortedSet:
         with_scores: bool = False,
         is_reversed: bool = False,
         limit: RangeLimit | None = None,
-    ) -> Iterable[bytes]:
+    ) -> Iterable[bytes | float]:
         if not is_reversed:
             minimum, maximum = min_lex, max_lex
         else:
@@ -163,7 +163,7 @@ class ServerSortedSet:
             else:
                 yield member
 
-    def range(self, range_slice: slice, with_scores: bool = False) -> list[bytes]:
+    def range(self, range_slice: slice, with_scores: bool = False) -> list[bytes | float]:
         result = self.members[range_slice]
 
         offset = None
