@@ -1,9 +1,9 @@
 # pyvalkey: Python implemented Valkey server
 
-[![PyPI version](https://img.shields.io/pypi/v/r3dis.svg)](https://pypi.python.org/pypi/r3dis/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/r3dis.svg)](https://pypi.python.org/pypi/r3dis/)
-[![GitHub](https://img.shields.io/github/license/netanelrevah/r3dis)](https://pypi.python.org/pypi/r3dis/)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/r3dis)](https://pypi.python.org/pypi/r3dis/)
+[![PyPI version](https://img.shields.io/pypi/v/pyvalkey.svg)](https://pypi.python.org/pypi/pyvalkey/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/pyvalkey.svg)](https://pypi.python.org/pypi/pyvalkey/)
+[![GitHub](https://img.shields.io/github/license/netanelrevah/pyvalkey)](https://pypi.python.org/pypi/pyvalkey/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pyvalkey)](https://pypi.python.org/pypi/pyvalkey/)
 
 Tired of DevOps telling you not deploy Valkey on your system?
 Stuck in python environment but still want simple data structure store to sync between you threads?

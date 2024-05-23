@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyvalkey"
-version = "0.0.4"
+version = "0.0.5"
 description = "pyvalkey: Python implemented Valkey server"
 authors = ["Netanel Revah <netanelrevah@outlook.com>"]
 license = "MIT License"
