@@ -4,7 +4,7 @@ import fnmatch
 from collections import defaultdict
 from dataclasses import dataclass, field, fields
 from hashlib import sha256
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import CommandPermissionError, KeyPermissionError, NoPermissionError
@@ -151,7 +151,7 @@ class ACLUser:
 
     def check_permissions(self, command: Command) -> None:
         exception = None
-        for selector in [self.root_permissions] + self.selectors:
+        for selector in [self.root_permissions, *self.selectors]:
             try:
                 selector.check_permissions(command)
                 return
@@ -163,9 +163,9 @@ class ACLUser:
 
 
 class ACL(dict[bytes, ACLUser]):
-    CATEGORIES: dict[bytes, set[bytes]] = defaultdict(set)
-    COMMANDS_NAMES: dict[type[Command], bytes] = {}
-    COMMAND_CATEGORIES: dict[bytes, set] = {}
+    CATEGORIES: ClassVar[dict[bytes, set[bytes]]] = defaultdict(set)
+    COMMANDS_NAMES: ClassVar[dict[type[Command], bytes]] = {}
+    COMMAND_CATEGORIES: ClassVar[dict[bytes, set]] = {}
 
     def get_or_create_user(self, user_name: bytes) -> ACLUser:
         if user_name not in self:
