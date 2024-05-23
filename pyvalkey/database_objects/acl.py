@@ -4,9 +4,7 @@ import fnmatch
 from collections import defaultdict
 from dataclasses import dataclass, field, fields
 from hashlib import sha256
-from typing import TYPE_CHECKING, ClassVar
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import CommandPermissionError, KeyPermissionError, NoPermissionError

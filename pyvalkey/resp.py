@@ -92,7 +92,7 @@ class RespDumper:
             self.dump_string(value)
         elif isinstance(value, RespError):
             self.writer.write(f"-{value.decode()}\r\n".encode())
-        elif isinstance(value, (str, bytes)):
+        elif isinstance(value, str | bytes):
             if isinstance(value, str):
                 value = value.encode()
             self.dump_bulk_string(value)

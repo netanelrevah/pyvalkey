@@ -1,7 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
-
-from typing_extensions import Self
+from typing import Any, Self
 
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.resp import ValueType

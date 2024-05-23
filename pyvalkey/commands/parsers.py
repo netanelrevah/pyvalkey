@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Union, get_args, get_origin, overload
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, overload
 
 from pyvalkey.commands.creators import CommandCreator
 from pyvalkey.commands.parameters import ParameterMetadata

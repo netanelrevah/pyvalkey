@@ -11,7 +11,7 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
 
     if field not in hash_get:
         hash_get[field] = 0
-    if not isinstance(hash_get[field], (int, float)):
+    if not isinstance(hash_get[field], int | float):
         raise ServerInvalidIntegerError
     hash_get[field] += increment
     return hash_get[field]

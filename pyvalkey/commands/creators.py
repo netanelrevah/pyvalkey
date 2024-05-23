@@ -1,8 +1,7 @@
+from collections.abc import Callable
 from dataclasses import Field, dataclass, fields
 from enum import Enum, auto
-from typing import Callable
-
-from typing_extensions import Self
+from typing import Self
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
