@@ -5,11 +5,12 @@ from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.acl import ACL
+from pyvalkey.resp import LoadedType, ValueType
 
 
 @ServerCommandsRouter.command(b"help", [b"slow", b"connection"], b"acl")
 class AclHelp(Command):
-    def execute(self):
+    def execute(self) -> ValueType:
         return ["genpass"]
 
 
@@ -17,7 +18,7 @@ class AclHelp(Command):
 class AclGeneratePassword(Command):
     length: int = positional_parameter(default=64)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return urandom(self.length)
 
 
@@ -25,7 +26,7 @@ class AclGeneratePassword(Command):
 class AclCategory(Command):
     category: bytes | None = positional_parameter(default=None)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if self.category is not None:
             return ACL.get_category_commands(self.category)
         return ACL.get_categories()
@@ -36,7 +37,7 @@ class AclDeleteUser(Command):
     acl: ACL = server_command_dependency()
     user_names: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         user_deleted = 0
         for user_name in self.user_names:
             if user_name == b"default":
@@ -50,7 +51,7 @@ class AclGetUser(Command):
     acl: ACL = server_command_dependency()
     user_name: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if self.user_name not in self.acl:
-            return
+            return None
         return self.acl[self.user_name].info

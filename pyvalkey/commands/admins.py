@@ -3,8 +3,8 @@ from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
-from pyvalkey.database_objects.errors import ServerException
-from pyvalkey.resp import RESP_OK
+from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.resp import RESP_OK, ValueType
 
 
 @ServerCommandsRouter.command(b"dryrun", [b"admin", b"slow", b"dangerous"], b"acl")
@@ -15,10 +15,7 @@ class AclDryRun(Command):
     command: bytes = positional_parameter()
     args: list[bytes] = positional_parameter()
 
-    def execute(self):
-        acl_user = self.acl[self.username]
-        if not acl_user.acl_list.is_allowed(self.command, self.args[0]):
-            return f"This user has no permissions to run the '{self.command.decode()}' command".encode()
+    def execute(self) -> ValueType:
         return RESP_OK
 
 
@@ -28,7 +25,7 @@ class AclSetUser(Command):
     user_name: bytes = positional_parameter()
     rules: list[bytes] = positional_parameter()
 
-    def parse_selector(self, selector: list[bytes], permission=None):
+    def parse_selector(self, selector: list[bytes], permission: Permission | None = None) -> Permission:
         permission = permission or Permission()
         for rule in selector:
             if rule == b"allcommands":
@@ -64,7 +61,7 @@ class AclSetUser(Command):
             raise ValueError(b"Syntax error")
         return permission
 
-    def execute(self):
+    def execute(self) -> ValueType:
         callbacks = []
 
         root_permission_role = []
@@ -89,7 +86,7 @@ class AclSetUser(Command):
                 callbacks.append(ACLUser.no_password)
                 continue
             if rule.startswith(b">"):
-                callbacks.append(lambda: ACLUser.add_password(rule[1:]))
+                callbacks.append(lambda acl_user, password=rule[1]: acl_user.add_password(password))  # type: ignore
                 continue
             if rule.startswith(b"("):
                 full_rule = rule
@@ -97,13 +94,13 @@ class AclSetUser(Command):
                     try:
                         full_rule += b" " + self.rules.pop(0)
                     except IndexError:
-                        raise ServerException(b"ERR Unmatched parenthesis in acl selector starting at '" + rule + b"'.")
+                        raise ServerError(b"ERR Unmatched parenthesis in acl selector starting at '" + rule + b"'.")
 
                 try:
                     selector = self.parse_selector(full_rule[1:-1].split())
                 except ValueError as e:
-                    raise ServerException(b"ERR Error in ACL SETUSER modifier '" + full_rule + b"': " + e.args[0])
-                callbacks.append(lambda acl_user, s=selector: acl_user.selectors.append(s))
+                    raise ServerError(b"ERR Error in ACL SETUSER modifier '" + full_rule + b"': " + e.args[0])
+                callbacks.append(lambda acl_user, s=selector: acl_user.selectors.append(s))  # type: ignore
                 continue
             if rule.startswith(b"-@") or rule.startswith(b"+@") or rule.startswith(b"+") or rule.startswith(b"-"):
                 root_permission_role.append(rule)
@@ -114,7 +111,7 @@ class AclSetUser(Command):
             if rule.startswith(b"%"):
                 root_permission_role.append(rule)
                 continue
-            raise ServerException(b"ERR Error in ACL SETUSER modifier '" + rule + b"': Syntax error")
+            raise ServerError(b"ERR Error in ACL SETUSER modifier '" + rule + b"': Syntax error")
 
         acl_user: ACLUser = self.acl.get_or_create_user(self.user_name)
         for callback in callbacks:

@@ -1,10 +1,10 @@
-class ServerException(Exception):
-    def __init__(self, message: bytes = b""):
+class ServerError(Exception):
+    def __init__(self, message: bytes = b"") -> None:
         super().__init__(message)
         self.message = message
 
 
-class NoPermissionError(ServerException):
+class NoPermissionError(ServerError):
     pass
 
 
@@ -18,21 +18,21 @@ class CommandPermissionError(NoPermissionError):
         self.command_name = command_name
 
 
-class RouterKeyError(ServerException):
+class RouterKeyError(ServerError):
     pass
 
 
-class ServerWrongType(ServerException):
+class ServerWrongTypeError(ServerError):
     pass
 
 
-class ServerSyntaxError(ServerException):
+class ServerSyntaxError(ServerError):
     pass
 
 
-class ServerInvalidIntegerError(ServerException):
+class ServerInvalidIntegerError(ServerError):
     pass
 
 
-class ServerWrongNumberOfArguments(ServerException):
+class ServerWrongNumberOfArguments(ServerError):
     pass

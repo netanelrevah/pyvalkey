@@ -8,7 +8,7 @@ from typing_extensions import Self
 from pyvalkey.commands.creators import CommandCreator
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import (
-    ServerException,
+    ServerError,
     ServerSyntaxError,
     ServerWrongNumberOfArguments,
 )
@@ -167,7 +167,7 @@ class IntParameterParser(ParameterParser):
         try:
             return int(self.next_parameter(parameters))
         except ValueError:
-            raise ServerException(b"ERR value is not an integer or out of range")
+            raise ServerError(b"ERR value is not an integer or out of range")
 
 
 class FloatParameterParser(ParameterParser):
@@ -175,7 +175,7 @@ class FloatParameterParser(ParameterParser):
         try:
             return float(self.next_parameter(parameters))
         except ValueError:
-            raise ServerException(b"ERR value is not a valid float")
+            raise ServerError(b"ERR value is not a valid float")
 
 
 @dataclass

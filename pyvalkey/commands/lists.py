@@ -4,13 +4,14 @@ from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.commands.utils import parse_range_parameters
+from pyvalkey.resp import ValueType
 
 
 @ServerCommandsRouter.command(b"llen", [b"read", b"list", b"fast"])
 class ListLength(DatabaseCommand):
     key: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return len(self.database.get_list(self.key))
 
 
@@ -19,7 +20,7 @@ class ListIndex(DatabaseCommand):
     key: bytes = positional_parameter()
     index: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         server_list = self.database.get_list(self.key)
 
         try:
@@ -34,7 +35,7 @@ class ListRange(DatabaseCommand):
     start: int = positional_parameter()
     stop: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return self.database.get_list(self.key)[parse_range_parameters(self.start, self.stop)]
 
 
@@ -50,7 +51,7 @@ class ListInsert(DatabaseCommand):
     pivot: bytes = positional_parameter()
     element: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
 
         if not a_list:
@@ -68,7 +69,7 @@ class ListPush(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"W")
     values: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
 
         for v in self.values:
@@ -81,7 +82,7 @@ class ListPushAtTail(DatabaseCommand):
     key: bytes = positional_parameter()
     values: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
 
         for v in self.values:
@@ -94,7 +95,7 @@ class ListPop(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int = positional_parameter(default=None)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
 
         if not a_list:
@@ -110,7 +111,7 @@ class ListRemove(DatabaseCommand):
     count: int = positional_parameter()
     element: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
 
         if not a_list:

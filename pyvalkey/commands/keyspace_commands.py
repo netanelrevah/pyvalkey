@@ -5,12 +5,12 @@ from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import positional_parameter, server_keyword_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.databases import Database
-from pyvalkey.resp import RESP_OK
+from pyvalkey.resp import RESP_OK, ValueType
 
 
 @ServerCommandsRouter.command(b"flushdb", [b"keyspace", b"write", b"slow", b"dangerous"])
 class FlushDatabase(DatabaseCommand):
-    def execute(self):
+    def execute(self) -> ValueType:
         self.database.clear()
         return RESP_OK
 
@@ -19,7 +19,7 @@ class FlushDatabase(DatabaseCommand):
 class FlushAllDatabases(Command):
     server_context: ServerContext = server_command_dependency()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         for database_number in self.server_context.databases.keys():
             self.server_context.databases[database_number] = Database()
         return RESP_OK
@@ -31,7 +31,7 @@ class Copy(DatabaseCommand):
     destination: bytes = positional_parameter(key_mode=b"W")
     replace: bool = server_keyword_parameter(flag=b"REPLACE")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         source_key = self.database.get_string(self.source)
         destination_key = self.database.get_string_or_none(self.destination)
 

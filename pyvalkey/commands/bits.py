@@ -7,7 +7,8 @@ from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.databases import Database
-from pyvalkey.database_objects.errors import ServerException
+from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.resp import ValueType
 
 
 @ServerCommandsRouter.command(b"getbit", [b"read", b"bitmap", b"fast"])
@@ -15,7 +16,7 @@ class GetBit(DatabaseCommand):
     key: bytes = positional_parameter()
     offset: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
 
         bytes_offset = self.offset // 8
@@ -30,7 +31,7 @@ class SetBit(DatabaseCommand):
     offset: int = positional_parameter()
     value: bool = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
 
         offset = int(self.offset)
@@ -70,7 +71,7 @@ class BitOperation(DatabaseCommand):
     destination_key: bytes = positional_parameter()
     source_keys: list[bytes] = positional_parameter()
 
-    def handle(self):
+    def handle(self) -> int:
         if self.operation in self.OPERATION_TO_OPERATOR:
             result = reduce(
                 self.OPERATION_TO_OPERATOR[self.operation],
@@ -94,7 +95,7 @@ class BitCount(DatabaseCommand):
     count_range: tuple[int, int] | None = positional_parameter(default=None)
     bit_mode: bool = positional_parameter(default=False, values_mapping={b"BYTE": False, b"BIT": True})
 
-    def handle_byte_mode(self, key: bytes, start: int, end: int):
+    def handle_byte_mode(self, key: bytes, start: int, end: int) -> int:
         s = self.database.get_string(key)
 
         length = len(s.bytes_value)
@@ -113,7 +114,7 @@ class BitCount(DatabaseCommand):
 
         return sum(map(int.bit_count, s.bytes_value[start : stop + 1]))
 
-    def handle_bit_mode(self, key: bytes, start: int, end: int):
+    def handle_bit_mode(self, key: bytes, start: int, end: int) -> int:
         s = self.database.get_string(key)
         value: int = s.int_value
 
@@ -128,7 +129,7 @@ class BitCount(DatabaseCommand):
         bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
         return bit_count
 
-    def execute(self):
+    def execute(self) -> ValueType:
         if not self.count_range:
             s = self.database.get_string(self.key)
             return sum(map(int.bit_count, s.bytes_value))
@@ -136,13 +137,14 @@ class BitCount(DatabaseCommand):
         start, end = self.count_range
 
         if self.bit_mode:
-            self.handle_bit_mode(self.key, start, end)
+            return self.handle_bit_mode(self.key, start, end)
+        return self.handle_byte_mode(self.key, start, end)
 
 
-def apply_increment(database: Database, key: bytes, increment: int | float = 1):
+def apply_increment(database: Database, key: bytes, increment: int | float = 1) -> bytes:
     s = database.get_or_create_string(key)
     if s.numeric_value is None:
-        raise ServerException(b"ERR value is not an integer or out of range")
+        raise ServerError(b"ERR value is not an integer or out of range")
     s.update_with_numeric_value(s.numeric_value + increment)
     return s.bytes_value
 
@@ -151,7 +153,7 @@ def apply_increment(database: Database, key: bytes, increment: int | float = 1):
 class Increment(DatabaseCommand):
     key: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_increment(self.database, self.key)
 
 
@@ -160,7 +162,7 @@ class IncrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: int = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_increment(self.database, self.key, self.increment)
 
 
@@ -169,7 +171,7 @@ class IncrementByFloat(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: float = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_increment(self.database, self.key, self.increment)
 
 
@@ -177,7 +179,7 @@ class IncrementByFloat(DatabaseCommand):
 class Decrement(DatabaseCommand):
     key: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_increment(self.database, self.key, -1)
 
 
@@ -186,5 +188,5 @@ class DecrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     decrement: float = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_increment(self.database, self.key, self.decrement * -1)

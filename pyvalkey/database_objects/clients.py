@@ -1,5 +1,6 @@
 import itertools
 from dataclasses import dataclass
+from typing import Iterable, Self
 
 from pyvalkey.database_objects.utils import to_bytes
 
@@ -29,18 +30,26 @@ class Client:
         return b"".join([b"N" if self.is_normal else b"", b"S" if self.is_replica else b""])
 
     @property
-    def info(self):
-        items = {b"id": self.client_id, b"addr": self.address, b"flags": self.flags, b"name": self.name}.items()
-        return b" ".join([k + b"=" + to_bytes(v) for k, v in items])
+    def info(self) -> bytes:
+        items: dict[bytes, bytes | int] = {
+            b"id": self.client_id,
+            b"addr": self.address,
+            b"flags": self.flags,
+            b"name": self.name,
+        }
+        return b" ".join([k + b"=" + to_bytes(v) for k, v in items.items()])
 
 
 class ClientList(dict[int, Client]):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self, *seq: dict[int, Client] | Iterable[tuple[int, Client]] | None, **kwargs: dict[int, Client]
+    ) -> None:
+        super().__init__(*seq, **kwargs)
+
         self.client_ids = itertools.count(0)
 
-    def all(self):
-        return ClientList({id_: c for id_, c in self.items() if not c.is_killed})
+    def all(self) -> Self:
+        return self.__class__({id_: c for id_, c in self.items() if not c.is_killed})
 
     def filter_(
         self, client_id: int | None = None, address: bytes | None = None, client_type: bytes | None = None
@@ -63,7 +72,7 @@ class ClientList(dict[int, Client]):
     def info(self) -> bytes:
         return b"\r".join([c.info for c in self.all().values()])
 
-    def create_client(self, host: bytes, port: int):
+    def create_client(self, host: bytes, port: int) -> Client:
         current_client_id = next(self.client_ids)
         self[current_client_id] = Client(
             client_id=current_client_id,

@@ -4,7 +4,7 @@ import fnmatch
 from collections import defaultdict
 from dataclasses import dataclass, field, fields
 from hashlib import sha256
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import CommandPermissionError, KeyPermissionError, NoPermissionError
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
 
 
-def check_command_by_category(command_name: bytes, category: bytes):
+def check_command_by_category(command_name: bytes, category: bytes) -> bool:
     return category in ACL.COMMAND_CATEGORIES[command_name]
 
 
@@ -22,19 +22,19 @@ class KeyPattern:
     pattern: bytes
     mode: bytes = b""
 
-    def check(self, key: bytes, key_mode: bytes):
+    def check(self, key: bytes, key_mode: bytes) -> bool:
         if self.mode and self.mode != key_mode:
             return False
         return fnmatch.fnmatch(key, self.pattern)
 
     @classmethod
-    def create(cls, rule: bytes):
+    def create(cls, rule: bytes) -> Self:
         mode = b""
         if rule.startswith(b"%"):
             mode = rule[1 : rule.index(b"~")]
-        return KeyPattern(rule[rule.index(b"~") + 1 :], mode)
+        return cls(rule[rule.index(b"~") + 1 :], mode)
 
-    def to_bytes(self):
+    def to_bytes(self) -> bytes:
         return (b"%" + self.mode if self.mode else b"") + b"~" + self.pattern
 
 
@@ -44,7 +44,7 @@ class CommandRule:
     allowed: bool
     is_category: bool
 
-    def check(self, command_name: bytes):
+    def check(self, command_name: bytes) -> bool:
         if self.is_category:
             if self.allowed:
                 return self.rule == b"all" or check_command_by_category(command_name, self.rule)
@@ -55,10 +55,10 @@ class CommandRule:
         return not self.allowed
 
     @classmethod
-    def create(cls, rule: bytes):
-        return CommandRule(rule.lstrip(b"+@-"), rule[:1] == b"+", rule.startswith(b"+@") or rule.startswith(b"-@"))
+    def create(cls, rule: bytes) -> Self:
+        return cls(rule.lstrip(b"+@-"), rule[:1] == b"+", rule.startswith(b"+@") or rule.startswith(b"-@"))
 
-    def to_bytes(self):
+    def to_bytes(self) -> bytes:
         return (b"+" if self.allowed else b"-") + (b"@" if self.is_category else b"") + self.rule
 
 
@@ -68,13 +68,13 @@ class Permission:
     command_rules: list[CommandRule] = field(default_factory=lambda: [CommandRule.create(b"-@all")])
     channel_rules: set[bytes] = field(default_factory=set)
 
-    def check_keys_patterns(self, key: bytes, key_mode: bytes):
+    def check_keys_patterns(self, key: bytes, key_mode: bytes) -> bool:
         for key_pattern in self.keys_patterns:
             if key_pattern.check(key, key_mode):
                 return True
         return False
 
-    def check_permissions(self, command: Command):
+    def check_permissions(self, command: Command) -> None:
         command_name = ACL.COMMANDS_NAMES[command.__class__]
 
         is_fields_allowed = {}
@@ -116,11 +116,11 @@ class ACLUser:
     root_permissions: Permission = field(default_factory=lambda: Permission())
     selectors: list[Permission] = field(default_factory=list)
 
-    def add_password(self, password: bytes):
+    def add_password(self, password: bytes) -> None:
         self.passwords.add(sha256(password).hexdigest().encode())
 
     @property
-    def info(self):
+    def info(self) -> dict[bytes, list | bytes]:
         flags = [b"on" if self.is_active else b"off"]
         if not self.passwords:
             flags.append(b"nopass")
@@ -132,24 +132,24 @@ class ACLUser:
             b"selectors": [selector.info() for selector in self.selectors],
         }
 
-    def reset(self):
+    def reset(self) -> None:
         self.is_active = False
         self.is_no_password_user = False
         self.passwords = set()
         self.root_permissions = Permission()
         self.selectors = []
 
-    def reset_keys(self):
-        self.keys_patterns = []
+    def reset_keys(self) -> None:
+        self.root_permissions.keys_patterns = set()
 
-    def clear_selectors(self):
+    def clear_selectors(self) -> None:
         self.selectors = []
 
-    def no_password(self):
+    def no_password(self) -> None:
         self.is_no_password_user = True
         self.passwords = set()
 
-    def check_permissions(self, command: Command):
+    def check_permissions(self, command: Command) -> None:
         exception = None
         for selector in [self.root_permissions] + self.selectors:
             try:
@@ -172,10 +172,10 @@ class ACL(dict[bytes, ACLUser]):
             self[user_name] = ACLUser(user_name)
         return self[user_name]
 
-    def delete_user(self, user_name: bytes):
+    def delete_user(self, user_name: bytes) -> ACLUser | None:
         return self.pop(user_name, None)
 
-    def delete_users(self, user_names: list[bytes]):
+    def delete_users(self, user_names: list[bytes]) -> int:
         deleted_users = 0
         for user_name in user_names:
             if user_name == b"default":
@@ -184,13 +184,13 @@ class ACL(dict[bytes, ACLUser]):
         return deleted_users
 
     @classmethod
-    def get_categories(cls):
+    def get_categories(cls) -> list[bytes]:
         return list(cls.CATEGORIES.keys())
 
     @classmethod
-    def get_category_commands(cls, category: bytes):
-        return list(cls.CATEGORIES.get(category, []))
+    def get_category_commands(cls, category: bytes) -> list[bytes]:
+        return list(cls.CATEGORIES.get(category, set()))
 
     @classmethod
-    def create(cls):
+    def create(cls) -> ACL:
         return ACL({b"default": ACLUser(b"default")})

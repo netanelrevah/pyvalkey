@@ -29,5 +29,5 @@ class ClientContext:
     current_user: ACLUser | None = None
 
     @property
-    def database(self):
+    def database(self) -> Database:
         return self.server_context.databases[self.current_database]

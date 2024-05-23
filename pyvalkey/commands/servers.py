@@ -8,15 +8,15 @@ from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.errors import ServerException
-from pyvalkey.resp import RESP_OK, RespError
+from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
 @dataclass
 class ServerCommand(Command):
     server_context: ServerContext
 
-    def execute(self):
+    def execute(self) -> ValueType:
         raise NotImplementedError()
 
 
@@ -29,11 +29,11 @@ class Authorize(Command):
     username: bytes | None = positional_parameter(default=None)
     password: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         password_hash = sha256(self.password).hexdigest().encode()
         if self.username is not None:
             if self.username not in self.acl:
-                raise ServerException(b"WRONGPASS invalid username-password pair or user is disabled.")
+                raise ServerError(b"WRONGPASS invalid username-password pair or user is disabled.")
             if self.username == b"default" and password_hash == self.configurations.requirepass:
                 return RESP_OK
             acl_user = self.acl[self.username]
@@ -44,7 +44,7 @@ class Authorize(Command):
 
         if self.configurations.requirepass and password_hash == self.configurations.requirepass:
             return RESP_OK
-        raise ServerException(
+        raise ServerError(
             b"ERR AUTH "
             b"<password> called without any password configured for the default user. "
             b"Are you sure your configuration is correct?"

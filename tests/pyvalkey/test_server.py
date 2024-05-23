@@ -5,7 +5,7 @@ from parametrization import Parametrization
 from pytest import fixture
 
 from pyvalkey.commands.utils import parse_range_parameters
-from pyvalkey.database_objects.databases import MAX_STRING
+from pyvalkey.database_objects.databases import MAX_BYTES
 from pyvalkey.server import ValkeyServer
 
 
@@ -38,17 +38,17 @@ def test_simple(s, c):
 
 
 def test_server_max_str():
-    assert "a" < MAX_STRING
-    assert "a" <= MAX_STRING
-    assert not "\xff" > MAX_STRING
-    assert not "\xff" >= MAX_STRING
-    assert "a" != MAX_STRING
+    assert "a" < MAX_BYTES
+    assert "a" <= MAX_BYTES
+    assert not "\xff" > MAX_BYTES
+    assert not "\xff" >= MAX_BYTES
+    assert "a" != MAX_BYTES
 
-    assert MAX_STRING > "a"
-    assert MAX_STRING >= "a"
-    assert not MAX_STRING < "\xff"
-    assert not MAX_STRING <= "\xff"
-    assert MAX_STRING != "a"
+    assert MAX_BYTES > "a"
+    assert MAX_BYTES >= "a"
+    assert not MAX_BYTES < "\xff"
+    assert not MAX_BYTES <= "\xff"
+    assert MAX_BYTES != "a"
 
 
 N0 = []

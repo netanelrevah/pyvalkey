@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.database_objects.acl import ACL
@@ -40,8 +40,10 @@ class ServerCommandsRouter:
         return routed_command.create(parameters, client_context)
 
     @classmethod
-    def command(cls, command: bytes, acl_categories: list[bytes], parent_command: bytes | None = None):
-        def _command_wrapper(command_cls: type[Command]):
+    def command(
+        cls, command: bytes, acl_categories: list[bytes], parent_command: bytes | None = None
+    ) -> Callable[[type[Command]], type[Command]]:
+        def _command_wrapper(command_cls: type[Command]) -> type[Command]:
             command_cls = server_command(command_cls)
 
             if not acl_categories:

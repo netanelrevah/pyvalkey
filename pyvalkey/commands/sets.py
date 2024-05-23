@@ -5,6 +5,7 @@ from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.databases import Database
+from pyvalkey.resp import ValueType
 
 
 @ServerCommandsRouter.command(b"smove", [b"write", b"set", b"fast"])
@@ -13,7 +14,7 @@ class SetMove(DatabaseCommand):
     destination: bytes = positional_parameter()
     member: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         source_set = self.database.get_set(self.source)
         destination_set = self.database.get_or_create_set(self.destination)
         if self.member not in source_set:
@@ -28,7 +29,7 @@ class SetAreMembers(DatabaseCommand):
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
 
-    def handle(self):
+    def execute(self) -> ValueType:
         a_set = self.database.get_set(self.key)
         return list(map(lambda m: m in a_set, self.members))
 
@@ -38,7 +39,7 @@ class SetIsMember(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return self.member in self.database.get_set(self.key)
 
 
@@ -46,7 +47,7 @@ class SetIsMember(DatabaseCommand):
 class SetMembers(DatabaseCommand):
     key: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return list(self.database.get_set(self.key))
 
 
@@ -54,7 +55,7 @@ class SetMembers(DatabaseCommand):
 class SetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return len(self.database.get_set(self.key))
 
 
@@ -63,7 +64,7 @@ class SetAdd(DatabaseCommand):
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_set = self.database.get_or_create_set(self.key)
         length_before = len(a_set)
         for member in self.members:
@@ -76,7 +77,7 @@ class SetPop(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int = positional_parameter(default=None)
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_set = self.database.get_set(self.key).pop()
         if self.count is None:
             return a_set.pop() if a_set else None
@@ -88,13 +89,13 @@ class SetRemove(DatabaseCommand):
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         a_set = self.database.get_set(self.key)
         self.database[self.key] = a_set - self.members
         return len(a_set.intersection(self.members))
 
 
-def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: list[bytes]):
+def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: list[bytes]) -> list:
     return list(functools.reduce(operation, map(database.get_set, keys)))  # type: ignore
 
 
@@ -102,7 +103,7 @@ def apply_set_operation(database: Database, operation: Callable[[set, set], set]
 class SetUnion(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_set_operation(self.database, set.union, self.keys)
 
 
@@ -110,7 +111,7 @@ class SetUnion(DatabaseCommand):
 class SetIntersection(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_set_operation(self.database, set.intersection, self.keys)
 
 
@@ -118,13 +119,13 @@ class SetIntersection(DatabaseCommand):
 class SetDifference(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_set_operation(self.database, set.difference, self.keys)
 
 
 def apply_set_store_operation(
     database: Database, operation: Callable[[set, set], set], keys: list[bytes], destination: bytes
-):
+) -> int:
     database[destination] = functools.reduce(operation, map(database.get_set, keys))
     return len(database[destination])
 
@@ -134,7 +135,7 @@ class SetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.union, self.keys, self.destination)
 
 
@@ -143,7 +144,7 @@ class SetIntersectionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.intersection, self.keys, self.destination)
 
 
@@ -152,5 +153,5 @@ class SetDifferenceStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.difference, self.keys, self.destination)

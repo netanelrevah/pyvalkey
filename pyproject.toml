@@ -21,6 +21,7 @@ redis = "^5.0.0"
 pytest = "^8"
 pytest-parametrization = "*"
 ruff = "*"
+sortedcontainers-stubs = "*"
 
 [build-system]
 requires = ["poetry-core"]
@@ -37,8 +38,8 @@ testpaths = "tests valkey_tests"
 target-version = "py38"
 line-length = 120
 
-lint.select = ["ANN", "I", "N", "FURB", "UP"]
-lint.ignore = ["E731", "ANN101"]
+lint.select = ["ANN", "I", "N", "FURB", "UP", "PGH"]
+lint.ignore = ["E731", "ANN101", "ANN102"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/{tests}/*" = ["ANN"]
@@ -46,5 +47,6 @@ lint.ignore = ["E731", "ANN101"]
 [[tool.mypy.overrides]]
 module = [
     "sortedcontainers",
+    "typer"
 ]
 ignore_missing_imports = true

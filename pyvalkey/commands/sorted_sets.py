@@ -1,33 +1,35 @@
 import math
 from enum import Enum
+from typing import assert_type
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import (
-    server_keyword_parameter,
     positional_parameter,
+    server_keyword_parameter,
 )
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import (
-    MAX_STRING,
+    MAX_BYTES,
     Database,
+    MaxBytes,
     RangeLimit,
-    MaxString,
     ServerSortedSet,
 )
+from pyvalkey.resp import ValueType
 
 
-def parse_score_parameter(score: bytes) -> tuple[bytes | MaxString | float, bool]:
-    result_score: bytes | MaxString | float
+def parse_score_parameter(score: bytes) -> tuple[bytes, bool]:
+    result_score: bytes
     min_inclusive = True
     if score == b"-":
         result_score = b""
     elif score == b"+":
-        result_score = MAX_STRING
+        result_score = MAX_BYTES
     elif score == b"-inf":
-        result_score = -math.inf
+        result_score = score
     elif score == b"+inf":
-        result_score = -math.inf
+        result_score = score
     elif b"(" in score:
         result_score = score[1:]
         min_inclusive = False
@@ -39,7 +41,7 @@ def parse_score_parameter(score: bytes) -> tuple[bytes | MaxString | float, bool
     return result_score, min_inclusive
 
 
-def parse_ordered_range_parameters(min_score: bytes, max_score: bytes):
+def parse_ordered_range_parameters(min_score: bytes, max_score: bytes) -> tuple[bytes, bool, bytes, bool]:
     return parse_score_parameter(min_score) + parse_score_parameter(max_score)
 
 
@@ -59,7 +61,7 @@ def sorted_set_range(
     is_reversed: bool = False,
     limit: RangeLimit | None = None,
     destination: bytes | None = None,
-):
+) -> int | list:
     z = database.get_sorted_set(key)
 
     if range_mode == RangeMode.BY_SCORE:
@@ -121,7 +123,7 @@ class SortedSetAdd(DatabaseCommand):
     increment_mode: bool = server_keyword_parameter(flag=b"INCR")
     scores_members: list[tuple[int, bytes]] = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         z = self.database.get_or_create_sorted_set(self.key)
         length_before = len(z)
         for score, member in self.scores_members:
@@ -141,7 +143,7 @@ class SortedSetRange(DatabaseCommand):
     limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
     with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             self.database,
             self.key,
@@ -167,7 +169,7 @@ class SortedSetRangeStore(DatabaseCommand):
     limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
     with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             self.database,
             self.key,
@@ -188,7 +190,7 @@ class SortedSetReversedRange(DatabaseCommand):
     stop: bytes = positional_parameter()
     with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             database=self.database,
             key=self.key,
@@ -206,7 +208,7 @@ class SortedSetRangeByScore(DatabaseCommand):
     with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
     limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             database=self.database,
             key=self.key,
@@ -226,7 +228,7 @@ class SortedSetReversedRangeByScore(DatabaseCommand):
     with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
     limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             database=self.database,
             key=self.key,
@@ -246,7 +248,7 @@ class SortedSetRangeByLexical(DatabaseCommand):
     max: bytes = positional_parameter()
     limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             database=self.database,
             key=self.key,
@@ -264,7 +266,7 @@ class SortedSetReversedRangeByLexical(DatabaseCommand):
     min: bytes = positional_parameter()
     limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
 
-    def execute(self):
+    def execute(self) -> ValueType:
         return sorted_set_range(
             database=self.database,
             key=self.key,
@@ -282,7 +284,7 @@ class SortedSetCount(DatabaseCommand):
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
 
-    def execute(self):
+    def execute(self) -> ValueType:
         min_score, min_inclusive, max_score, max_inclusive = parse_ordered_range_parameters(self.min, self.max)
 
         z = self.database.get_or_create_sorted_set(self.key)
@@ -299,5 +301,5 @@ class SortedSetCount(DatabaseCommand):
 class SortedSetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
-    def handle(self):
+    def execute(self) -> ValueType:
         return len(self.database.get_or_create_sorted_set(self.key).members)

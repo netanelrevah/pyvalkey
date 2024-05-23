@@ -1,6 +1,6 @@
 from dataclasses import Field, dataclass, fields
 from enum import Enum, auto
-from typing import Callable
+from typing import Callable, Self
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
@@ -20,7 +20,7 @@ class CommandCreator:
     command_creator: Callable[..., Command]
     dependencies: list[Field]
 
-    def __call__(self, parameters: list[bytes], client_context: ClientContext):
+    def __call__(self, parameters: list[bytes], client_context: ClientContext) -> Command:
         command_kwargs = self.command_cls.parse(parameters)
 
         for command_dependency in self.dependencies:
@@ -42,7 +42,7 @@ class CommandCreator:
         return self.command_creator(**command_kwargs)
 
     @classmethod
-    def create(cls, command_cls: type[Command]):
+    def create(cls, command_cls: type[Command]) -> Self:
         command_dependencies = []
 
         for command_dependency in fields(command_cls):
@@ -51,4 +51,4 @@ class CommandCreator:
 
             command_dependencies.append(command_dependency)
 
-        return CommandCreator(command_cls, command_cls, command_dependencies)
+        return cls(command_cls, command_cls, command_dependencies)

@@ -7,7 +7,6 @@ def to_bytes(value: bytes | int | str) -> bytes:
     return str(value).encode()
 
 
-def flatten(value: Iterable[Sequence], reverse_sub_lists=False):
+def flatten(value: Iterable[Sequence], reverse_sub_lists: bool = False) -> Iterable[Sequence]:
     for item in value:
-        for sub_item in item if not reverse_sub_lists else reversed(item):
-            yield sub_item
+        yield from (item if not reverse_sub_lists else reversed(item))

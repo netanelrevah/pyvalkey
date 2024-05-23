@@ -1,12 +1,11 @@
 import itertools
 import logging
+import select
 import time
 from collections import defaultdict
 from io import BytesIO
 from socket import socket
 from socketserver import StreamRequestHandler, ThreadingTCPServer
-
-import select
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.router import ServerCommandsRouter
@@ -17,13 +16,13 @@ from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     RouterKeyError,
-    ServerException,
+    ServerError,
     ServerInvalidIntegerError,
     ServerSyntaxError,
-    ServerWrongType,
+    ServerWrongTypeError,
 )
 from pyvalkey.database_objects.information import Information
-from pyvalkey.resp import RESP_OK, RespError, dump, load, ValueType
+from pyvalkey.resp import RESP_OK, RespError, ValueType, dump, load
 
 logger = logging.getLogger(__name__)
 
@@ -124,13 +123,15 @@ class ServerConnectionHandler(StreamRequestHandler):
                         f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
                     )
                 )
-            except ServerWrongType:
+            except ServerWrongTypeError:
                 self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
             except ServerSyntaxError:
                 self.dump(RespError(b"ERR syntax error"))
             except ServerInvalidIntegerError:
                 self.dump(RespError(b"ERR hash value is not an integer"))
             except CommandPermissionError as e:
+                if not self.client_context.current_user:
+                    raise e
                 self.dump(
                     RespError(
                         b"NOPERM User "
@@ -140,7 +141,7 @@ class ServerConnectionHandler(StreamRequestHandler):
                         + b"' command"
                     )
                 )
-            except ServerException as e:
+            except ServerError as e:
                 self.dump(RespError(e.message))
             except Exception as e:
                 self.dump(RespError(b"ERR internal"))

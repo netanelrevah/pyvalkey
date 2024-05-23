@@ -13,7 +13,7 @@ class RespError(bytes):
     pass
 
 
-ValueType = bool | int | float | RespSimpleString | RespError | str | list | set | dict | None
+ValueType = bool | int | float | RespSimpleString | RespError | str | bytes | list | set | dict | None
 LoadedType = list | bytes | int | None
 
 
@@ -46,9 +46,13 @@ class RespLoader:
             case _:
                 return None
 
+    def load_dynamic_array(self) -> list:
+        line = self.reader.readline().strip(b"\r\n")
+        return self.load_array(int(line[1:]))
 
-def load(stream: BinaryIO) -> list | bytes | int | None:
-    return RespLoader(stream).load()
+
+def load(stream: BinaryIO) -> list:
+    return RespLoader(stream).load_dynamic_array()
 
 
 @dataclass
