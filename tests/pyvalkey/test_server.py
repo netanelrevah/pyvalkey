@@ -20,7 +20,9 @@ def s():
 
 @fixture
 def c():
-    return redis.Redis()
+    c = redis.Redis()
+    yield c
+    c.close()
 
 
 def test_simple(s, c):
@@ -38,17 +40,17 @@ def test_simple(s, c):
 
 
 def test_server_max_str():
-    assert "a" < MAX_BYTES
-    assert "a" <= MAX_BYTES
-    assert not "\xff" > MAX_BYTES
-    assert not "\xff" >= MAX_BYTES
-    assert "a" != MAX_BYTES
+    assert b"a" < MAX_BYTES
+    assert b"a" <= MAX_BYTES
+    assert not b"\xff" > MAX_BYTES
+    assert not b"\xff" >= MAX_BYTES
+    assert b"a" != MAX_BYTES
 
-    assert MAX_BYTES > "a"
-    assert MAX_BYTES >= "a"
-    assert not MAX_BYTES < "\xff"
-    assert not MAX_BYTES <= "\xff"
-    assert MAX_BYTES != "a"
+    assert MAX_BYTES > b"a"
+    assert MAX_BYTES >= b"a"
+    assert not MAX_BYTES < b"\xff"
+    assert not MAX_BYTES <= b"\xff"
+    assert MAX_BYTES != b"a"
 
 
 N0 = []

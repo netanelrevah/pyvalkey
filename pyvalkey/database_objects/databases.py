@@ -12,15 +12,21 @@ from pyvalkey.database_objects.utils import flatten
 
 @functools.total_ordering
 class MaxBytes(bytes):
-    def __eq__(self, other: object) -> bool:
+    def less(self, other: Any) -> bool:  # noqa: ANN401
         if isinstance(other, bytes):
             return False
         raise NotImplementedError()
 
-    def __ge__(self, other: object) -> bool:
+    def more(self, other: Any) -> bool:  # noqa: ANN401
         if isinstance(other, bytes):
             return True
         raise NotImplementedError()
+
+    __eq__ = less
+    __le__ = less
+    __lt__ = less
+    __ge__ = more
+    __gt__ = more
 
 
 MAX_BYTES = MaxBytes()

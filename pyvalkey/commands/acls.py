@@ -35,6 +35,7 @@ class AclCategory(Command):
 @ServerCommandsRouter.command(b"deluser", [b"admin", b"slow", b"dangerous"], b"acl")
 class AclDeleteUser(Command):
     acl: ACL = server_command_dependency()
+
     user_names: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:

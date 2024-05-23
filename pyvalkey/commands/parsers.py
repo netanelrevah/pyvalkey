@@ -66,7 +66,7 @@ class ParameterParser:
             case float():
                 return FloatParameterParser()
             case list():
-                return ListParameterParser.create(get_args(parameter_type)[0])
+                return ListParameterParser.create_from_list_type(get_args(parameter_type)[0])
             case set():
                 return SetParameterParser.create(get_args(parameter_type)[0])
             case tuple():
@@ -154,7 +154,7 @@ class TupleParameterParser(ParameterParser):
         return tuple(tuple_parameter)
 
     @classmethod
-    def create_from_tuple_types(cls, tuple_types: tuple[Any]) -> Self:
+    def create_from_tuple_types(cls, tuple_types: tuple[Any, ...]) -> Self:
         parameter_parser_tuple = []
         for arg in tuple_types:
             match arg():
