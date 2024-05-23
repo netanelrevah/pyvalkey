@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import List
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import (
@@ -119,7 +118,7 @@ class SortedSetAdd(DatabaseCommand):
     )
     return_changed_elements: bool = server_keyword_parameter(flag=b"CH")
     increment_mode: bool = server_keyword_parameter(flag=b"INCR")
-    scores_members: List[tuple[int, bytes]] = positional_parameter()
+    scores_members: list[tuple[int, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
         z = self.database.get_or_create_sorted_set(self.key)

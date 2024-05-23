@@ -1,6 +1,7 @@
 import itertools
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Self
+from typing import Self
 
 from pyvalkey.database_objects.utils import to_bytes
 

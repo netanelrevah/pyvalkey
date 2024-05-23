@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import List
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
@@ -68,7 +67,7 @@ class ListInsert(DatabaseCommand):
 @ServerCommandsRouter.command(b"lpush", [b"write", b"list", b"fast"])
 class ListPush(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"W")
-    values: List[bytes] = positional_parameter()
+    values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
@@ -81,7 +80,7 @@ class ListPush(DatabaseCommand):
 @ServerCommandsRouter.command(b"rpush", [b"write", b"list", b"fast"])
 class ListPushAtTail(DatabaseCommand):
     key: bytes = positional_parameter()
-    values: List[bytes] = positional_parameter()
+    values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)

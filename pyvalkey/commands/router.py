@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.database_objects.acl import ACL
@@ -19,7 +19,7 @@ class ServerCommandsRouter:
 
     def internal_route(
         self,
-        parameters: List[bytes],
+        parameters: list[bytes],
         routes: dict[bytes, type[Command]] | dict[bytes, type[Command] | dict[bytes, type[Command]]],
     ) -> type[Command]:
         command = parameters.pop(0).lower()
@@ -34,14 +34,14 @@ class ServerCommandsRouter:
 
         return routed_command
 
-    def route(self, parameters: List[bytes], client_context: ClientContext) -> Command:
+    def route(self, parameters: list[bytes], client_context: ClientContext) -> Command:
         routed_command: type[Command] = self.internal_route(parameters, self.ROUTES)
 
         return routed_command.create(parameters, client_context)
 
     @classmethod
     def command(
-        cls, command: bytes, acl_categories: List[bytes], parent_command: bytes | None = None
+        cls, command: bytes, acl_categories: list[bytes], parent_command: bytes | None = None
     ) -> Callable[[type[Command]], type[Command]]:
         def _command_wrapper(command_cls: type[Command]) -> type[Command]:
             command_cls = server_command(command_cls)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import AnyStr, BinaryIO, List
+from typing import AnyStr, BinaryIO
 
 
 class RespSimpleString(bytes):
@@ -21,8 +21,8 @@ LoadedType = list | bytes | int | None
 class RespLoader:
     reader: BinaryIO
 
-    def load_array(self, length: int) -> List[LoadedType]:
-        array: List[LoadedType] = [None] * length
+    def load_array(self, length: int) -> list[LoadedType]:
+        array: list[LoadedType] = [None] * length
         for i in range(length):
             array[i] = self.load()
         return array

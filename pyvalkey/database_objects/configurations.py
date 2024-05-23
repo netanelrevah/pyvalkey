@@ -1,7 +1,7 @@
 import fnmatch
 from dataclasses import Field, dataclass, field, fields
 from hashlib import sha256
-from typing import Any, Literal, Set
+from typing import Any, Literal
 
 from pyvalkey.database_objects.utils import to_bytes
 
@@ -61,13 +61,13 @@ class Configurations:
             (value,) = values
             setattr(self, name.decode(), value)
 
-    def get_names(self, *patterns: bytes) -> Set[bytes]:
-        names: Set[bytes] = set([])
+    def get_names(self, *patterns: bytes) -> set[bytes]:
+        names: set[bytes] = set([])
         for pattern in patterns:
             names.update(set(fnmatch.filter((f.name.replace("_", "-").encode() for f in fields(self)), pattern)))
         return names
 
-    def info(self, names: Set[bytes]) -> dict[bytes, bytes]:
+    def info(self, names: set[bytes]) -> dict[bytes, bytes]:
         return {
             f.name.replace("_", "-").encode(): to_bytes(getattr(self, f.name))
             for f in fields(self)

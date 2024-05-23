@@ -1,7 +1,8 @@
 import functools
 import itertools
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable, List
+from typing import Any
 
 from sortedcontainers import SortedDict, SortedSet
 
@@ -169,7 +170,7 @@ class ServerSortedSet:
             else:
                 yield member
 
-    def range(self, range_slice: slice, with_scores: bool = False) -> List[bytes | float]:
+    def range(self, range_slice: slice, with_scores: bool = False) -> list[bytes | float]:
         result = self.members[range_slice]
 
         offset = None

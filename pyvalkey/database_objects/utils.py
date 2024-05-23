@@ -1,4 +1,5 @@
-from typing import Iterable, Sequence, TypeVar
+from collections.abc import Iterable, Sequence
+from typing import TypeVar
 
 
 def to_bytes(value: bytes | int | str) -> bytes:

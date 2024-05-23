@@ -1,5 +1,3 @@
-from typing import List
-
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
@@ -60,7 +58,7 @@ class HashMapGet(DatabaseCommand):
 @ServerCommandsRouter.command(b"hmget", [b"read", b"hash", b"fast"])
 class HashMapGetMultiple(DatabaseCommand):
     key: bytes = positional_parameter()
-    fields: List[bytes] = positional_parameter()
+    fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         hash_map = self.database.get_hash_table(self.key)
@@ -116,7 +114,7 @@ class HashMapStringLength(DatabaseCommand):
 @ServerCommandsRouter.command(b"hdel", [b"write", b"hash", b"fast"])
 class HashMapDelete(DatabaseCommand):
     key: bytes = positional_parameter()
-    fields: List[bytes] = positional_parameter()
+    fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         hash_map = self.database.get_hash_table(self.key)
@@ -127,7 +125,7 @@ class HashMapDelete(DatabaseCommand):
 @ServerCommandsRouter.command(b"hset", [b"write", b"hash", b"fast"])
 class HashMapSet(DatabaseCommand):
     key: bytes = positional_parameter()
-    fields_values: List[tuple[bytes, bytes]] = positional_parameter()
+    fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
         hash_map = self.database.get_or_create_hash_table(self.key)
@@ -143,7 +141,7 @@ class HashMapSet(DatabaseCommand):
 @ServerCommandsRouter.command(b"hmset", [b"write", b"hash", b"fast"])
 class HashMapSetMultiple(DatabaseCommand):
     key: bytes = positional_parameter()
-    fields_values: List[tuple[bytes, bytes]] = positional_parameter()
+    fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
         hash_map = self.database.get_or_create_hash_table(self.key)

@@ -1,5 +1,4 @@
 from os import urandom
-from typing import List
 
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
@@ -37,7 +36,7 @@ class AclCategory(Command):
 class AclDeleteUser(Command):
     acl: ACL = server_command_dependency()
 
-    user_names: List[bytes] = positional_parameter()
+    user_names: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         user_deleted = 0

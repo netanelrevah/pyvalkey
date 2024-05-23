@@ -1,4 +1,3 @@
-from typing import List
 
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
@@ -15,7 +14,7 @@ class AclDryRun(Command):
 
     username: bytes = positional_parameter()
     command: bytes = positional_parameter()
-    args: List[bytes] = positional_parameter()
+    args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return RESP_OK
@@ -25,9 +24,9 @@ class AclDryRun(Command):
 class AclSetUser(Command):
     acl: ACL = server_command_dependency()
     user_name: bytes = positional_parameter()
-    rules: List[bytes] = positional_parameter()
+    rules: list[bytes] = positional_parameter()
 
-    def parse_selector(self, selector: List[bytes], permission: Permission | None = None) -> Permission:
+    def parse_selector(self, selector: list[bytes], permission: Permission | None = None) -> Permission:
         permission = permission or Permission()
         for rule in selector:
             if rule == b"allcommands":

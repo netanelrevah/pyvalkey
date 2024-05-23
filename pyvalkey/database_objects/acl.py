@@ -4,7 +4,7 @@ import fnmatch
 from collections import defaultdict
 from dataclasses import dataclass, field, fields
 from hashlib import sha256
-from typing import TYPE_CHECKING, ClassVar, List, Set, Type
+from typing import TYPE_CHECKING, ClassVar
 
 from typing_extensions import Self
 
@@ -66,9 +66,9 @@ class CommandRule:
 
 @dataclass
 class Permission:
-    keys_patterns: Set[KeyPattern] = field(default_factory=set)
-    command_rules: List[CommandRule] = field(default_factory=lambda: [CommandRule.create(b"-@all")])
-    channel_rules: Set[bytes] = field(default_factory=set)
+    keys_patterns: set[KeyPattern] = field(default_factory=set)
+    command_rules: list[CommandRule] = field(default_factory=lambda: [CommandRule.create(b"-@all")])
+    channel_rules: set[bytes] = field(default_factory=set)
 
     def check_keys_patterns(self, key: bytes, key_mode: bytes) -> bool:
         for key_pattern in self.keys_patterns:
@@ -114,9 +114,9 @@ class ACLUser:
 
     is_active: bool = False
     is_no_password_user: bool = False
-    passwords: Set[bytes] = field(default_factory=set)
+    passwords: set[bytes] = field(default_factory=set)
     root_permissions: Permission = field(default_factory=lambda: Permission())
-    selectors: List[Permission] = field(default_factory=list)
+    selectors: list[Permission] = field(default_factory=list)
 
     def add_password(self, password: bytes) -> None:
         self.passwords.add(sha256(password).hexdigest().encode())
@@ -165,8 +165,8 @@ class ACLUser:
 
 
 class ACL(dict[bytes, ACLUser]):
-    CATEGORIES: ClassVar[dict[bytes, Set[bytes]]] = defaultdict(set)
-    COMMANDS_NAMES: ClassVar[dict[Type[Command], bytes]] = {}
+    CATEGORIES: ClassVar[dict[bytes, set[bytes]]] = defaultdict(set)
+    COMMANDS_NAMES: ClassVar[dict[type[Command], bytes]] = {}
     COMMAND_CATEGORIES: ClassVar[dict[bytes, set]] = {}
 
     def get_or_create_user(self, user_name: bytes) -> ACLUser:
@@ -177,7 +177,7 @@ class ACL(dict[bytes, ACLUser]):
     def delete_user(self, user_name: bytes) -> ACLUser | None:
         return self.pop(user_name, None)
 
-    def delete_users(self, user_names: List[bytes]) -> int:
+    def delete_users(self, user_names: list[bytes]) -> int:
         deleted_users = 0
         for user_name in user_names:
             if user_name == b"default":
@@ -186,11 +186,11 @@ class ACL(dict[bytes, ACLUser]):
         return deleted_users
 
     @classmethod
-    def get_categories(cls) -> List[bytes]:
+    def get_categories(cls) -> list[bytes]:
         return list(cls.CATEGORIES.keys())
 
     @classmethod
-    def get_category_commands(cls, category: bytes) -> List[bytes]:
+    def get_category_commands(cls, category: bytes) -> list[bytes]:
         return list(cls.CATEGORIES.get(category, set()))
 
     @classmethod
