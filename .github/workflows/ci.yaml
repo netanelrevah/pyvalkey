@@ -27,7 +27,7 @@ jobs:
       - working-directory: ./redis-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./redis-py
-        run: pytest -v tests/test_commands.py
+        run: pytest -q --show-capture=no --tb=no tests/test_commands.py
 
   lint-outside-of-matrix:
     runs-on: ubuntu-latest
