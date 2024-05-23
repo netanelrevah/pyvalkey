@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
@@ -39,7 +41,7 @@ class ParameterParser:
         return parameter_type
 
     @classmethod
-    def create(cls, parameter_field: Field) -> "ParameterParser":
+    def create(cls, parameter_field: Field) -> ParameterParser:
         parameter_type = cls._extract_optional_type(parameter_field.type)
 
         if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
