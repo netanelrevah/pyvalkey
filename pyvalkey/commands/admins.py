@@ -77,16 +77,16 @@ class AclSetUser(Command):
                 callbacks.append(ACLUser.clear_selectors)
                 continue
             if rule == b"on":
-                callbacks.append(lambda acl_user: setattr(acl_user, "is_active", True))
+                callbacks.append(lambda _acl_user: setattr(_acl_user, "is_active", True))  # type: ignore[arg-type]
                 continue
             if rule == b"off":
-                callbacks.append(lambda acl_user: setattr(acl_user, "is_active", False))
+                callbacks.append(lambda _acl_user: setattr(_acl_user, "is_active", False))  # type: ignore[arg-type]
                 continue
             if rule == b"nopass":
                 callbacks.append(ACLUser.no_password)
                 continue
             if rule.startswith(b">"):
-                callbacks.append(lambda acl_user, password=rule[1]: acl_user.add_password(password))  # type: ignore
+                callbacks.append(lambda _acl_user, password=rule[1]: _acl_user.add_password(password))  # type: ignore[misc]
                 continue
             if rule.startswith(b"("):
                 full_rule = rule
@@ -100,7 +100,7 @@ class AclSetUser(Command):
                     selector = self.parse_selector(full_rule[1:-1].split())
                 except ValueError as e:
                     raise ServerError(b"ERR Error in ACL SETUSER modifier '" + full_rule + b"': " + e.args[0])
-                callbacks.append(lambda acl_user, s=selector: acl_user.selectors.append(s))  # type: ignore
+                callbacks.append(lambda _acl_user, s=selector: _acl_user.selectors.append(s))  # type: ignore[misc]
                 continue
             if rule.startswith(b"-@") or rule.startswith(b"+@") or rule.startswith(b"+") or rule.startswith(b"-"):
                 root_permission_role.append(rule)

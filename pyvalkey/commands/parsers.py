@@ -1,7 +1,7 @@
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
-from typing import Any, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Union, get_args, get_origin
 
 from typing_extensions import Self
 
@@ -13,6 +13,9 @@ from pyvalkey.database_objects.errors import (
     ServerWrongNumberOfArguments,
 )
 
+if TYPE_CHECKING:
+    from pyvalkey.commands.core import Command
+
 
 class ParameterParser:
     @classmethod
@@ -22,21 +25,21 @@ class ParameterParser:
         except IndexError:
             raise ServerWrongNumberOfArguments()
 
-    def parse(self, parameters: list[bytes]) -> Any:
+    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         return self.next_parameter(parameters)
 
     @classmethod
-    def _extract_optional_type(cls, parameter_type):
+    def _extract_optional_type(cls, parameter_type: Any) -> Any:  # noqa: ANN401
         if get_origin(parameter_type) == Union or get_origin(parameter_type) == UnionType:
-            items = get_args(parameter_type)
-            items = set([arg for arg in items if arg is not type(None)])
+            args = get_args(parameter_type)
+            items = set([arg for arg in args if arg is not type(None)])
             if len(items) > 1:
                 raise TypeError(items)
             parameter_type = items.pop()
         return parameter_type
 
     @classmethod
-    def create(cls, parameter_field: Field):
+    def create(cls, parameter_field: Field) -> "ParameterParser":
         parameter_type = cls._extract_optional_type(parameter_field.type)
 
         if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
@@ -65,18 +68,18 @@ class ParameterParser:
             case set():
                 return SetParameterParser.create(get_args(parameter_type)[0])
             case tuple():
-                return TupleParameterParser.create(get_args(parameter_type))
+                return TupleParameterParser.create_from_tuple_types(get_args(parameter_type))
             case default:
                 raise TypeError(default)
 
 
 class KeyParameterParser(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> Any:
+    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         return self.next_parameter(parameters)
 
 
 class ParametersGroup(ParameterParser):
-    def parse(self, parameters: list[bytes]) -> Any:
+    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         raise NotImplementedError()
 
 
@@ -105,14 +108,14 @@ class ListParameterParser(ParameterParser):
         return list_parameter
 
     @classmethod
-    def create(cls, list_type) -> "ListParameterParser":
+    def create_from_list_type(cls, list_type: Any) -> Self:  # noqa: ANN401
         match list_type():
             case bytes():
-                return ListParameterParser(ParameterParser())
+                return cls(ParameterParser())
             case int():
-                return ListParameterParser(IntParameterParser())
+                return cls(IntParameterParser())
             case tuple():
-                return ListParameterParser(TupleParameterParser.create(get_args(list_type)))
+                return cls(TupleParameterParser.create_from_tuple_types(get_args(list_type)))
             case default:
                 raise TypeError(default)
 
@@ -128,12 +131,12 @@ class SetParameterParser(ParameterParser):
         return set_value
 
     @classmethod
-    def create(cls, set_type) -> "SetParameterParser":
+    def create(cls, set_type: Any) -> Self:  # noqa: ANN401
         match set_type():
             case bytes():
-                return SetParameterParser(ParameterParser())
+                return cls(ParameterParser())
             case int():
-                return SetParameterParser(IntParameterParser())
+                return cls(IntParameterParser())
             case default:
                 raise TypeError(default)
 
@@ -149,7 +152,7 @@ class TupleParameterParser(ParameterParser):
         return tuple(tuple_parameter)
 
     @classmethod
-    def create(cls, tuple_types) -> Self:
+    def create_from_tuple_types(cls, tuple_types: tuple[Any]) -> Self:
         parameter_parser_tuple = []
         for arg in tuple_types:
             match arg():
@@ -192,7 +195,7 @@ class EnumParameterParser(ParameterParser):
 
 @dataclass
 class BoolParameterParser(ParameterParser):
-    DEFAULT_VALUES_MAPPING = {b"1": True, b"0": False}
+    DEFAULT_VALUES_MAPPING: ClassVar = {b"1": True, b"0": False}
 
     values_mapping: dict[bytes, bool] = field(default_factory=lambda: BoolParameterParser.DEFAULT_VALUES_MAPPING)
 
@@ -228,10 +231,10 @@ class ObjectParametersParser(ParametersGroup):
     parameters_parsers: list[ParameterParser]
 
     @classmethod
-    def _is_optional(cls, parameter_parser):
+    def _is_optional(cls, parameter_parser: ParameterParser) -> bool:
         return isinstance(parameter_parser, OptionalKeywordParametersGroup | OptionalNamedParameterParser)
 
-    def parse(self, parameters: list[bytes]) -> Any:
+    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         parsed_parameters: dict[str, Any] = {}
 
         non_optional_parameters = sum(1 for p in self.parameters_parsers if not self._is_optional(p))
@@ -244,11 +247,11 @@ class ObjectParametersParser(ParametersGroup):
 
         return parsed_parameters
 
-    def __call__(self, parameters: list[bytes]):
+    def __call__(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         return self.parse(list(parameters))
 
     @classmethod
-    def create(cls, object_cls) -> Self:
+    def create(cls, object_cls: Any) -> Self:  # noqa: ANN401
         parameter_fields = {
             parameter_field.name: parameter_field
             for parameter_field in fields(object_cls)
@@ -298,15 +301,15 @@ class ObjectParser(ParametersGroup):
     object_cls: Any
     object_parameters_parser: ObjectParametersParser
 
-    def parse(self, parameters: list[bytes]) -> Any:
+    def parse(self, parameters: list[bytes]) -> Any:  # noqa: ANN401
         return self.object_cls(self.object_parameters_parser.parse(parameters))
 
     @classmethod
-    def create(cls, object_cls) -> "ObjectParser":
-        return ObjectParser(object_cls, ObjectParametersParser.create(object_cls))
+    def create(cls, object_cls: Any) -> Self:  # noqa: ANN401
+        return cls(object_cls, ObjectParametersParser.create(object_cls))
 
 
-def _server_command_wrapper(command_cls):
+def _server_command_wrapper(command_cls: type[Command]) -> type[Command]:
     original_order = []
 
     annotations = getattr(command_cls, "__annotations__", {})
@@ -342,7 +345,9 @@ def _server_command_wrapper(command_cls):
     return command_cls
 
 
-def server_command(command_cls=None):
+def server_command(
+    command_cls: type[Command] | None = None,
+) -> type[Command] | Callable[[type[Command]], type[Command]]:
     if command_cls is None:
         return _server_command_wrapper
     return _server_command_wrapper(command_cls)

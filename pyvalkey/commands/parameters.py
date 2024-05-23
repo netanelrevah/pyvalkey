@@ -12,10 +12,10 @@ class ParameterMetadata(Enum):
 
 def server_parameter(
     values_mapping: dict[bytes, Any] | None = None,
-    default: Any = MISSING,
+    default: Any = MISSING,  # noqa: ANN401
     flag: bytes | dict[bytes, Any] | None = None,
     key_mode: bytes | None = None,
-) -> Any:
+) -> Any:  # noqa: ANN401
     metadata: dict[ParameterMetadata, Any] = {ParameterMetadata.SERVER_PARAMETER: True}
     if values_mapping:
         metadata[ParameterMetadata.VALUES_MAPPING] = values_mapping
@@ -36,15 +36,15 @@ def server_parameter(
 
 def positional_parameter(
     values_mapping: dict[bytes, Any] | None = None,
-    default: Any = MISSING,
+    default: Any = MISSING,  # noqa: ANN401
     key_mode: bytes | None = None,
-) -> Any:
+) -> Any:  # noqa: ANN401
     return server_parameter(values_mapping=values_mapping, default=default, key_mode=key_mode)
 
 
-def server_keyword_parameter(  # noqa: ANN201
+def server_keyword_parameter(
     values_mapping: dict[bytes, Any] | None = None,
-    default: Any = MISSING,
+    default: Any = MISSING,  # noqa: ANN401
     flag: bytes | dict[bytes, Any] | None = None,
-) -> Any:
+) -> Any:  # noqa: ANN401
     return server_parameter(values_mapping=values_mapping, default=default, flag=flag)
