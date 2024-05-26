@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from os import urandom
 
 from pyvalkey.commands.core import Command

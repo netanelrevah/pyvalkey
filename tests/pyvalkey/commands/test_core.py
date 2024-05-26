@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from parametrization import Parametrization
 
+from pyvalkey.commands.clients import ClientKill
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.databases import Ping
 from pyvalkey.commands.keyspace_commands import Copy
@@ -57,7 +58,7 @@ class ListCommand(Command):
     expected_kwargs={"key": b"zset", "start": b"(1", "stop": b"5", "range_mode": RangeMode.BY_SCORE},
 )
 @Parametrization.case(
-    name="",
+    name="zrange_with_rev_flag",
     parameters=b"zset (1 5 BYSCORE rev".split(),
     command_cls=SortedSetRange,
     expected_kwargs={"key": b"zset", "start": b"(1", "stop": b"5", "range_mode": RangeMode.BY_SCORE, "rev": True},
@@ -79,6 +80,12 @@ class ListCommand(Command):
     parameters=b"a b".split(),
     command_cls=Copy,
     expected_kwargs={"source": b"a", "destination": b"b"},
+)
+@Parametrization.case(
+    name="",
+    parameters=b"ID 1".split(),
+    command_cls=ClientKill,
+    expected_kwargs={"client_id": 1},
 )
 @Parametrization.case(
     name="ping_without_parameters",

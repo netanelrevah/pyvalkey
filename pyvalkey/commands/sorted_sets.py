@@ -2,8 +2,8 @@ from enum import Enum
 
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import (
+    keyword_parameter,
     positional_parameter,
-    server_keyword_parameter,
 )
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.commands.utils import parse_range_parameters
@@ -110,14 +110,14 @@ class ScoreUpdateMode(Enum):
 @ServerCommandsRouter.command(b"zadd", [b"write", b"sortedset", b"fast"])
 class SortedSetAdd(DatabaseCommand):
     key: bytes = positional_parameter()
-    add_mode: AddMode = server_keyword_parameter(
+    add_mode: AddMode = keyword_parameter(
         default=AddMode.ALL, flag={b"XX": AddMode.UPDATE_ONLY, b"NX": AddMode.INSERT_ONLY}
     )
-    score_update: ScoreUpdateMode = server_keyword_parameter(
+    score_update: ScoreUpdateMode = keyword_parameter(
         default=ScoreUpdateMode.ALL, flag={b"LT": ScoreUpdateMode.LESS_THAN, b"GT": ScoreUpdateMode.GREATER_THAN}
     )
-    return_changed_elements: bool = server_keyword_parameter(flag=b"CH")
-    increment_mode: bool = server_keyword_parameter(flag=b"INCR")
+    return_changed_elements: bool = keyword_parameter(flag=b"CH")
+    increment_mode: bool = keyword_parameter(flag=b"INCR")
     scores_members: list[tuple[int, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -133,12 +133,12 @@ class SortedSetRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
-    range_mode: RangeMode = server_keyword_parameter(
+    range_mode: RangeMode = keyword_parameter(
         default=RangeMode.BY_INDEX, flag={b"BYSCORE": RangeMode.BY_SCORE, b"BYLEX": RangeMode.BY_LEX}
     )
-    rev: bool = server_keyword_parameter(flag=b"REV")
-    limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
-    with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
+    rev: bool = keyword_parameter(flag=b"REV")
+    limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -159,12 +159,12 @@ class SortedSetRangeStore(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
-    range_mode: RangeMode = server_keyword_parameter(
+    range_mode: RangeMode = keyword_parameter(
         default=RangeMode.BY_INDEX, flag={b"BYSCORE": RangeMode.BY_SCORE, b"BYLEX": RangeMode.BY_LEX}
     )
-    rev: bool = server_keyword_parameter(flag=b"REV")
-    limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
-    with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
+    rev: bool = keyword_parameter(flag=b"REV")
+    limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -185,7 +185,7 @@ class SortedSetReversedRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
-    with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -202,8 +202,8 @@ class SortedSetRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
-    with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
-    limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
+    limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -222,8 +222,8 @@ class SortedSetReversedRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
     min: bytes = positional_parameter()
-    with_scores: bool = server_keyword_parameter(flag=b"WITHSCORES")
-    limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
+    limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -243,7 +243,7 @@ class SortedSetRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
-    limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
+    limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -261,7 +261,7 @@ class SortedSetReversedRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
     min: bytes = positional_parameter()
-    limit: RangeLimit | None = server_keyword_parameter(default=None, flag=b"LIMIT")
+    limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
 
     def execute(self) -> ValueType:
         return sorted_set_range(

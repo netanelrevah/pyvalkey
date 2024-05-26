@@ -6,8 +6,8 @@ from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import (
+    keyword_parameter,
     positional_parameter,
-    server_keyword_parameter,
 )
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.resp import RESP_OK, RespError, ValueType
@@ -32,7 +32,7 @@ class SelectDatabase(ClientCommand):
 
 @ServerCommandsRouter.command(b"list", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
 class ClientList(ClientCommand):
-    client_type: bytes | None = server_keyword_parameter(flag=b"TYPE", default=None)
+    client_type: bytes | None = keyword_parameter(flag=b"TYPE", default=None)
 
     def execute(self) -> ValueType:
         if self.client_type:
@@ -64,8 +64,8 @@ class ClientGetName(ClientCommand):
 @ServerCommandsRouter.command(b"kill", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
 class ClientKill(ClientCommand):
     old_format_address: bytes | None = positional_parameter(default=None)
-    client_id: int = server_keyword_parameter(flag=b"ID", default=None)
-    address: bytes = server_keyword_parameter(flag=b"ADDR", default=None)
+    client_id: int = keyword_parameter(flag=b"ID", default=None)
+    address: bytes = keyword_parameter(flag=b"ADDR", default=None)
 
     def execute(self) -> ValueType:
         if self.old_format_address:
@@ -121,8 +121,8 @@ class ClientReply(ClientCommand):
 
 @ServerCommandsRouter.command(b"setinfo", [b"slow", b"connection"], b"client")
 class ClientSetInformation(ClientCommand):
-    library_name: bytes | None = server_keyword_parameter(flag=b"LIB-NAME", default=None)
-    library_version: bytes | None = server_keyword_parameter(flag=b"LIB-VER", default=None)
+    library_name: bytes | None = keyword_parameter(flag=b"LIB-NAME", default=None)
+    library_version: bytes | None = keyword_parameter(flag=b"LIB-VER", default=None)
 
     def execute(self) -> ValueType:
         if self.library_name:

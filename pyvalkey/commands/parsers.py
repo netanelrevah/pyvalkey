@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import UnionType
-from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, get_type_hints, overload
 
 from pyvalkey.commands.creators import CommandCreator
 from pyvalkey.commands.parameters import ParameterMetadata
@@ -40,14 +40,14 @@ class ParameterParser:
         return parameter_type
 
     @classmethod
-    def create(cls, parameter_field: Field) -> ParameterParser:
-        parameter_type = cls._extract_optional_type(parameter_field.type)
+    def create(cls, parameter_field: Field, parameter_type: Any) -> ParameterParser:  # noqa: ANN401
+        parameter_type = cls._extract_optional_type(parameter_type)
 
         if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
             return EnumParameterParser(parameter_type)
 
         if is_dataclass(parameter_type):
-            return ObjectParser.create(parameter_type)
+            return ObjectParser.create_from_object(parameter_type)
 
         match parameter_type():
             case bytes():
@@ -67,7 +67,7 @@ class ParameterParser:
             case list():
                 return ListParameterParser.create_from_list_type(get_args(parameter_type)[0])
             case set():
-                return SetParameterParser.create(get_args(parameter_type)[0])
+                return SetParameterParser.create_from_type(get_args(parameter_type)[0])
             case tuple():
                 return TupleParameterParser.create_from_tuple_types(get_args(parameter_type))
             case default:
@@ -132,7 +132,7 @@ class SetParameterParser(ParameterParser):
         return set_value
 
     @classmethod
-    def create(cls, set_type: Any) -> Self:  # noqa: ANN401
+    def create_from_type(cls, set_type: Any) -> Self:  # noqa: ANN401
         match set_type():
             case bytes():
                 return cls(ParameterParser())
@@ -209,7 +209,7 @@ class BoolParameterParser(ParameterParser):
 
 @dataclass
 class OptionalKeywordParametersGroup(ParametersGroup):
-    parameters_parsers_map: dict[bytes, NamedParameterParser]
+    parameters_parsers_map: dict[bytes, tuple[NamedParameterParser, bool]]
 
     def parse(self, parameters: list[bytes]) -> dict[str, Any]:
         parsed_kw_parameters: dict[str, Any] = {}
@@ -218,7 +218,10 @@ class OptionalKeywordParametersGroup(ParametersGroup):
             top_parameter = parameters[0].upper()
             if top_parameter not in self.parameters_parsers_map:
                 return parsed_kw_parameters
-            parameter = self.parameters_parsers_map[top_parameter]
+            parameter, is_keyword = self.parameters_parsers_map[top_parameter]
+
+            if is_keyword:
+                parameters.pop(0)
 
             if parameter.name in parsed_kw_parameters:
                 raise ServerSyntaxError()
@@ -241,8 +244,17 @@ class ObjectParametersParser(ParametersGroup):
         non_optional_parameters = sum(1 for p in self.parameters_parsers if not self._is_optional(p))
 
         for index, parameter_parser in enumerate(self.parameters_parsers):
-            if self._is_optional(parameter_parser) and len(parameters) <= (non_optional_parameters - index):
-                continue
+            if self._is_optional(parameter_parser):
+                if len(parameters) <= (non_optional_parameters - index):
+                    continue
+
+                if index + 1 < len(self.parameters_parsers):
+                    next_parameters_parser = self.parameters_parsers[index + 1]
+                    if (
+                        isinstance(next_parameters_parser, OptionalKeywordParametersGroup)
+                        and parameters[0] in next_parameters_parser.parameters_parsers_map
+                    ):
+                        continue
 
             parsed_parameters.update(parameter_parser.parse(parameters))
 
@@ -252,7 +264,9 @@ class ObjectParametersParser(ParametersGroup):
         return self.parse(list(parameters))
 
     @classmethod
-    def create(cls, object_cls: Any) -> Self:  # noqa: ANN401
+    def create_from_object(cls, object_cls: Any) -> Self:  # noqa: ANN401
+        resolved_hints = get_type_hints(object_cls)
+
         parameter_fields = {
             parameter_field.name: parameter_field
             for parameter_field in fields(object_cls)
@@ -270,13 +284,16 @@ class ObjectParametersParser(ParametersGroup):
             flag = parameter_field.metadata.get(ParameterMetadata.FLAG)
             if flag:
                 named_parameter_parser = NamedParameterParser(
-                    parameter_field_name, ParameterParser.create(parameter_field)
+                    parameter_field_name, ParameterParser.create(parameter_field, resolved_hints[parameter_field.name])
                 )
                 if isinstance(flag, dict):
                     for flag_key in flag.keys():
-                        optional_keyword_parameters[flag_key] = named_parameter_parser
+                        optional_keyword_parameters[flag_key] = named_parameter_parser, False
                 else:
-                    optional_keyword_parameters[flag] = named_parameter_parser
+                    if isinstance(parameter_field.default, bool):
+                        optional_keyword_parameters[flag] = named_parameter_parser, False
+                    else:
+                        optional_keyword_parameters[flag] = named_parameter_parser, True
             else:
                 if optional_keyword_parameters:
                     parameters_parsers.append(OptionalKeywordParametersGroup(optional_keyword_parameters))
@@ -284,11 +301,17 @@ class ObjectParametersParser(ParametersGroup):
 
                 if parameter_field.default != MISSING:
                     parameters_parsers.append(
-                        OptionalNamedParameterParser(parameter_field.name, ParameterParser.create(parameter_field))
+                        OptionalNamedParameterParser(
+                            parameter_field.name,
+                            ParameterParser.create(parameter_field, resolved_hints[parameter_field.name]),
+                        )
                     )
                 else:
                     parameters_parsers.append(
-                        NamedParameterParser(parameter_field.name, ParameterParser.create(parameter_field))
+                        NamedParameterParser(
+                            parameter_field.name,
+                            ParameterParser.create(parameter_field, resolved_hints[parameter_field.name]),
+                        )
                     )
 
         if optional_keyword_parameters:
@@ -306,8 +329,8 @@ class ObjectParser(ParametersGroup):
         return self.object_cls(self.object_parameters_parser.parse(parameters))
 
     @classmethod
-    def create(cls, object_cls: Any) -> Self:  # noqa: ANN401
-        return cls(object_cls, ObjectParametersParser.create(object_cls))
+    def create_from_object(cls, object_cls: Any) -> Self:  # noqa: ANN401
+        return cls(object_cls, ObjectParametersParser.create_from_object(object_cls))
 
 
 def _server_command_wrapper(command_cls: type[Command]) -> type[Command]:
@@ -340,7 +363,7 @@ def _server_command_wrapper(command_cls: type[Command]) -> type[Command]:
     command_cls = dataclass(command_cls)
 
     setattr(command_cls, "__original_order__", original_order)
-    setattr(command_cls, "parse", ObjectParametersParser.create(command_cls))
+    setattr(command_cls, "parse", ObjectParametersParser.create_from_object(command_cls))
     setattr(command_cls, "create", CommandCreator.create(command_cls))
 
     return command_cls

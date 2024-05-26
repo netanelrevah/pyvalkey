@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import functools
 import itertools
+import time
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sortedcontainers import SortedDict, SortedSet
@@ -31,6 +34,16 @@ class MaxBytes(bytes):
 
 
 MAX_BYTES = MaxBytes()
+
+
+@dataclass(slots=True)
+class KeyValue:
+    key: bytes
+    value: ServerSortedSet | dict | ServerString
+    expiration: int | None = field(default=None)
+
+    def __hash__(self) -> int:
+        return hash(self.key)
 
 
 @dataclass
@@ -183,57 +196,103 @@ class ServerSortedSet:
         return len(self.members)
 
 
-class Database(dict[bytes, Any]):
-    def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
-        value = type_()
-        if key in self:
-            value = self[key]
-        if not isinstance(value, type_):
-            raise ServerWrongTypeError()
-        return value
+@dataclass
+class Database:
+    data: dict[bytes, KeyValue] = field(default_factory=dict)
+    key_with_expiration: SortedSet[bytes] = field(default_factory=lambda: SortedSet(key=lambda k: k.expiration))
 
-    def get_or_create_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
-        if key not in self:
-            self[key] = type_()
-        value = self[key]
-        if not isinstance(value, type_):
+    def get(self, key: bytes) -> KeyValue | None:
+        key_value = self.data[key]
+        if key_value.expiration is not None and time.time() > key_value.expiration:
+            del self.data[key]
+            self.key_with_expiration.remove(key_value)
+            return None
+        return key_value
+
+    def typesafe_get(self, key: bytes, type_: type) -> KeyValue | None:
+        key_value = self.get(key)
+        if key_value is None:
+            return None
+        if not isinstance(self.data[key].value, type_):
             raise ServerWrongTypeError()
-        return value
+        return key_value
+
+    def set_expiration(self, key: bytes, expiration: int) -> bool:
+        if key not in self.data:
+            return False
+        key_value = self.get(key)
+        if key_value is None:
+            return False
+        key_value.expiration = int(time.time()) + expiration
+        self.key_with_expiration.add(key_value)
+        return True
+
+    def get_expiration(self, key: bytes) -> int | None:
+        key_value = self.get(key)
+        if key_value is None:
+            raise KeyError()
+        if key_value.expiration is None:
+            return None
+        return key_value.expiration - int(time.time())
+
+    def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
+        key_value = None
+        if key in self.data:
+            key_value = self.typesafe_get(key, type_)
+
+        return key_value.value if key_value else type_()
+
+    def typesafe_get_or_create(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
+        key_value = None
+        if key in self.data:
+            key_value = self.typesafe_get(key, type_)
+
+        if key_value is None:
+            key_value = KeyValue(key, type_())
+            self.data[key] = key_value
+
+        return key_value.value
+
+    def get_or_none_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
+        if key not in self.data:
+            return None
+
+        key_value = self.typesafe_get(key, type_)
+
+        if key_value is None:
+            return None
+
+        return key_value.value
 
     def get_string(self, key: bytes) -> ServerString:
         return self.get_by_type(key, ServerString)
 
     def get_string_or_none(self, key: bytes) -> ServerString | None:
-        if key not in self:
-            return None
-        s = self[key]
-        if not isinstance(s, ServerString):
-            raise ServerWrongTypeError()
-        return s
+        return self.get_or_none_by_type(key, ServerString)
 
     def get_or_create_string(self, key: bytes) -> ServerString:
-        return self.get_or_create_by_type(key, ServerString)
+        return self.typesafe_get_or_create(key, ServerString)
 
     def get_hash_table(self, key: bytes) -> dict:
         return self.get_by_type(key, dict)
 
     def get_or_create_hash_table(self, key: bytes) -> dict:
-        return self.get_or_create_by_type(key, dict)
+        return self.typesafe_get_or_create(key, dict)
 
     def get_list(self, key: bytes) -> list:
         return self.get_by_type(key, list)
 
     def get_or_create_list(self, key: bytes) -> list:
-        return self.get_or_create_by_type(key, list)
+        return self.typesafe_get_or_create(key, list)
 
     def get_sorted_set(self, key: bytes) -> ServerSortedSet:
         return self.get_by_type(key, ServerSortedSet)
 
     def get_or_create_sorted_set(self, key: bytes) -> ServerSortedSet:
-        return self.get_or_create_by_type(key, ServerSortedSet)
+        return self.typesafe_get_or_create(key, ServerSortedSet)
 
     def get_set(self, key: bytes) -> set:
         return self.get_by_type(key, set)
 
     def get_or_create_set(self, key: bytes) -> set:
-        return self.get_or_create_by_type(key, set)
+        return self.typesafe_get_or_create(key, set)

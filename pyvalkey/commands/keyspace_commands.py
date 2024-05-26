@@ -2,7 +2,7 @@ from pyvalkey.commands.context import ServerContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.dependencies import server_command_dependency
-from pyvalkey.commands.parameters import positional_parameter, server_keyword_parameter
+from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import RESP_OK, ValueType
@@ -11,7 +11,8 @@ from pyvalkey.resp import RESP_OK, ValueType
 @ServerCommandsRouter.command(b"flushdb", [b"keyspace", b"write", b"slow", b"dangerous"])
 class FlushDatabase(DatabaseCommand):
     def execute(self) -> ValueType:
-        self.database.clear()
+        self.database.data.clear()
+        self.database.key_with_expiration.clear()
         return RESP_OK
 
 
@@ -29,14 +30,15 @@ class FlushAllDatabases(Command):
 class Copy(DatabaseCommand):
     source: bytes = positional_parameter(key_mode=b"R")
     destination: bytes = positional_parameter(key_mode=b"W")
-    replace: bool = server_keyword_parameter(flag=b"REPLACE")
+    replace: bool = keyword_parameter(flag=b"REPLACE")
 
     def execute(self) -> ValueType:
         source_key = self.database.get_string(self.source)
         destination_key = self.database.get_string_or_none(self.destination)
 
         if self.replace and destination_key:
-            self.database.pop(self.destination)
+            key_value = self.database.data.pop(self.destination)
+            self.database.key_with_expiration.remove(key_value)
             destination_key = self.database.get_or_create_string(self.destination)
         else:
             return False

@@ -30,7 +30,8 @@ def server_parameter(
             metadata[ParameterMetadata.VALUES_MAPPING] = {
                 flag.upper(): True,
             }
-            default = False
+            if default == MISSING:
+                default = False
     if key_mode is not None:
         metadata[ParameterMetadata.KEY_MODE] = key_mode
     return field(default=default, metadata=metadata, kw_only=bool(flag))
@@ -44,7 +45,7 @@ def positional_parameter(
     return server_parameter(values_mapping=values_mapping, default=default, key_mode=key_mode)
 
 
-def server_keyword_parameter(
+def keyword_parameter(
     values_mapping: dict[bytes, Any] | None = None,
     default: Any = MISSING,  # noqa: ANN401
     flag: bytes | dict[bytes, Any] | None = None,
