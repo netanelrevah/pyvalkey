@@ -77,7 +77,7 @@ class ServerConnectionHandler(StreamRequestHandler):
     def dump(self, value: ValueType) -> None:
         dumped = BytesIO()
         dump(value, dumped)
-        print(self.current_client.client_id, "result", dumped.getvalue())
+        print(self.current_client.client_id, "result", dumped.getvalue()[:100])
 
         if self.current_client.reply_mode == "skip":
             self.current_client.reply_mode = "on"
@@ -103,7 +103,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
             self.server.information.total_commands_processed += 1
 
-            print(self.current_client.client_id, command)
+            print(self.current_client.client_id, [i[:100] for i in command])
 
             try:
                 routed_command = self.router.route(list(command), self.client_context)

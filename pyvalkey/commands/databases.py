@@ -40,7 +40,8 @@ class Get(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
-        if s := self.database.get_string_or_none(self.key):
+        s = self.database.get_string_or_none(self.key)
+        if s is not None:
             return s.bytes_value
         return None
 
