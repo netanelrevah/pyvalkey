@@ -3,6 +3,7 @@ from random import randint
 
 import pytest
 import redis
+from _pytest.python_api import raises
 
 pytestmark = pytest.mark.string
 
@@ -88,3 +89,79 @@ def test_getex_ex_option(s: redis.Redis):
     s.set("foo", "bar")
     s.getex("foo", ex=10)
     assert 5 <= s.ttl("foo") <= 10
+
+
+def test_getex_px_option(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar")
+    s.getex("foo", px=10000)
+    assert 5000 <= s.pttl("foo") <= 10000
+
+
+def test_getex_exat_option(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar")
+    s.getex("foo", exat=int(time.time() + 10))
+    assert 5 <= s.ttl("foo") <= 10
+
+
+def test_getex_pxat_option(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar")
+    s.getex("foo", pxat=int(time.time() * 1000 + 10000))
+    assert 5000 <= s.pttl("foo") <= 10000
+
+
+def test_getex_persist_option(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar", ex=10)
+    s.getex("foo", persist=True)
+    assert s.ttl("foo") == -1
+
+
+def test_getex_no_option(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar")
+    s.getex("foo")
+    assert s.getex("foo") == b"bar"
+
+
+def test_getex_syntax_errors(s: redis.Redis):
+    with raises(redis.RedisError, match=""):
+        s.execute_command("getex", "foo", "non-existent-option")
+
+
+def test_getex_and_get_expired_key_or_not_exist(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar", px=1)
+    time.sleep(0.002)
+    assert s.getex("foo") is None
+    assert s.get("foo") is None
+
+
+def test_getex_no_arguments(s: redis.Redis):
+    with raises(redis.RedisError, match=""):
+        s.execute_command("getex")
+
+
+def test_getdel_command(s: redis.Redis):
+    s.delete("foo")
+    s.set("foo", "bar")
+    assert s.getdel("foo") == b"bar"
+    assert s.getdel("foo") is None
+
+
+@pytest.mark.xfail()
+def test_getdel_propagate_as_del_command_to_replica(s: redis.Redis):
+    assert False
+
+
+@pytest.mark.xfail()
+def test_getex_without_argument_does_not_propagate_to_replica(s: redis.Redis):
+    assert False
+
+
+def test_mget(s: redis.Redis):
+    s.set("foo", "BAR")
+    s.set("bar", "FOO")
+    assert s.mget("foo", "bar") == [b"BAR", b"FOO"]

@@ -18,8 +18,8 @@ from pyvalkey.database_objects.errors import (
     RouterKeyError,
     ServerError,
     ServerInvalidIntegerError,
-    ServerSyntaxError,
     ServerWrongTypeError,
+    ValkeySyntaxError,
 )
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType, dump, load
@@ -125,7 +125,7 @@ class ServerConnectionHandler(StreamRequestHandler):
                 )
             except ServerWrongTypeError:
                 self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
-            except ServerSyntaxError:
+            except ValkeySyntaxError:
                 self.dump(RespError(b"ERR syntax error"))
             except ServerInvalidIntegerError:
                 self.dump(RespError(b"ERR hash value is not an integer"))

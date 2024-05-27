@@ -201,9 +201,28 @@ class Database:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet[bytes] = field(default_factory=lambda: SortedSet(key=lambda k: k.expiration))
 
+    def pop(self, key: bytes) -> KeyValue | None:
+        key_value = self.data.pop(key, None)
+        if key_value is None:
+            return None
+        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
+            self.key_with_expiration.discard(key_value)
+            return None
+        return key_value
+
+    @classmethod
+    def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
+        if key_value is not None and not isinstance(key_value.value, type_):
+            raise ServerWrongTypeError()
+        return key_value
+
+    def typesafe_pop(self, key: bytes, type_: type) -> KeyValue | None:
+        key_value = self.pop(key)
+        return self.check_type_ang_get(key_value, type_)
+
     def get(self, key: bytes) -> KeyValue | None:
         key_value = self.data[key]
-        if key_value.expiration is not None and time.time() > key_value.expiration:
+        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
             del self.data[key]
             self.key_with_expiration.remove(key_value)
             return None
@@ -211,19 +230,45 @@ class Database:
 
     def typesafe_get(self, key: bytes, type_: type) -> KeyValue | None:
         key_value = self.get(key)
-        if key_value is None:
-            return None
-        if not isinstance(self.data[key].value, type_):
-            raise ServerWrongTypeError()
+        return self.check_type_ang_get(key_value, type_)
+
+    def unsafe_get(self, key: bytes) -> KeyValue:
+        if key not in self.data:
+            raise KeyError()
+        key_value = self.data[key]
+        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
+            del self.data[key]
+            self.key_with_expiration.remove(key_value)
+            raise KeyError()
         return key_value
 
-    def set_expiration(self, key: bytes, expiration: int) -> bool:
-        if key not in self.data:
+    def set_persist(self, key: bytes) -> bool:
+        try:
+            key_value = self.unsafe_get(key)
+        except KeyError:
             return False
-        key_value = self.get(key)
-        if key_value is None:
+
+        self.key_with_expiration.remove(key_value)
+        key_value.expiration = None
+        return True
+
+    def set_expiration(self, key: bytes, expiration_milliseconds: int) -> bool:
+        try:
+            key_value = self.unsafe_get(key)
+        except KeyError:
             return False
-        key_value.expiration = int(time.time()) + expiration
+
+        key_value.expiration = int(time.time() * 1000) + expiration_milliseconds
+        self.key_with_expiration.add(key_value)
+        return True
+
+    def set_expiration_at(self, key: bytes, expiration_milliseconds_at: int) -> bool:
+        try:
+            key_value = self.unsafe_get(key)
+        except KeyError:
+            return False
+
+        key_value.expiration = expiration_milliseconds_at
         self.key_with_expiration.add(key_value)
         return True
 
@@ -233,7 +278,7 @@ class Database:
             raise KeyError()
         if key_value.expiration is None:
             return None
-        return key_value.expiration - int(time.time())
+        return key_value.expiration - int(time.time() * 1000)
 
     def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
         key_value = None
@@ -296,3 +341,9 @@ class Database:
 
     def get_or_create_set(self, key: bytes) -> set:
         return self.typesafe_get_or_create(key, set)
+
+    def pop_string(self, key: bytes) -> Any:  # noqa: ANN401
+        key_value = self.typesafe_pop(key, ServerString)
+        if key_value is None:
+            return None
+        return key_value.value
