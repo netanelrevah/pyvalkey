@@ -91,7 +91,7 @@ class SetRemove(DatabaseCommand):
 
     def execute(self) -> ValueType:
         a_set = self.database.get_set(self.key)
-        self.database.data[self.key] = a_set - self.members
+        a_set.difference_update(self.members)
         return len(a_set.intersection(self.members))
 
 
@@ -126,8 +126,8 @@ class SetDifference(DatabaseCommand):
 def apply_set_store_operation(
     database: Database, operation: Callable[[set, set], set], keys: list[bytes], destination: bytes
 ) -> int:
-    database.data[destination] = functools.reduce(operation, map(database.get_set, keys))
-    return len(database.data[destination])
+    database.data[destination].value = functools.reduce(operation, map(database.get_set, keys))
+    return len(database.data[destination].value)
 
 
 @ServerCommandsRouter.command(b"sunionstore", [b"write", b"set", b"slow"])

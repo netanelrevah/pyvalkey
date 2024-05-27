@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import itertools
+import operator
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -39,7 +40,7 @@ MAX_BYTES = MaxBytes()
 @dataclass(slots=True)
 class KeyValue:
     key: bytes
-    value: ServerSortedSet | dict | ServerString
+    value: ServerSortedSet | dict | ServerString | set
     expiration: int | None = field(default=None)
 
     def __hash__(self) -> int:
@@ -196,10 +197,14 @@ class ServerSortedSet:
         return len(self.members)
 
 
+def create_empty_keys_with_expiration() -> SortedSet:
+    return SortedSet(key=operator.attrgetter("expiration"))
+
+
 @dataclass
 class Database:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
-    key_with_expiration: SortedSet[bytes] = field(default_factory=lambda: SortedSet(key=lambda k: k.expiration))
+    key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
 
     def pop(self, key: bytes) -> KeyValue | None:
         key_value = self.data.pop(key, None)

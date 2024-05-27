@@ -11,7 +11,6 @@ from pyvalkey.database_objects.databases import (
     MAX_BYTES,
     Database,
     RangeLimit,
-    ServerSortedSet,
 )
 from pyvalkey.resp import ValueType
 
@@ -89,9 +88,9 @@ def sorted_set_range(
         )
 
     if destination:
-        database[destination] = ServerSortedSet()
-        database[destination].update_with_iterator(result_iterator)
-        return len(database[destination])
+        dz = database.get_or_create_sorted_set(destination)
+        dz.update_with_iterator(result_iterator)
+        return len(dz)
     return list(result_iterator)
 
 
