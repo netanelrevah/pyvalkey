@@ -165,3 +165,17 @@ def test_mget(s: redis.Redis):
     s.set("foo", "BAR")
     s.set("bar", "FOO")
     assert s.mget("foo", "bar") == [b"BAR", b"FOO"]
+
+
+def test_mget_agains_non_existing(s: redis.Redis):
+    s.set("foo", "BAR")
+    s.set("bar", "FOO")
+    assert s.mget("foo", "baazz", "bar") == [b"BAR", None, b"FOO"]
+
+
+def test_mget_agains_non_string_key(s: redis.Redis):
+    s.set("foo", "BAR")
+    s.set("bar", "FOO")
+    s.sadd("myset", "ciao")
+    s.sadd("myset", "bau")
+    assert s.mget("foo", "baazz", "bar", "myset") == [b"BAR", None, b"FOO", None]
