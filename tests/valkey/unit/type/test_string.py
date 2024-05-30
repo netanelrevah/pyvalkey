@@ -159,12 +159,12 @@ def test_getdel_command(s: redis.Redis):
     assert s.getdel("foo") is None
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getdel_propagate_as_del_command_to_replica(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getex_without_argument_does_not_propagate_to_replica(s: redis.Redis):
     assert False
 
@@ -259,226 +259,233 @@ def test_strlen_against_plain_string(s: redis.Redis):
     assert s.strlen("mystring") == 20
 
 
-@pytest.mark.xfail("not implemented")
+def bits_to_bytes(value: str) -> bytes:
+    return "".join(chr(int("".join(x), 2)) for x in zip(*[iter(value)] * 8)).encode()
+
+
 def test_setbit_against_non_existing_key(s: redis.Redis):
-    assert False
+    assert s.setbit("mykey", 1, 1) == 0
+    assert s.get("mykey") == bits_to_bytes("01000000")
 
 
-@pytest.mark.xfail("not implemented")
 def test_setbit_against_string_encoded_key(s: redis.Redis):
-    assert False
+    s.set("mykey", "@")
+    assert s.setbit("mykey", 2, 1) == 0
+    assert s.get("mykey") == bits_to_bytes("01100000")
+    assert s.setbit("mykey", 1, 0) == 0
+    assert s.get("mykey") == bits_to_bytes("00100000")
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setbit_against_integer_encoded_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setbit_against_key_with_wrong_type(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setbit_with_out_of_range_bit_offset(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setbit_with_non_bit_argument(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setbit_fuzzing(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getbit_against_non_existing_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getbit_against_string_encoded_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getbit_against_integer_encoded_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_non_existing_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_string_encoded_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_integer_encoded_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_key_with_wrong_type(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setrange_with_out_of_range_offset(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getrange_against_non_existing_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getrange_against_wrong_key_type(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getrange_against_string_value(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getrange_against_integer_encoded_value(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getrange_fuzzing(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_coverage_substr(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_trim_on_set_with_big_value(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_can_detect_syntax_errors(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_nx_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_xx_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_option_with_no_previous_value(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_option_with_xx(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_option_with_xx_and_no_previous_value(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_option_with_nx(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_option_with_nx_and_previous_value(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_get_with_incorrect_type_should_result_in_wrong_type_error(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_ex_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_px_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_exat_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_pxat_option(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_extended_set_using_multiple_options_at_once(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_getrange_with_huge_ranges_github_issue_1844(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_lcs_basic(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_lcs_len(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_lcs_indexes(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_lcs_indexes_with_match_len(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_lcs_indexes_with_match_len_and_minimum_match_len(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_setrange_with_huge_offset(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail("not implemented")
+@pytest.mark.xfail(reason="not implemented")
 def test_append_modifies_the_encoding_from_int_to_raw(s: redis.Redis):
     assert False

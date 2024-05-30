@@ -43,9 +43,9 @@ class SetBit(DatabaseCommand):
         previous_value = (s.bytes_value[bytes_offset] >> byte_offset) & 1
 
         if self.value:
-            new_byte = s.bytes_value[bytes_offset] | 1 << byte_offset
+            new_byte = s.bytes_value[bytes_offset] | (128 >> byte_offset)
         else:
-            new_byte = s.bytes_value[bytes_offset] & ~(1 << byte_offset)
+            new_byte = s.bytes_value[bytes_offset] & ~(128 >> byte_offset)
 
         s.update_with_bytes_value(s.bytes_value[:bytes_offset] + bytes([new_byte]) + s.bytes_value[bytes_offset + 1 :])
 
