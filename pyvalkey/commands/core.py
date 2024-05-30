@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from pyvalkey.commands.context import ClientContext
+from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import ValueType
 
 
@@ -16,4 +18,12 @@ class Command:
 
     @classmethod
     def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
+        raise NotImplementedError()
+
+
+@dataclass
+class DatabaseCommand(Command):
+    database: Database = server_command_dependency()
+
+    def execute(self) -> ValueType:
         raise NotImplementedError()

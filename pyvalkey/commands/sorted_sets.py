@@ -1,11 +1,11 @@
 from enum import Enum
 
-from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import (
     keyword_parameter,
     positional_parameter,
 )
 from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.strings_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import (
     MAX_BYTES,

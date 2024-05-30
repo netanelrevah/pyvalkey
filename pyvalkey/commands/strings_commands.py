@@ -1,21 +1,10 @@
 import fnmatch
-from dataclasses import dataclass
 
-from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerWrongTypeError, ValkeySyntaxError
 from pyvalkey.resp import RESP_OK, ValueType
-
-
-@dataclass
-class DatabaseCommand(Command):
-    database: Database = server_command_dependency()
-
-    def execute(self) -> ValueType:
-        raise NotImplementedError()
 
 
 @ServerCommandsRouter.command(b"echo", [b"fast", b"connection"])
@@ -76,6 +65,22 @@ class GetDelete(DatabaseCommand):
         if s is not None:
             return s.bytes_value
         return None
+
+
+@ServerCommandsRouter.command(b"exists", [b"read", b"string", b"fast"])
+class Exists(DatabaseCommand):
+    keys: list[bytes] = positional_parameter(key_mode=b"RW")
+
+    def execute(self) -> ValueType:
+        return sum(1 for key in self.keys if self.database.get_string_or_none(key) is not None)
+
+
+@ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])
+class StringLength(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+
+    def execute(self) -> ValueType:
+        return len(self.database.get_string(self.key))
 
 
 @ServerCommandsRouter.command(b"getex", [b"write", b"string", b"fast"])
@@ -169,6 +174,48 @@ class Set(DatabaseCommand):
 
         s.update_with_bytes_value(self.value)
         return RESP_OK
+
+
+@ServerCommandsRouter.command(b"mset", [b"write", b"string", b"slow"])
+class SetMultiple(DatabaseCommand):
+    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
+
+    def execute(self) -> ValueType:
+        for key, value in self.key_value:  # Todo: should be atomic (use update in database)
+            s = self.database.get_or_create_string(key)
+            s.update_with_bytes_value(value)
+        return RESP_OK
+
+
+@ServerCommandsRouter.command(b"msetnx", [b"write", b"string", b"slow"])
+class SetIfNotExistsMultiple(DatabaseCommand):
+    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
+
+    def execute(self) -> ValueType:
+        string_value_to_update = []
+        for key, value in self.key_value:
+            s = self.database.get_string_or_none(key)
+            if s is not None:
+                return False
+            string_value_to_update.append((s, value))
+        if None in string_value_to_update:
+            return False
+        for key, value in self.key_value:
+            s = self.database.get_or_create_string(key)
+            s.update_with_bytes_value(value)
+        return True
+
+
+@ServerCommandsRouter.command(b"getset", [b"write", b"string", b"slow"])
+class GetSet(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        s = self.database.get_or_create_string(self.key)
+        old_value = s.bytes_value
+        s.update_with_bytes_value(self.value)
+        return old_value
 
 
 @ServerCommandsRouter.command(b"setex", [b"write", b"string", b"slow"])

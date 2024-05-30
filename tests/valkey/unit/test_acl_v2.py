@@ -2,9 +2,7 @@ import redis
 import redis.exceptions
 from pytest import raises
 
-
-def key_value_list_to_dict(key_value_list: list):
-    return dict(zip(key_value_list[0::2], key_value_list[1::2]))
+from tests.utils import key_value_list_to_dict
 
 
 def test_basic_multiple_selectors(s: redis.Redis, c: redis.Redis):

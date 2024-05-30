@@ -3,9 +3,9 @@ from enum import Enum
 from functools import reduce
 from typing import Any, ClassVar
 
-from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.strings_commands import DatabaseCommand
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
