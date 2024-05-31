@@ -19,10 +19,7 @@ class GetBit(DatabaseCommand):
     def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
 
-        bytes_offset = self.offset // 8
-        byte_offset = self.offset - (bytes_offset * 8)
-
-        return (s.bytes_value[bytes_offset] >> byte_offset) & 1
+        return s.get_set(self.offset)
 
 
 @ServerCommandsRouter.command(b"setbit", [b"write", b"bitmap", b"slow"])
@@ -34,20 +31,9 @@ class SetBit(DatabaseCommand):
     def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
 
-        offset = int(self.offset)
-        bytes_offset = offset // 8
-        byte_offset = offset - (bytes_offset * 8)
+        previous_value = s.get_set(self.offset)
 
-        if len(s.bytes_value) <= bytes_offset:
-            s.bytes_value = s.bytes_value.ljust(bytes_offset + 1, b"\0")
-        previous_value = (s.bytes_value[bytes_offset] >> byte_offset) & 1
-
-        if self.value:
-            new_byte = s.bytes_value[bytes_offset] | (128 >> byte_offset)
-        else:
-            new_byte = s.bytes_value[bytes_offset] & ~(128 >> byte_offset)
-
-        s.update_with_bytes_value(s.bytes_value[:bytes_offset] + bytes([new_byte]) + s.bytes_value[bytes_offset + 1 :])
+        s.set_bit(self.offset, self.value)
 
         return previous_value
 
@@ -78,14 +64,14 @@ class BitOperation(DatabaseCommand):
                 (self.database.get_string(source_key).int_value for source_key in self.source_keys),
             )
             s = self.database.get_or_create_string(self.destination_key)
-            s.update_with_int_value(result)
+            s.int_value = result
             return len(s)
 
         (source_key,) = self.source_keys
 
         source_s = self.database.get_string(source_key)
         destination_s = self.database.get_or_create_string(self.destination_key)
-        destination_s.update_with_int_value(~source_s.int_value)
+        destination_s.int_value = ~source_s.int_value
         return len(destination_s)
 
 
@@ -98,7 +84,7 @@ class BitCount(DatabaseCommand):
     def handle_byte_mode(self, key: bytes, start: int, end: int) -> int:
         s = self.database.get_string(key)
 
-        length = len(s.bytes_value)
+        length = len(s.value)
         server_start = start
         server_stop = end
 
@@ -112,7 +98,7 @@ class BitCount(DatabaseCommand):
         else:
             stop = max(length + int(server_stop), 0)
 
-        return sum(map(int.bit_count, s.bytes_value[start : stop + 1]))
+        return sum(map(int.bit_count, s.value[start : stop + 1]))
 
     def handle_bit_mode(self, key: bytes, start: int, end: int) -> int:
         s = self.database.get_string(key)
@@ -132,7 +118,7 @@ class BitCount(DatabaseCommand):
     def execute(self) -> ValueType:
         if not self.count_range:
             s = self.database.get_string(self.key)
-            return sum(map(int.bit_count, s.bytes_value))
+            return sum(map(int.bit_count, s.value))
 
         start, end = self.count_range
 
@@ -145,8 +131,8 @@ def apply_increment(database: Database, key: bytes, increment: int | float = 1) 
     s = database.get_or_create_string(key)
     if s.numeric_value is None:
         raise ServerError(b"ERR value is not an integer or out of range")
-    s.update_with_numeric_value(s.numeric_value + increment)
-    return s.bytes_value
+    s.numeric_value = s.numeric_value + increment
+    return s.value
 
 
 @ServerCommandsRouter.command(b"incr", [b"write", b"string", b"fast"])

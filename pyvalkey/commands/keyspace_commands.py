@@ -43,5 +43,5 @@ class Copy(DatabaseCommand):
         else:
             return False
 
-        destination_key.update_with_bytes_value(source_key.bytes_value)
+        destination_key.value = source_key.value
         return True

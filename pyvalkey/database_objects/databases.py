@@ -40,7 +40,7 @@ MAX_BYTES = MaxBytes()
 @dataclass(slots=True)
 class KeyValue:
     key: bytes
-    value: ServerSortedSet | dict | ServerString | set
+    value: ServerSortedSet | dict | StringType | set
     expiration: int | None = field(default=None)
 
     def __hash__(self) -> int:
@@ -48,10 +48,8 @@ class KeyValue:
 
 
 @dataclass
-class ServerString:
-    bytes_value: bytes = b""
-    int_value: int = 0
-    numeric_value: float | None = 0
+class StringType:
+    value: bytes = b""
 
     @classmethod
     def is_float(cls, value: bytes) -> bool:
@@ -69,23 +67,50 @@ class ServerString:
     def int_from_bytes(cls, value: bytes) -> int:
         return int.from_bytes(value, byteorder="big", signed=True)
 
-    def update_with_numeric_value(self, value: int | float) -> None:
-        self.numeric_value = value
-        self.bytes_value = f"{value:g}".encode()
-        self.int_value = self.int_from_bytes(self.bytes_value)
+    @property
+    def numeric_value(self) -> float | None:
+        return float(self.value) if self.is_float(self.value) else None
 
-    def update_with_int_value(self, value: int) -> None:
-        self.int_value = value
-        self.bytes_value = self.int_to_bytes(value)
-        self.numeric_value = int(self.bytes_value) if self.bytes_value.isdigit() else None
+    @numeric_value.setter
+    def numeric_value(self, value: int | float) -> None:
+        self.value = f"{value:g}".encode()
 
-    def update_with_bytes_value(self, value: bytes) -> None:
-        self.int_value = self.int_from_bytes(value)
-        self.bytes_value = value
-        self.numeric_value = float(value) if self.is_float(value) else None
+    @property
+    def int_value(self) -> int:
+        return self.int_from_bytes(self.value)
+
+    @int_value.setter
+    def int_value(self, value: int) -> None:
+        self.value = self.int_to_bytes(value)
+
+    def get_set(self, offset: int) -> int:
+        bytes_offset = offset // 8
+        byte_offset = offset - (bytes_offset * 8)
+
+        adjusted_value = self.value
+        if len(self.value) <= bytes_offset:
+            adjusted_value = self.value.ljust(bytes_offset + 1, b"\0")
+
+        return (adjusted_value[bytes_offset] >> byte_offset) & 1
+
+    def set_bit(self, offset: int, value: bool) -> None:
+        bytes_offset = offset // 8
+        byte_offset = offset - (bytes_offset * 8)
+
+        new_value = self.value
+
+        if len(self.value) <= bytes_offset:
+            new_value = self.value.ljust(bytes_offset + 1, b"\0")
+
+        if value:
+            new_byte = new_value[bytes_offset] | (128 >> byte_offset)
+        else:
+            new_byte = new_value[bytes_offset] & ~(128 >> byte_offset)
+
+        self.value = new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
 
     def __len__(self) -> int:
-        return len(self.bytes_value)
+        return len(self.value)
 
 
 @dataclass(eq=True)
@@ -314,14 +339,14 @@ class Database:
 
         return key_value.value
 
-    def get_string(self, key: bytes) -> ServerString:
-        return self.get_by_type(key, ServerString)
+    def get_string(self, key: bytes) -> StringType:
+        return self.get_by_type(key, StringType)
 
-    def get_string_or_none(self, key: bytes) -> ServerString | None:
-        return self.get_or_none_by_type(key, ServerString)
+    def get_string_or_none(self, key: bytes) -> StringType | None:
+        return self.get_or_none_by_type(key, StringType)
 
-    def get_or_create_string(self, key: bytes) -> ServerString:
-        return self.typesafe_get_or_create(key, ServerString)
+    def get_or_create_string(self, key: bytes) -> StringType:
+        return self.typesafe_get_or_create(key, StringType)
 
     def get_hash_table(self, key: bytes) -> dict:
         return self.get_by_type(key, dict)
@@ -348,7 +373,7 @@ class Database:
         return self.typesafe_get_or_create(key, set)
 
     def pop_string(self, key: bytes) -> Any:  # noqa: ANN401
-        key_value = self.typesafe_pop(key, ServerString)
+        key_value = self.typesafe_pop(key, StringType)
         if key_value is None:
             return None
         return key_value.value

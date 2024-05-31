@@ -32,7 +32,7 @@ class Get(DatabaseCommand):
     def execute(self) -> ValueType:
         s = self.database.get_string_or_none(self.key)
         if s is not None:
-            return s.bytes_value
+            return s.value
         return None
 
 
@@ -52,7 +52,7 @@ class MultipleGet(DatabaseCommand):
             if s is None:
                 result.append(None)
             else:
-                result.append(s.bytes_value)
+                result.append(s.value)
         return result
 
 
@@ -63,7 +63,7 @@ class GetDelete(DatabaseCommand):
     def execute(self) -> ValueType:
         s = self.database.pop_string(self.key)
         if s is not None:
-            return s.bytes_value
+            return s.value
         return None
 
 
@@ -114,7 +114,7 @@ class GetExpire(DatabaseCommand):
             if name == "persist":
                 self.database.set_persist(self.key)
 
-        return s.bytes_value
+        return s.value
 
 
 @ServerCommandsRouter.command(b"ttl", [b"write", b"string", b"fast"])
@@ -172,7 +172,7 @@ class Set(DatabaseCommand):
             if name in ["exat", "pxat"]:
                 self.database.set_expiration_at(self.key, value * (1000 if name == "exat" else 1))
 
-        s.update_with_bytes_value(self.value)
+        s.value = self.value
         return RESP_OK
 
 
@@ -183,7 +183,7 @@ class SetMultiple(DatabaseCommand):
     def execute(self) -> ValueType:
         for key, value in self.key_value:  # Todo: should be atomic (use update in database)
             s = self.database.get_or_create_string(key)
-            s.update_with_bytes_value(value)
+            s.value = value
         return RESP_OK
 
 
@@ -202,7 +202,7 @@ class SetIfNotExistsMultiple(DatabaseCommand):
             return False
         for key, value in self.key_value:
             s = self.database.get_or_create_string(key)
-            s.update_with_bytes_value(value)
+            s.value = value
         return True
 
 
@@ -213,8 +213,8 @@ class GetSet(DatabaseCommand):
 
     def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
-        old_value = s.bytes_value
-        s.update_with_bytes_value(self.value)
+        old_value = s.value
+        s.value = self.value
         return old_value
 
 
@@ -227,7 +227,7 @@ class SetExpire(DatabaseCommand):
     def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
         self.database.set_expiration(self.key, self.seconds)
-        s.update_with_bytes_value(self.value)
+        s.value = self.value
         return RESP_OK
 
 
@@ -242,7 +242,7 @@ class SetIfNotExists(DatabaseCommand):
         if s is not None:
             return False
         s = self.database.get_or_create_string(self.key)
-        s.update_with_bytes_value(self.value)
+        s.value = self.value
         return True
 
 
@@ -284,5 +284,5 @@ class Append(DatabaseCommand):
 
     def execute(self) -> ValueType:
         s = self.database.get_or_create_string(self.key)
-        s.update_with_bytes_value(s.bytes_value + self.value)
+        s.value = s.value + self.value
         return len(s)

@@ -1,10 +1,8 @@
 import time
 from random import randint
-from typing import TypeVar
 
 import pytest
 import redis
-from _pytest.python_api import raises
 
 from tests.utils import assert_raises
 
@@ -135,7 +133,7 @@ def test_getex_no_option(s: redis.Redis):
 
 
 def test_getex_syntax_errors(s: redis.Redis):
-    with raises(redis.RedisError, match=""):
+    with assert_raises(redis.RedisError, ""):
         s.execute_command("getex", "foo", "non-existent-option")
 
 
@@ -148,7 +146,7 @@ def test_getex_and_get_expired_key_or_not_exist(s: redis.Redis):
 
 
 def test_getex_no_arguments(s: redis.Redis):
-    with raises(redis.RedisError, match=""):
+    with assert_raises(redis.RedisError, ""):
         s.execute_command("getex")
 
 
@@ -203,9 +201,6 @@ def test_getset_replace_old_value(s: redis.Redis):
 def test_mset_base_case(s: redis.Redis):
     s.mset({"x": 10, "y": "foo bar", "z": "x x x x x x x\n\n\r\n"})
     assert s.mget("x", "y", "z") == [b"10", b"foo bar", b"x x x x x x x\n\n\r\n"]
-
-
-E = TypeVar("E", bound=BaseException)
 
 
 def test_mset_or_msetnx_wrong_number_of_args(s: redis.Redis):
