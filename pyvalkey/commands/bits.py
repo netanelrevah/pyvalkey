@@ -6,8 +6,7 @@ from typing import Any, ClassVar
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.commands.strings_commands import DatabaseCommand
-from pyvalkey.database_objects.databases import Database
-from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.database_objects.databases import Database, StringType
 from pyvalkey.resp import ValueType
 
 
@@ -81,9 +80,8 @@ class BitCount(DatabaseCommand):
     count_range: tuple[int, int] | None = positional_parameter(default=None)
     bit_mode: bool = positional_parameter(default=False, values_mapping={b"BYTE": False, b"BIT": True})
 
-    def handle_byte_mode(self, key: bytes, start: int, end: int) -> int:
-        s = self.database.get_string(key)
-
+    @classmethod
+    def handle_byte_mode(cls, s: StringType, start: int, end: int) -> int:
         length = len(s.value)
         server_start = start
         server_stop = end
@@ -98,13 +96,11 @@ class BitCount(DatabaseCommand):
         else:
             stop = max(length + int(server_stop), 0)
 
-        return sum(map(int.bit_count, s.value[start : stop + 1]))
+        return s.count_bits_of_int(start, stop + 1)
 
-    def handle_bit_mode(self, key: bytes, start: int, end: int) -> int:
-        s = self.database.get_string(key)
-        value: int = s.int_value
-
-        length = value.bit_length()
+    @classmethod
+    def handle_bit_mode(cls, s: StringType, start: int, end: int) -> int:
+        length = s.bit_length()
 
         if start < 0:
             start = length + start
@@ -112,25 +108,22 @@ class BitCount(DatabaseCommand):
         if end < 0:
             end = length + (end + 1)
 
-        bit_count = ((value & ((2**end) - 1)) >> start).bit_count()
-        return bit_count
+        return s.count_bits_of_int(start, end)
 
     def execute(self) -> ValueType:
+        s = self.database.get_string(self.key)
         if not self.count_range:
-            s = self.database.get_string(self.key)
-            return sum(map(int.bit_count, s.value))
+            return s.count_bits_of_bytes()
 
         start, end = self.count_range
 
         if self.bit_mode:
-            return self.handle_bit_mode(self.key, start, end)
-        return self.handle_byte_mode(self.key, start, end)
+            return self.handle_bit_mode(s, start, end)
+        return self.handle_byte_mode(s, start, end)
 
 
-def apply_increment(database: Database, key: bytes, increment: int | float = 1) -> bytes:
+def increment_by(database: Database, key: bytes, increment: int | float = 1) -> bytes:
     s = database.get_or_create_string(key)
-    if s.numeric_value is None:
-        raise ServerError(b"ERR value is not an integer or out of range")
     s.numeric_value = s.numeric_value + increment
     return s.value
 
@@ -140,7 +133,7 @@ class Increment(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return apply_increment(self.database, self.key)
+        return increment_by(self.database, self.key)
 
 
 @ServerCommandsRouter.command(b"incrby", [b"write", b"string", b"fast"])
@@ -149,7 +142,7 @@ class IncrementBy(DatabaseCommand):
     increment: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return apply_increment(self.database, self.key, self.increment)
+        return increment_by(self.database, self.key, self.increment)
 
 
 @ServerCommandsRouter.command(b"incrbyfloat", [b"write", b"string", b"fast"])
@@ -158,7 +151,7 @@ class IncrementByFloat(DatabaseCommand):
     increment: float = positional_parameter()
 
     def execute(self) -> ValueType:
-        return apply_increment(self.database, self.key, self.increment)
+        return increment_by(self.database, self.key, self.increment)
 
 
 @ServerCommandsRouter.command(b"decr", [b"write", b"string", b"fast"])
@@ -166,7 +159,7 @@ class Decrement(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return apply_increment(self.database, self.key, -1)
+        return increment_by(self.database, self.key, -1)
 
 
 @ServerCommandsRouter.command(b"decrby", [b"write", b"string", b"fast"])
@@ -175,4 +168,4 @@ class DecrementBy(DatabaseCommand):
     decrement: float = positional_parameter()
 
     def execute(self) -> ValueType:
-        return apply_increment(self.database, self.key, self.decrement * -1)
+        return increment_by(self.database, self.key, self.decrement * -1)

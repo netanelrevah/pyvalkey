@@ -11,7 +11,7 @@ from typing import Any
 from sortedcontainers import SortedDict, SortedSet
 
 from pyvalkey.commands.parameters import positional_parameter
-from pyvalkey.database_objects.errors import ServerWrongTypeError
+from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.utils import flatten
 
 
@@ -68,8 +68,10 @@ class StringType:
         return int.from_bytes(value, byteorder="big", signed=True)
 
     @property
-    def numeric_value(self) -> float | None:
-        return float(self.value) if self.is_float(self.value) else None
+    def numeric_value(self) -> float:
+        if not self.is_float(self.value):
+            raise ServerError(b"ERR value is not an integer or out of range")
+        return float(self.value)
 
     @numeric_value.setter
     def numeric_value(self, value: int | float) -> None:
@@ -108,6 +110,15 @@ class StringType:
             new_byte = new_value[bytes_offset] & ~(128 >> byte_offset)
 
         self.value = new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
+
+    def count_bits_of_bytes(self, start: int | None = None, stop: int | None = None) -> int:
+        return sum(map(int.bit_count, self.value[slice(start, stop)]))
+
+    def count_bits_of_int(self, start: int, stop: int) -> int:
+        return ((self.int_value & ((2**stop) - 1)) >> start).bit_count()
+
+    def bit_length(self) -> int:
+        return self.int_value.bit_length()
 
     def __len__(self) -> int:
         return len(self.value)
