@@ -4,7 +4,7 @@ from random import randint
 import pytest
 import redis
 
-from tests.utils import assert_raises
+from tests.utils import assert_raises, bits_to_bytes
 
 pytestmark = pytest.mark.string
 
@@ -133,7 +133,7 @@ def test_getex_no_option(s: redis.Redis):
 
 
 def test_getex_syntax_errors(s: redis.Redis):
-    with assert_raises(redis.RedisError, ""):
+    with assert_raises(redis.RedisError, "syntax error"):
         s.execute_command("getex", "foo", "non-existent-option")
 
 
@@ -146,7 +146,7 @@ def test_getex_and_get_expired_key_or_not_exist(s: redis.Redis):
 
 
 def test_getex_no_arguments(s: redis.Redis):
-    with assert_raises(redis.RedisError, ""):
+    with assert_raises(redis.RedisError, "wrong number of arguments for 'getex' command"):
         s.execute_command("getex")
 
 
@@ -254,10 +254,6 @@ def test_strlen_against_plain_string(s: redis.Redis):
     assert s.strlen("mystring") == 20
 
 
-def bits_to_bytes(value: str) -> bytes:
-    return "".join(chr(int("".join(x), 2)) for x in zip(*[iter(value)] * 8)).encode()
-
-
 def test_setbit_against_non_existing_key(s: redis.Redis):
     assert s.setbit("mykey", 1, 1) == 0
     assert s.get("mykey") == bits_to_bytes("01000000")
@@ -271,44 +267,83 @@ def test_setbit_against_string_encoded_key(s: redis.Redis):
     assert s.get("mykey") == bits_to_bytes("00100000")
 
 
-@pytest.mark.xfail(reason="not implemented")
+@pytest.mark.xfail(reason="object encoding not implemented")
 def test_setbit_against_integer_encoded_key(s: redis.Redis):
     assert False
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setbit_against_key_with_wrong_type(s: redis.Redis):
-    assert False
+    s.lpush("mykey", "foo")
+    with assert_raises(redis.RedisError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
+        s.setbit("mykey", 0, 1)
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setbit_with_out_of_range_bit_offset(s: redis.Redis):
-    assert False
+    with assert_raises(redis.RedisError, "bit offset is not an integer or out of range"):
+        s.setbit("mykey", 4 * (1024**3), 1)
+    with assert_raises(redis.RedisError, "bit offset is not an integer or out of range"):
+        s.setbit("mykey", -1, 1)
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setbit_with_non_bit_argument(s: redis.Redis):
-    assert False
+    with assert_raises(redis.RedisError, "bit is not an integer or out of range"):
+        s.execute_command("setbit", "mykey", 0, -1)
+    with assert_raises(redis.RedisError, "bit is not an integer or out of range"):
+        s.execute_command("setbit", "mykey", 0, 2)
+    with assert_raises(redis.RedisError, "bit is not an integer or out of range"):
+        s.execute_command("setbit", "mykey", 0, 10)
+    with assert_raises(redis.RedisError, "bit is not an integer or out of range"):
+        s.execute_command("setbit", "mykey", 0, 20)
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setbit_fuzzing(s: redis.Redis):
-    assert False
+    length = 256 * 8
+    expected = ""
+
+    for index in range(0, 2000):
+        bit_number = randint(0, length - 1)
+        bit_value = randint(0, 1)
+        if len(expected) < bit_number:
+            expected += "0" * (bit_number - len(expected))
+        head = expected[: bit_number - 1]
+        tail = expected[bit_number + 1 :]
+        expected = f"{head}{bit_value}{tail}"
+
+        s.setbit("mykey", bit_number, bit_value)
+        actual = s.get("mykey")
+        assert actual == bits_to_bytes(expected)
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_getbit_against_non_existing_key(s: redis.Redis):
-    assert False
+    assert s.getbit("mykey", 0) == 0
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_getbit_against_string_encoded_key(s: redis.Redis):
-    assert False
+    s.set("mykey", "`")
+
+    assert s.getbit("mykey", 0) == 0
+    assert s.getbit("mykey", 1) == 1
+    assert s.getbit("mykey", 2) == 1
+    assert s.getbit("mykey", 3) == 0
+
+    assert s.getbit("mykey", 8) == 0
+    assert s.getbit("mykey", 100) == 0
+    assert s.getbit("mykey", 10000) == 0
 
 
-@pytest.mark.xfail(reason="not implemented")
+@pytest.mark.xfail(reason="object encoding not implemented")
 def test_getbit_against_integer_encoded_key(s: redis.Redis):
-    assert False
+    s.set("mykey", 1)
+    assert s.object("encoding", "mykey") == b"int"
+
+    assert s.getbit("mykey", 0) == 0
+    assert s.getbit("mykey", 1) == 0
+    assert s.getbit("mykey", 2) == 1
+    assert s.getbit("mykey", 3) == 1
+
+    assert s.getbit("mykey", 8) == 0
+    assert s.getbit("mykey", 100) == 0
+    assert s.getbit("mykey", 10000) == 0
 
 
 @pytest.mark.xfail(reason="not implemented")

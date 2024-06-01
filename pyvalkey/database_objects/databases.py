@@ -85,7 +85,10 @@ class StringType:
     def int_value(self, value: int) -> None:
         self.value = self.int_to_bytes(value)
 
-    def get_set(self, offset: int) -> int:
+    def get_bit(self, offset: int) -> int:
+        if offset >= 2**32 or offset < 0:
+            raise ServerError(b"ERR bit offset is not an integer or out of range")
+
         bytes_offset = offset // 8
         byte_offset = offset - (bytes_offset * 8)
 
@@ -93,9 +96,12 @@ class StringType:
         if len(self.value) <= bytes_offset:
             adjusted_value = self.value.ljust(bytes_offset + 1, b"\0")
 
-        return (adjusted_value[bytes_offset] >> byte_offset) & 1
+        return (adjusted_value[bytes_offset] >> (7 - byte_offset)) & 1
 
     def set_bit(self, offset: int, value: bool) -> None:
+        if offset >= 2**32 or offset < 0:
+            raise ServerError(b"ERR bit offset is not an integer or out of range")
+
         bytes_offset = offset // 8
         byte_offset = offset - (bytes_offset * 8)
 
@@ -109,7 +115,7 @@ class StringType:
         else:
             new_byte = new_value[bytes_offset] & ~(128 >> byte_offset)
 
-        self.value = new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
+        self.value = new_value[: bytes_offset - 1] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
 
     def count_bits_of_bytes(self, start: int | None = None, stop: int | None = None) -> int:
         return sum(map(int.bit_count, self.value[slice(start, stop)]))
