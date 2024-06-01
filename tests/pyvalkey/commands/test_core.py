@@ -5,12 +5,12 @@ from parametrization import Parametrization
 
 from pyvalkey.commands.clients import ClientKill
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.databases import Ping
 from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from pyvalkey.database_objects.errors import ServerSyntaxError, ServerWrongNumberOfArgumentsError
+from pyvalkey.commands.strings_commands import Ping
+from pyvalkey.database_objects.errors import ServerWrongNumberOfArgumentsError, ValkeySyntaxError
 
 
 @server_command()
@@ -102,7 +102,7 @@ def test_parser__successful(parameters, command_cls: Command, expected_kwargs: d
 @Parametrization.case(
     name="",
     parameters=[b"a", b"a", b"2"],
-    expected_exception=ServerSyntaxError,
+    expected_exception=ValkeySyntaxError,
     command_cls=ByteIntCommand,
 )
 @Parametrization.case(
@@ -114,7 +114,7 @@ def test_parser__successful(parameters, command_cls: Command, expected_kwargs: d
 @Parametrization.case(
     name="",
     parameters=b"myzset NX XX 2 two 3 three".split(),
-    expected_exception=ServerSyntaxError,
+    expected_exception=ValkeySyntaxError,
     command_cls=SortedSetAdd,
 )
 def test_parser__failure(parameters, expected_exception, command_cls: Command):

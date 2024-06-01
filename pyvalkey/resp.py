@@ -33,7 +33,7 @@ class RespLoader:
             case b"*", length:
                 return self.load_array(int(length))
             case b"$", length:
-                bulk_string = self.reader.read(int(length) + 2).strip(b"\r\n")
+                bulk_string = self.reader.read(int(length) + 2)[:-2]
                 if len(bulk_string) != int(length):
                     raise ValueError()
                 return bulk_string

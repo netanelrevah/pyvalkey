@@ -1,9 +1,9 @@
 from pyvalkey.commands.context import ServerContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.databases import DatabaseCommand
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.strings_commands import DatabaseCommand
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -43,5 +43,5 @@ class Copy(DatabaseCommand):
         else:
             return False
 
-        destination_key.update_with_bytes_value(source_key.bytes_value)
+        destination_key.value = source_key.value
         return True

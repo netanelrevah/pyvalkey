@@ -10,8 +10,8 @@ from pyvalkey.commands.creators import CommandCreator
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import (
     ServerError,
-    ServerSyntaxError,
     ServerWrongNumberOfArgumentsError,
+    ValkeySyntaxError,
 )
 
 if TYPE_CHECKING:
@@ -191,7 +191,7 @@ class EnumParameterParser(ParameterParser):
         try:
             return self.enum_cls(enum_value)
         except ValueError as e:
-            raise ServerSyntaxError(enum_value) from e
+            raise ValkeySyntaxError(enum_value) from e
 
 
 @dataclass
@@ -203,7 +203,7 @@ class BoolParameterParser(ParameterParser):
     def parse(self, parameters: list[bytes]) -> bool:
         bytes_value = self.next_parameter(parameters).upper()
         if bytes_value not in self.values_mapping:
-            raise ServerSyntaxError(bytes_value)
+            raise ValkeySyntaxError(bytes_value)
         return self.values_mapping[bytes_value]
 
 
@@ -224,7 +224,7 @@ class OptionalKeywordParametersGroup(ParametersGroup):
                 parameters.pop(0)
 
             if parameter.name in parsed_kw_parameters:
-                raise ServerSyntaxError()
+                raise ValkeySyntaxError()
             parsed_kw_parameters.update(parameter.parse(parameters))
 
         return parsed_kw_parameters
@@ -257,6 +257,9 @@ class ObjectParametersParser(ParametersGroup):
                         continue
 
             parsed_parameters.update(parameter_parser.parse(parameters))
+
+        if parameters:
+            raise ValkeySyntaxError()
 
         return parsed_parameters
 

@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import Field, dataclass, fields
 from enum import Enum, auto
-from typing import Self, get_type_hints
+from typing import TYPE_CHECKING, Self, get_type_hints
 
 from pyvalkey.commands.context import ClientContext, ServerContext
-from pyvalkey.commands.core import Command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.information import Information
+
+if TYPE_CHECKING:
+    from pyvalkey.commands.core import Command
 
 
 class DependencyMetadata(Enum):
