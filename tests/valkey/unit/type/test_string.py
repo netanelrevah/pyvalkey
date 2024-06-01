@@ -263,7 +263,7 @@ def test_setbit_against_string_encoded_key(s: redis.Redis):
     s.set("mykey", "@")
     assert s.setbit("mykey", 2, 1) == 0
     assert s.get("mykey") == bits_to_bytes("01100000")
-    assert s.setbit("mykey", 1, 0) == 0
+    assert s.setbit("mykey", 1, 0) == 1
     assert s.get("mykey") == bits_to_bytes("00100000")
 
 
@@ -305,7 +305,7 @@ def test_setbit_fuzzing(s: redis.Redis):
         bit_value = randint(0, 1)
         if len(expected) < bit_number:
             expected += "0" * (bit_number - len(expected))
-        head = expected[: bit_number - 1]
+        head = expected[:bit_number]
         tail = expected[bit_number + 1 :]
         expected = f"{head}{bit_value}{tail}"
 

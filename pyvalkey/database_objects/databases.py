@@ -115,7 +115,7 @@ class StringType:
         else:
             new_byte = new_value[bytes_offset] & ~(128 >> byte_offset)
 
-        self.value = new_value[: bytes_offset - 1] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
+        self.value = new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
 
     def count_bits_of_bytes(self, start: int | None = None, stop: int | None = None) -> int:
         return sum(map(int.bit_count, self.value[slice(start, stop)]))
