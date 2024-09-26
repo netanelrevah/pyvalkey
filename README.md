@@ -1,3 +1,5 @@
+### ! This is not the valkey python client, for the client use https://github.com/valkey-io/valkey-py !
+
 # pyvalkey: Python implemented Valkey server
 
 [![PyPI version](https://img.shields.io/pypi/v/pyvalkey.svg)](https://pypi.python.org/pypi/pyvalkey/)
