@@ -181,6 +181,35 @@ class Set(DatabaseCommand):
         return RESP_OK
 
 
+@ServerCommandsRouter.command(b"setrange", [b"write", b"string", b"slow"])
+class SetRange(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+    offset: int = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        if self.offset < 0:
+            raise ServerError(b"ERR value is not an integer or out of range")
+
+        if self.offset + len(self.value) > 512 * (1024**2):
+            raise ServerError(b"ERR string exceeds maximum allowed size (proto-max-bulk-len)")
+
+        if not self.value:
+            s = self.database.get_string(self.key)
+            return len(s)
+
+        s = self.database.get_or_create_string(self.key)
+
+        if self.offset >= len(s):
+            new_value = s.value + b"\x00" * (self.offset - len(s)) + self.value
+        else:
+            new_value = s.value[: self.offset] + self.value + s.value[self.offset + len(self.value) :]
+
+        s.value = new_value
+
+        return len(s)
+
+
 @ServerCommandsRouter.command(b"mset", [b"write", b"string", b"slow"])
 class SetMultiple(DatabaseCommand):
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")

@@ -346,29 +346,81 @@ def test_getbit_against_integer_encoded_key(s: redis.Redis):
     assert s.getbit("mykey", 10000) == 0
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_non_existing_key(s: redis.Redis):
-    assert False
+    s.delete("mykey")
+    assert s.setrange("mykey", 0, "foo") == 3
+    assert s.get("mykey") == b"foo"
+
+    s.delete("mykey")
+    assert s.setrange("mykey", 0, "") == 0
+    assert s.exists("mykey") == 0
+
+    s.delete("mykey")
+    assert s.setrange("mykey", 1, "foo") == 4
+    assert s.get("mykey") == b"\x00foo"
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_string_encoded_key(s: redis.Redis):
-    assert False
+    s.set("mykey", "foo")
+    assert s.setrange("mykey", 0, "b") == 3
+    assert s.get("mykey") == b"boo"
+
+    s.set("mykey", "foo")
+    assert s.setrange("mykey", 0, "") == 3
+    assert s.get("mykey") == b"foo"
+
+    s.set("mykey", "foo")
+    assert s.setrange("mykey", 1, "b") == 3
+    assert s.get("mykey") == b"fbo"
+
+    s.set("mykey", "foo")
+    assert s.setrange("mykey", 4, "bar") == 7
+    assert s.get("mykey") == b"foo\x00bar"
 
 
 @pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_integer_encoded_key(s: redis.Redis):
-    assert False
+    s.set("mykey", 1234)
+    assert s.object("encoding", "mykey") == "int"
+    assert s.setrange("mykey", 0, 2) == 4
+    assert s.object("encoding", "mykey") == "raw"
+    assert s.get("mykey") == b"2234"
+
+    s.set("mykey", 1234)
+    assert s.object("encoding", "mykey") == "int"
+    assert s.setrange("mykey", 0, "") == 4
+    assert s.object("encoding", "mykey") == "int"
+    assert s.get("mykey") == b"1234"
+
+    s.set("mykey", 1234)
+    assert s.object("encoding", "mykey") == "int"
+    assert s.setrange("mykey", 1, 3) == 4
+    assert s.object("encoding", "mykey") == "raw"
+    assert s.get("mykey") == b"1334"
+
+    s.set("mykey", 1234)
+    assert s.object("encoding", "mykey") == "int"
+    assert s.setrange("mykey", 5, "2") == 6
+    assert s.object("encoding", "mykey") == "raw"
+    assert s.get("mykey") == b"1234\x002"
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setrange_against_key_with_wrong_type(s: redis.Redis):
-    assert False
+    assert s.lpush("mykey", "foo")
+    with assert_raises(redis.RedisError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
+        s.setrange("mykey", 0, "bar")
 
 
-@pytest.mark.xfail(reason="not implemented")
 def test_setrange_with_out_of_range_offset(s: redis.Redis):
-    assert False
+    with assert_raises(redis.RedisError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
+        s.setrange("mykey", 512 * 1024 * 1024 - 4, "world")
+
+    s.set("mykey", "hello")
+    with assert_raises(redis.RedisError, "value is not an integer or out of range"):
+        s.setrange("mykey", -1, "world")
+
+    with assert_raises(redis.RedisError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
+        s.setrange("mykey", 512 * 1024 * 1024 - 4, "world")
 
 
 @pytest.mark.xfail(reason="not implemented")
