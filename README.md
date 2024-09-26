@@ -1,4 +1,4 @@
-### ! This is not the valkey python client, for the client use https://github.com/valkey-io/valkey-py !
+### ! This is not the valkey python [client](https://github.com/valkey-io/valkey-py) !
 
 # pyvalkey: Python implemented Valkey server
 
