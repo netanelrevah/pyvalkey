@@ -54,6 +54,7 @@ def test_set_10000_numeric_keys_and_access_all_them_in_reverse_order(s: redis.Re
 
 
 @pytest.mark.skip("previously included")
+@pytest.mark.parametrize()
 def test_dbsize_should_be_10000_now(s: redis.Redis):
     pass
 

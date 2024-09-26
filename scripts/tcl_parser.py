@@ -31,20 +31,23 @@ class TCLTokenizer:
         yield from cls.read_source(read_text_io_by_characters(source))
 
 
-@dataclass
-class VariableSubstitution:
-    variable_name: str
-
-    def substitute(self) -> Iterator[str]:
-        raise NotImplementedError()
-
-
 class TCLWordBase:
-    def substitute(self) -> Iterator[str]:
+    def substitute(self) -> str:
+        return "".join(self.substitute_iterator())
+
+    def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
 
     @classmethod
     def read(cls, chars: Iterator[str]) -> TCLWordBase:
+        raise NotImplementedError()
+
+
+@dataclass
+class VariableSubstitution(TCLWordBase):
+    variable_name: str
+
+    def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
 
 
@@ -93,7 +96,7 @@ class TCLWord(TCLWordBase):
     #         raise ValueError()
     #     return "\\", chars
 
-    def substitute(self) -> Iterator[str]:
+    def substitute_iterator(self) -> Iterator[str]:
         return iter(self.value)
 
     @classmethod
@@ -114,7 +117,7 @@ class TCLWord(TCLWordBase):
 class TCLBracketWord(TCLWordBase):
     script: TCLScript
 
-    def substitute(self) -> Iterator[str]:
+    def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
 
     @classmethod
@@ -148,7 +151,7 @@ class TCLBracketWord(TCLWordBase):
 class TCLDoubleQuotedWord(TCLWordBase):
     value: str
 
-    def substitute(self) -> Iterator[str]:
+    def substitute_iterator(self) -> Iterator[str]:
         return iter(self.value)
 
     @classmethod
@@ -181,7 +184,7 @@ class TCLDoubleQuotedWord(TCLWordBase):
 class TCLBracesWord(TCLWordBase):
     value: str
 
-    def substitute(self) -> Iterator[str]:
+    def substitute_iterator(self) -> Iterator[str]:
         return iter(self.value)
 
     @classmethod
@@ -219,7 +222,7 @@ class TCLCommand(TCLWordBase):
     name: str
     args: list[TCLCommandArguments]
 
-    def substitute(self) -> Iterator[str]:
+    def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
 
     @classmethod
@@ -257,7 +260,7 @@ class TCLCommand(TCLWordBase):
                 case " " | "\t":
                     continue
                 case _:
-                    arguments.append(TCLWord.read(chars))
+                    arguments.append(TCLWord.read(chain(char, chars)))
         return cls(name, arguments)
 
     def __str__(self) -> str:
@@ -275,7 +278,7 @@ EMPTY_COMMAND = TCLCommand(name="", args=[])
 class TCLScript(TCLWordBase):
     commands: list[TCLCommand]
 
-    def substitute(self) -> Iterator[str]:
+    def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
 
     @classmethod
@@ -332,7 +335,7 @@ class TCLList:
         if isinstance(list_word, TCLWord | TCLBracesWord):
             return cls(list(cls.words_iterator(iter(list_word.value))))
         if isinstance(list_word, TCLBracketWord | TCLDoubleQuotedWord | VariableSubstitution):
-            return cls(list(cls.words_iterator(iter(list_word.substitute()))))
+            return cls(list(cls.words_iterator(iter(list_word.substitute_iterator()))))
         raise TypeError()
 
 
@@ -349,6 +352,44 @@ class TCLExpression:
 
 
 @dataclass
+class TCLVariableName:
+    name: TCLWord
+
+    def substitute(self) -> Iterator[str]:
+        return self.name.substitute_iterator()
+
+    @classmethod
+    def interpertize(cls, word: TCLWord) -> Self:
+        return cls(word)
+
+
+@dataclass
+class TCLCommandForEach:
+    variables_names_and_lists: list[tuple[str, TCLList]]
+    body: TCLScript
+
+    @classmethod
+    def interpertize(cls, tcl_command: TCLCommand) -> Self:
+        args_iterator = iter(tcl_command.args)
+
+        variables_names_and_lists = []
+        body: TCLScript | None = None
+        while argument := next(args_iterator, None):
+            tcl_list = next(args_iterator, None)
+
+            if tcl_list is None:
+                body = TCLScript.read(argument.substitute_iterator())
+                break
+
+            variables_names_and_lists.append(("".join(argument.substitute_iterator()), TCLList.interpertize(tcl_list)))
+
+        if not variables_names_and_lists or not body:
+            raise ValueError()
+
+        return cls(variables_names_and_lists, body)
+
+
+@dataclass
 class TCLCommandIf:
     if_part: tuple[TCLExpression, TCLScript]
     elseif_parts: list[tuple[TCLExpression, TCLScript]]
@@ -361,9 +402,9 @@ class TCLCommandIf:
     ) -> tuple[TCLExpression, TCLScript]:
         expression = TCLExpression.interpertize(next(args_iterator))
         body = next(args_iterator)
-        if body.substitute() == "then":
+        if "".join(body.substitute_iterator()) == "then":
             body = next(args_iterator)
-        return expression, TCLScript.read(body.substitute())
+        return expression, TCLScript.read(body.substitute_iterator())
 
     @classmethod
     def interpertize(cls, tcl_command: TCLCommand) -> Self:
@@ -374,13 +415,13 @@ class TCLCommandIf:
         else_part: TCLScript | None = None
 
         while argument := next(args_iterator, None):
-            match "".join(argument.substitute()):
+            match "".join(argument.substitute_iterator()):
                 case "if":
                     if_part = cls._read_if(args_iterator)
                 case "elseif":
                     elseif_parts.append(cls._read_if(args_iterator))
                 case "else":
-                    else_part = TCLScript.read(next(args_iterator).substitute())
+                    else_part = TCLScript.read(next(args_iterator).substitute_iterator())
                 case _:
                     raise ValueError()
 

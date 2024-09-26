@@ -2,20 +2,41 @@ from __future__ import annotations
 
 import re
 import textwrap
+from itertools import zip_longest
 from pathlib import Path
 
 import typer
 
-from scripts.tcl_parser import TCLCommand, TCLCommandIf, TCLList, TCLScript
+from scripts.tcl_parser import TCLCommand, TCLCommandForEach, TCLCommandIf, TCLList, TCLScript
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
 
-def generate_test(test_command: TCLCommand, if_expressions: list[str] | None = None) -> None:
+def generate_parametrize(foreach_command: TCLCommandForEach) -> str:
+    generated = "@pytest.mark.parametrize(["
+    generated += ",".join([f'"{n}"' for n, l in foreach_command.variables_names_and_lists])
+    generated += "], ["
+
+    values = []
+
+    for args in zip_longest(*[l.words for n, l in foreach_command.variables_names_and_lists]):
+        values.append("(" + ",".join(f'"{v.substitute()}"' for v in args) + ")")
+
+    generated += ",".join(values)
+    generated += "])"
+
+    return generated
+
+
+def generate_test(
+    test_command: TCLCommand,
+    if_expressions: list[str] | None = None,
+    foreach_commands: list[str] | None = None,
+) -> None:
     print()
     print()
 
-    name = "".join(test_command.args[0].substitute())
+    name = "".join(test_command.args[0].substitute_iterator())
 
     translate_table = str.maketrans(
         {
@@ -29,6 +50,9 @@ def generate_test(test_command: TCLCommand, if_expressions: list[str] | None = N
     if if_expressions:
         for if_expression in if_expressions:
             print(f"@pytest.mark.skipif('', reason='{if_expression}')")
+    if foreach_commands:
+        for foreach_command in foreach_commands:
+            print(foreach_command)
 
     print(f"def {test_name}(s: redis.Redis):")
     print('    """')
@@ -37,18 +61,32 @@ def generate_test(test_command: TCLCommand, if_expressions: list[str] | None = N
     print("    assert False")
 
 
-def generate_tests(script: TCLScript, if_expressions: list[str] | None = None) -> None:
+def generate_tests(
+    script: TCLScript, if_expressions: list[str] | None = None, foreach_commands: list[str] | None = None
+) -> None:
     for command in script.commands:
         if isinstance(command, TCLCommand):
             match command.name:
                 case "test":
-                    generate_test(command, if_expressions)
+                    generate_test(command, if_expressions, foreach_commands)
                 case "if":
                     if_command = TCLCommandIf.interpertize(command)
                     expression, body = if_command.if_part
-                    generate_tests(body, (if_expressions or []) + ["".join(expression.word.substitute())])
+                    generate_tests(
+                        body,
+                        (if_expressions or []) + ["".join(expression.word.substitute_iterator())],
+                        foreach_commands,
+                    )
                 case "foreach":
-                    pass
+                    foreach_command = TCLCommandForEach.interpertize(command)
+                    foreach_command.body
+                    generate_tests(
+                        foreach_command.body,
+                        if_expressions,
+                        (foreach_commands or []) + [generate_parametrize(foreach_command)],
+                    )
+                case _:
+                    raise ValueError(command.name)
 
 
 def generate_file(source_file_path: Path) -> None:
@@ -66,11 +104,16 @@ def generate_file(source_file_path: Path) -> None:
 
         options = TCLList.interpertize(start_server_command.args[0]).words
         for option, value in zip(options[::2], options[1::2]):
-            match option.substitute():
+            match option.substitute_iterator():
                 case "tags":
-                    tags.extend([word.substitute() for word in TCLList.words_iterator(iter(value.substitute()))])
+                    tags.extend(
+                        [
+                            word.substitute_iterator()
+                            for word in TCLList.words_iterator(iter(value.substitute_iterator()))
+                        ]
+                    )
 
-        start_server_code = TCLScript.read(iter(start_server_command.args[1].substitute()))
+        start_server_code = TCLScript.read(iter(start_server_command.args[1].substitute_iterator()))
 
         if tags:
             marks = ", ".join(["pytest.mark." + tag for tag in set(tags)])
