@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  redis-py:
+  valkey-py:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,8 +14,8 @@ jobs:
           path: pyvalkey
       - uses: actions/checkout@v4
         with:
-          repository: redis/redis-py
-          path: redis-py
+          repository: valkey-io/valkey-py
+          path: valkey-py
       - uses: actions/setup-python@v4
         with:
           python-version: "3.12"
@@ -24,9 +24,9 @@ jobs:
         run: poetry install --no-interaction --no-root
       - working-directory: ./pyvalkey
         run: poetry run python -m pyvalkey &
-      - working-directory: ./redis-py
+      - working-directory: ./valkey-py
         run: pip install -r requirements.txt -r dev_requirements.txt
-      - working-directory: ./redis-py
+      - working-directory: ./valkey-py
         run: pytest -q  --no-summary --disable-warnings --show-capture=no --tb=no tests/test_commands.py
 
   lint-outside-of-matrix:

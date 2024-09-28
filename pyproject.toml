@@ -17,8 +17,8 @@ typing-extensions = "^4.8.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "*"
-redis = "^5.0.0"
-pytest = "^8"
+valkey = "*"
+pytest = "*"
 pytest-parametrization = "*"
 ruff = "*"
 sortedcontainers-stubs = "*"

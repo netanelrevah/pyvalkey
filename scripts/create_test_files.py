@@ -54,7 +54,7 @@ def generate_test(
         for foreach_command in foreach_commands:
             print(foreach_command)
 
-    print(f"def {test_name}(s: redis.Redis):")
+    print(f"def {test_name}(s: valkey.Valkey):")
     print('    """')
     print(f"{textwrap.indent(textwrap.dedent(str(test_command.args[1])),"    ")}")
     print('    """')
@@ -94,7 +94,7 @@ def generate_tests(
 def generate_file(source_file_path: Path) -> None:
     with open(source_file_path) as source_file:
         print("import pytest")
-        print("import redis")
+        print("import valkey")
 
         script = TCLScript.read_text_io(source_file)
 

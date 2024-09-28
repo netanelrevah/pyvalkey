@@ -1,11 +1,11 @@
 import pytest
-import redis
+import valkey
 
 pytestmark = [pytest.mark.incr]
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_against_non_existing_key(s: redis.Redis):
+def incr_against_non_existing_key(s: valkey.Valkey):
     """
     set res {}
     append res [r incr novar]
@@ -16,7 +16,7 @@ def incr_against_non_existing_key(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_against_key_created_by_incr_itself(s: redis.Redis):
+def incr_against_key_created_by_incr_itself(s: valkey.Valkey):
     """
     r incr novar
 
@@ -25,7 +25,7 @@ def incr_against_key_created_by_incr_itself(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def decr_against_key_created_by_incr(s: redis.Redis):
+def decr_against_key_created_by_incr(s: valkey.Valkey):
     """
     r decr novar
 
@@ -34,7 +34,7 @@ def decr_against_key_created_by_incr(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def decr_against_key_is_not_exist_and_incr(s: redis.Redis):
+def decr_against_key_is_not_exist_and_incr(s: valkey.Valkey):
     """
     r del novar_not_exist
     assert_equal {-1} [r decr novar_not_exist]
@@ -45,7 +45,7 @@ def decr_against_key_is_not_exist_and_incr(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_against_key_originally_set_with_set(s: redis.Redis):
+def incr_against_key_originally_set_with_set(s: valkey.Valkey):
     """
     r set novar 100
     r incr novar
@@ -55,7 +55,7 @@ def incr_against_key_originally_set_with_set(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_over_32bit_value(s: redis.Redis):
+def incr_over_32bit_value(s: valkey.Valkey):
     """
     r set novar 17179869184
     r incr novar
@@ -65,7 +65,7 @@ def incr_over_32bit_value(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrby_over_32bit_value_with_over_32bit_increment(s: redis.Redis):
+def incrby_over_32bit_value_with_over_32bit_increment(s: valkey.Valkey):
     """
     r set novar 17179869184
     r incrby novar 17179869184
@@ -75,7 +75,7 @@ def incrby_over_32bit_value_with_over_32bit_increment(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_fails_against_key_with_spaces_left(s: redis.Redis):
+def incr_fails_against_key_with_spaces_left(s: valkey.Valkey):
     """
     r set novar "    11"
     catch {r incr novar} err
@@ -86,7 +86,7 @@ def incr_fails_against_key_with_spaces_left(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_fails_against_key_with_spaces_right(s: redis.Redis):
+def incr_fails_against_key_with_spaces_right(s: valkey.Valkey):
     """
     r set novar "11    "
     catch {r incr novar} err
@@ -97,7 +97,7 @@ def incr_fails_against_key_with_spaces_right(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_fails_against_key_with_spaces_both(s: redis.Redis):
+def incr_fails_against_key_with_spaces_both(s: valkey.Valkey):
     """
     r set novar "    11    "
     catch {r incr novar} err
@@ -108,7 +108,7 @@ def incr_fails_against_key_with_spaces_both(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def decrby_negation_overflow(s: redis.Redis):
+def decrby_negation_overflow(s: valkey.Valkey):
     """
     r set x 0
     catch {r decrby x -9223372036854775808} err
@@ -119,7 +119,7 @@ def decrby_negation_overflow(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_fails_against_a_key_holding_a_list(s: redis.Redis):
+def incr_fails_against_a_key_holding_a_list(s: valkey.Valkey):
     """
     r rpush mylist 1
     catch {r incr mylist} err
@@ -131,7 +131,7 @@ def incr_fails_against_a_key_holding_a_list(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def decrby_over_32bit_value_with_over_32bit_increment_negative_res(s: redis.Redis):
+def decrby_over_32bit_value_with_over_32bit_increment_negative_res(s: valkey.Valkey):
     """
     r set novar 17179869184
     r decrby novar 17179869185
@@ -141,7 +141,7 @@ def decrby_over_32bit_value_with_over_32bit_increment_negative_res(s: redis.Redi
 
 
 @pytest.mark.xfail(reason="not implemented")
-def decrby_against_key_is_not_exist(s: redis.Redis):
+def decrby_against_key_is_not_exist(s: valkey.Valkey):
     """
     r del key_not_exist
     assert_equal {-1} [r decrby key_not_exist 1]
@@ -151,7 +151,7 @@ def decrby_against_key_is_not_exist(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_uses_shared_objects_in_the_0_9999_range(s: redis.Redis):
+def incr_uses_shared_objects_in_the_0_9999_range(s: valkey.Valkey):
     """
     r set foo -1
     r incr foo
@@ -167,7 +167,7 @@ def incr_uses_shared_objects_in_the_0_9999_range(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incr_can_modify_objects_in_place(s: redis.Redis):
+def incr_can_modify_objects_in_place(s: valkey.Valkey):
     """
     r set foo 20000
     r incr foo
@@ -184,7 +184,7 @@ def incr_can_modify_objects_in_place(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_against_non_existing_key(s: redis.Redis):
+def incrbyfloat_against_non_existing_key(s: valkey.Valkey):
     """
     r del novar
     list    [roundFloat [r incrbyfloat novar 1]] \
@@ -197,7 +197,7 @@ def incrbyfloat_against_non_existing_key(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_against_key_originally_set_with_set(s: redis.Redis):
+def incrbyfloat_against_key_originally_set_with_set(s: valkey.Valkey):
     """
     r set novar 1.5
     roundFloat [r incrbyfloat novar 1.5]
@@ -207,7 +207,7 @@ def incrbyfloat_against_key_originally_set_with_set(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_over_32bit_value(s: redis.Redis):
+def incrbyfloat_over_32bit_value(s: valkey.Valkey):
     """
     r set novar 17179869184
     r incrbyfloat novar 1.5
@@ -217,7 +217,7 @@ def incrbyfloat_over_32bit_value(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_over_32bit_value_with_over_32bit_increment(s: redis.Redis):
+def incrbyfloat_over_32bit_value_with_over_32bit_increment(s: valkey.Valkey):
     """
     r set novar 17179869184
     r incrbyfloat novar 17179869184
@@ -227,7 +227,7 @@ def incrbyfloat_over_32bit_value_with_over_32bit_increment(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_fails_against_key_with_spaces_left(s: redis.Redis):
+def incrbyfloat_fails_against_key_with_spaces_left(s: valkey.Valkey):
     """
     set err {}
     r set novar "    11"
@@ -239,7 +239,7 @@ def incrbyfloat_fails_against_key_with_spaces_left(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_fails_against_key_with_spaces_right(s: redis.Redis):
+def incrbyfloat_fails_against_key_with_spaces_right(s: valkey.Valkey):
     """
     set err {}
     r set novar "11    "
@@ -251,7 +251,7 @@ def incrbyfloat_fails_against_key_with_spaces_right(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_fails_against_key_with_spaces_both(s: redis.Redis):
+def incrbyfloat_fails_against_key_with_spaces_both(s: valkey.Valkey):
     """
     set err {}
     r set novar " 11 "
@@ -263,7 +263,7 @@ def incrbyfloat_fails_against_key_with_spaces_both(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_fails_against_a_key_holding_a_list(s: redis.Redis):
+def incrbyfloat_fails_against_a_key_holding_a_list(s: valkey.Valkey):
     """
     r del mylist
     set err {}
@@ -277,7 +277,7 @@ def incrbyfloat_fails_against_a_key_holding_a_list(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrbyfloat_decrement(s: redis.Redis):
+def incrbyfloat_decrement(s: valkey.Valkey):
     """
     r set foo 1
     roundFloat [r incrbyfloat foo -1.1]
@@ -287,7 +287,7 @@ def incrbyfloat_decrement(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def string_to_double_with_null_terminator(s: redis.Redis):
+def string_to_double_with_null_terminator(s: valkey.Valkey):
     """
     r set foo 1
     r setrange foo 2 2
@@ -299,7 +299,7 @@ def string_to_double_with_null_terminator(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def no_negative_zero(s: redis.Redis):
+def no_negative_zero(s: valkey.Valkey):
     """
     r del foo
     r incrbyfloat foo [expr double(1)/41]
@@ -311,7 +311,7 @@ def no_negative_zero(s: redis.Redis):
 
 
 @pytest.mark.xfail(reason="not implemented")
-def incrby_incrbyfloat_decrby_against_unhappy_path(s: redis.Redis):
+def incrby_incrbyfloat_decrby_against_unhappy_path(s: valkey.Valkey):
     """
     r del mykeyincr
     assert_error "*ERR wrong number of arguments*" {r incr mykeyincr v}

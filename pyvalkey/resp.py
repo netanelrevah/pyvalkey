@@ -46,12 +46,14 @@ class RespLoader:
             case _:
                 return None
 
-    def load_dynamic_array(self) -> list:
+    def load_dynamic_array(self) -> list | None:
         line = self.reader.readline().strip(b"\r\n")
+        if not line[1:]:
+            return None
         return self.load_array(int(line[1:]))
 
 
-def load(stream: BinaryIO) -> list:
+def load(stream: BinaryIO) -> list | None:
     return RespLoader(stream).load_dynamic_array()
 
 

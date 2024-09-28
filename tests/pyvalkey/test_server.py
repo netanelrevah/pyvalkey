@@ -1,6 +1,6 @@
 from threading import Thread
 
-import redis
+import valkey
 from parametrization import Parametrization
 from pytest import fixture
 
@@ -20,7 +20,7 @@ def s():
 
 @fixture
 def c():
-    c = redis.Redis()
+    c = valkey.Valkey()
     yield c
     c.close()
 
@@ -30,7 +30,7 @@ def test_simple(s, c):
     assert c.get("b") == b"1"
     c.set("a", "bla")
     assert c.get("a") == b"bla"
-    c.hset("c", "d", 2)
+    c.hset("c", "d", "2")
     assert c.hgetall("c") == {b"d": b"2"}
     c.delete("a", "b")
     assert c.keys() == [b"c"]

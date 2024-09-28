@@ -3,7 +3,7 @@ import time
 from random import randrange
 from threading import Thread
 
-import redis
+import valkey
 from pytest import fixture
 
 from pyvalkey.server import ValkeyServer
@@ -35,7 +35,7 @@ def next_free_port(min_port=57343, max_port=65535):
 @fixture()
 def s(external):
     if external:
-        c = redis.Redis(db=9)
+        c = valkey.Valkey(db=9)
         yield c
         try:
             c.flushall()
@@ -49,15 +49,15 @@ def s(external):
     t.start()
 
     time.sleep(1)
-    c = redis.Redis(port=port, db=9)
+    c = valkey.Valkey(port=port, db=9)
     yield c
     c.close()
     server.shutdown()
 
 
 @fixture
-def c(s: redis.Redis):
+def c(s: valkey.Valkey):
     port = s.connection_pool.connection_kwargs["port"]
-    c = redis.Redis(port=port, db=9)
+    c = valkey.Valkey(port=port, db=9)
     yield c
     c.close()
