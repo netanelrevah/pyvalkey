@@ -85,6 +85,8 @@ def generate_tests(
                         if_expressions,
                         (foreach_commands or []) + [generate_parametrize(foreach_command)],
                     )
+                case "proc" | "array" | "for" | "set" | "r" | "tags":
+                    continue
                 case _:
                     raise ValueError(command.name)
 
@@ -129,11 +131,9 @@ def generate(valkey_directory: Path = typer.Argument(..., envvar="VALKEY_DIRECTO
     unit_tests_path = valkey_directory / "tests" / "unit"
     type_tests_path = unit_tests_path / "type"
 
-    # generate_file(Path(type_tests_path / "set.tcl"))
-
+    generate_file(Path(type_tests_path / "set.tcl"))
     # generate_file(Path(type_tests_path / "string.tcl"))
-
-    generate_file(Path(type_tests_path / "incr.tcl"))
+    # generate_file(Path(type_tests_path / "incr.tcl"))
 
 
 if __name__ == "__main__":

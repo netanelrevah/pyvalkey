@@ -12,25 +12,6 @@ def read_text_io_by_characters(text_io: TextIO) -> Iterator[str]:
         yield c
 
 
-class TCLTokenizer:
-    @classmethod
-    def read_source(cls, source_chars: Iterator[str]) -> Iterator[str]:
-        while char := next(source_chars, None):
-            match char:
-                case "{":
-                    pass
-                case "[":
-                    pass
-                case '"':
-                    pass
-                case _:
-                    yield char
-
-    @classmethod
-    def read_io(cls, source: TextIO) -> Iterator[str]:
-        yield from cls.read_source(read_text_io_by_characters(source))
-
-
 class TCLWordBase:
     def substitute(self) -> str:
         return "".join(self.substitute_iterator())
@@ -54,47 +35,6 @@ class VariableSubstitution(TCLWordBase):
 @dataclass
 class TCLWord(TCLWordBase):
     value: str
-    # ESCAPING_CHARS: ClassVar[dict] = {"a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v"}
-    # HEX_DIGITS: ClassVar[str] = "0123456789abcdef"
-    # MAX_NUM_OF_DIGITS_BY_ESCAPE_CHAR: ClassVar[dict] = {"x": 2, "u": 4, "U": 8}
-    #
-    # @classmethod
-    # def _read_unicode_value(
-    #     cls, first_digit: str, chars: Iterator[str], max_num_of_digits: int, base: Literal[8, 16]
-    # ) -> tuple[str, Iterator[str]]:
-    #     number_of_chars = 1
-    #     digits = first_digit
-    #     leftovers = None
-    #     while number_of_chars < max_num_of_digits:
-    #         char = next(chars, None)
-    #         if char is None:
-    #             leftovers = char
-    #             break
-    #         if char not in cls.HEX_DIGITS[:base]:
-    #             leftovers = char
-    #             break
-    #         digits += char
-    #
-    #     value = chr(int(digits, base))
-    #     iterator = chain(leftovers, chars) if leftovers else chars
-    #     return value, iterator
-    #
-    # @classmethod
-    # def read_backslash(cls, chars: Iterator[str], in_double_quote: bool = True) -> tuple[str, Iterator[str]]:
-    #     while char := next(chars, None):
-    #         if char in "abfnrtv":
-    #             return cls.ESCAPING_CHARS[char], chars
-    #         if char.isdigit():
-    #             return cls._read_unicode_value(char, chars, 3, 8)
-    #         if char in "xuU":
-    #             first_digit = next(chars, None)
-    #             if not first_digit or first_digit not in cls.HEX_DIGITS:
-    #                 return char, chain(first_digit, chars) if first_digit is not None else chars
-    #             return cls._read_unicode_value(char, chars, cls.MAX_NUM_OF_DIGITS_BY_ESCAPE_CHAR[char], 16)
-    #         return char, chars
-    #     if in_double_quote:
-    #         raise ValueError()
-    #     return "\\", chars
 
     def substitute_iterator(self) -> Iterator[str]:
         return iter(self.value)
@@ -106,8 +46,6 @@ class TCLWord(TCLWordBase):
             match char:
                 case " " | "\t":
                     break
-                # case "\n":
-                #     raise ValueError()
                 case _:
                     name += char
         return cls(name)
@@ -282,12 +220,20 @@ class TCLScript(TCLWordBase):
         raise NotImplementedError()
 
     @classmethod
+    def handle_comment(cls, chars: Iterator[str]) -> None:
+        while char := next(chars, None):
+            if char == "\n":
+                break
+
+    @classmethod
     def read(cls, chars: Iterator[str], in_bracket: bool = False) -> Self:
         commands: list[TCLCommand] = []
         while char := next(chars, None):
             match char:
                 case "\n" | ";" | " ":
                     continue
+                case "#":
+                    cls.handle_comment(chars)
                 case _:
                     commands.append(TCLCommand.read(chain([char], chars)))
 
@@ -432,53 +378,6 @@ class TCLCommandIf:
 
 
 EMTPY_SCRIPT = TCLScript([EMPTY_COMMAND])
-
-
-# def tokenize_tcl_particle(value: str) -> list[str]:
-#     tokens = []
-#
-#     chars = iter(value)
-#     current_token = ""
-#     while char := next(chars, None):
-#         match char:
-#             case "\\":
-#                 next_char = next(chars, None)
-#                 if not next_char:
-#                     if current_token:
-#                         tokens.append(current_token)
-#                         current_token = ""
-#                     tokens.append("\n")
-#                     break
-#                 current_token += char + next(chars)
-#             case "{" | "}" | '"' | "[" | "]":
-#                 if current_token:
-#                     tokens.append(current_token)
-#                     current_token = ""
-#                 tokens.append(char)
-#             case _:
-#                 current_token += char
-#
-#     if current_token:
-#         tokens.append(current_token)
-#
-#     return tokens
-
-
-# def read_tcl_words(source_code: TextIO) -> Iterator[str]:
-#     for full_line in source_code:
-#         line = full_line.strip()
-#         if line.startswith("#"):
-#             continue
-#         continue_to_next_line = False
-#         for particle in line.split():
-#             tokens = tokenize_tcl_particle(particle)
-#             for token in tokens:
-#                 if token == "\n":
-#                     continue_to_next_line = True
-#                 else:
-#                     yield token
-#         if not continue_to_next_line:
-#             yield "\n"
 
 
 def read_tcl_file(source_file_path: Path) -> TCLScript:
