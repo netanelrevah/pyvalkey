@@ -28,6 +28,9 @@ class TCLWordBase:
 class VariableSubstitution(TCLWordBase):
     variable_name: str
 
+    def __str__(self) -> str:
+        return "$" + self.variable_name
+
     def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
 
@@ -35,6 +38,9 @@ class VariableSubstitution(TCLWordBase):
 @dataclass
 class TCLWord(TCLWordBase):
     value: str
+
+    def __str__(self) -> str:
+        return self.value
 
     def substitute_iterator(self) -> Iterator[str]:
         return iter(self.value)
@@ -122,8 +128,14 @@ class TCLDoubleQuotedWord(TCLWordBase):
 class TCLBracesWord(TCLWordBase):
     value: str
 
+    def __str__(self) -> str:
+        if "\n" in self.value:
+            return "{\n" + self.value.rstrip() + "\n}"
+        else:
+            return "{" + self.value + "}"
+
     def substitute_iterator(self) -> Iterator[str]:
-        return iter(self.value)
+        yield from self.value
 
     @classmethod
     def read(cls, chars: Iterator[str]) -> Self:
@@ -148,9 +160,6 @@ class TCLBracesWord(TCLWordBase):
 
         return cls("".join(collected_chars))
 
-    def __str__(self) -> str:
-        return self.value
-
 
 TCLCommandArguments = TCLBracesWord | TCLDoubleQuotedWord | TCLBracketWord | VariableSubstitution | TCLWord
 
@@ -162,6 +171,15 @@ class TCLCommand(TCLWordBase):
 
     def substitute_iterator(self) -> Iterator[str]:
         raise NotImplementedError()
+
+    def __str__(self) -> str:
+        string_value = [self.name, " "]
+
+        for arg in self.args[:-1]:
+            string_value.append(str(arg))
+            string_value.append(" ")
+        string_value.append(str(self.args[-1]))
+        return "".join(string_value)
 
     @classmethod
     def read_name(cls, chars: Iterator[str]) -> str:
@@ -200,13 +218,6 @@ class TCLCommand(TCLWordBase):
                 case _:
                     arguments.append(TCLWord.read(chain(char, chars)))
         return cls(name, arguments)
-
-    def __str__(self) -> str:
-        representation = [self.name]
-        for arg in self.args:
-            representation.append(str(arg))
-
-        return "\n".join(representation)
 
 
 EMPTY_COMMAND = TCLCommand(name="", args=[])
@@ -281,7 +292,7 @@ class TCLList:
         if isinstance(list_word, TCLWord | TCLBracesWord):
             return cls(list(cls.words_iterator(iter(list_word.value))))
         if isinstance(list_word, TCLBracketWord | TCLDoubleQuotedWord | VariableSubstitution):
-            return cls(list(cls.words_iterator(iter(list_word.substitute_iterator()))))
+            return cls(list(cls.words_iterator(list_word.substitute_iterator())))
         raise TypeError()
 
 
@@ -311,7 +322,7 @@ class TCLVariableName:
 
 @dataclass
 class TCLCommandForEach:
-    variables_names_and_lists: list[tuple[str, TCLList]]
+    variables_names_and_values_lists: list[tuple[tuple[TCLWord, ...], TCLList]]
     body: TCLScript
 
     @classmethod
@@ -321,13 +332,28 @@ class TCLCommandForEach:
         variables_names_and_lists = []
         body: TCLScript | None = None
         while argument := next(args_iterator, None):
-            tcl_list = next(args_iterator, None)
+            values_list = next(args_iterator, None)
 
-            if tcl_list is None:
+            if values_list is None:
+                if not isinstance(argument, TCLBracesWord):
+                    raise ValueError()
                 body = TCLScript.read(argument.substitute_iterator())
                 break
 
-            variables_names_and_lists.append(("".join(argument.substitute_iterator()), TCLList.interpertize(tcl_list)))
+            names_list: tuple[TCLWord, ...]
+            if isinstance(argument, TCLWord):
+                names_list = (argument,)
+            elif isinstance(argument, TCLBracesWord):
+                names_list_words = []
+                for word in TCLList.interpertize(argument).words:
+                    if not isinstance(word, TCLWord):
+                        raise ValueError()
+                    names_list_words.append(word)
+                names_list = tuple(names_list_words)
+            else:
+                raise ValueError()
+
+            variables_names_and_lists.append((names_list, TCLList.interpertize(values_list)))
 
         if not variables_names_and_lists or not body:
             raise ValueError()
