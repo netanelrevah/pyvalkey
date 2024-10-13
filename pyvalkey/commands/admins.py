@@ -30,7 +30,7 @@ class AclSetUser(Command):
         for rule in selector:
             if rule == b"allcommands":
                 rule = b"+@all"
-            if rule == b"+@all" or rule == b"-@all":
+            if rule in {b"+@all", b"-@all"}:
                 permission.command_rules.clear()
             if rule.startswith(b"-") or rule.startswith(b"+"):
                 permission.command_rules.append(CommandRule.create(rule))

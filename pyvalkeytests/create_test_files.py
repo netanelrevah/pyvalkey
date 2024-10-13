@@ -11,7 +11,7 @@ from typing import IO
 
 import typer
 
-from scripts.tcl_parser import TCLBracesWord, TCLCommand, TCLCommandForEach, TCLCommandIf, TCLList, TCLScript
+from pytcl.commands import TCLBracesWord, TCLCommand, TCLCommandForEach, TCLCommandIf, TCLList, TCLScript
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
@@ -21,28 +21,36 @@ class TestFileGenerator:
     output: IO = field(default=sys.stdout)
 
     @classmethod
-    def generate_parametrize(cls, foreach_command: TCLCommandForEach) -> str:
+    def collect_foreach_name_to_values(cls, foreach_command: TCLCommandForEach) -> dict[str, list]:
         foreach_name_to_values = defaultdict(list)
 
         for variable_names_list, variable_values_list in foreach_command.variables_names_and_values_lists:
             for value, name in zip(variable_values_list.words, cycle(variable_names_list)):
-                foreach_name_to_values[name.substitute()].append(value.substitute())
+                foreach_name_to_values[name].append(value)
+
+        return dict(foreach_name_to_values)
+
+    @classmethod
+    def generate_parametrize(cls, foreach_command: TCLCommandForEach) -> str:
+        foreach_name_to_values = cls.collect_foreach_name_to_values(foreach_command)
 
         generated = "@pytest.mark.parametrize(["
-        generated += ",".join([f'"{n}"' for n, l in foreach_name_to_values.items()])
+        generated += ",".join([f'"{values_name}"' for values_name, values_list in foreach_name_to_values.items()])
         generated += "], ["
 
         values_tuples = []
 
-        for args in zip_longest(*[l for n, l in foreach_name_to_values.items()], fillvalue=None):
+        for args in zip_longest(
+            *[values_list for values_name, values_list in foreach_name_to_values.items()], fillvalue=None
+        ):
             values = []
-            for v in args:
-                if not v:
+            for value in args:
+                if not value:
                     values.append('"""None"""')
-                elif "\n" in v:
-                    values.append(f'"""{v}"""')
+                elif "\n" in value:
+                    values.append(f'"""{value}"""')
                 else:
-                    values.append(f'"{v}"')
+                    values.append(f'"{value}"')
 
             values_tuples.append("(" + ",".join(values) + ")")
 
@@ -59,7 +67,7 @@ class TestFileGenerator:
     ) -> None:
         self.output.write("\n\n")
 
-        name = "".join(test_command.args[0].substitute_iterator())
+        name = str(test_command.args[0])
 
         translate_table = str.maketrans(
             {
@@ -78,9 +86,14 @@ class TestFileGenerator:
 
         self.output.write(f"def {test_name}(s: valkey.Valkey):\n")
         self.output.write('    """\n')
-        self.output.write(f"{textwrap.indent(textwrap.dedent(str(test_command.args[1])),"    ")}\n")
+        self.output.write(f"{textwrap.indent(textwrap.dedent(str(test_command)),"    ")}\n")
         self.output.write('    """\n')
         self.output.write("    assert False\n")
+
+    def generate_comment(self, command: TCLCommand) -> None:
+        self.output.write('\n\n"""\n')
+        self.output.write(f"{textwrap.dedent(str(command))}\n")
+        self.output.write('"""\n')
 
     def generate_tests(
         self, script: TCLScript, if_expressions: list[str] | None = None, foreach_commands: list[str] | None = None
@@ -91,26 +104,35 @@ class TestFileGenerator:
                     case "test":
                         self.generate_test(command, if_expressions, foreach_commands)
                     case "if":
-                        if_command = TCLCommandIf.interpertize(command)
+                        if_command = TCLCommandIf.interpertize(command, {})
                         expression, body = if_command.if_part
+
+                        if not any([c for c in body.commands if c.name == "test"]):
+                            self.generate_comment(command)
+                            continue
+
                         self.generate_tests(
                             body,
-                            (if_expressions or []) + ["".join(expression.word.substitute_iterator())],
+                            (if_expressions or []) + [str(expression.word)],
                             foreach_commands,
                         )
                     case "foreach":
-                        foreach_command = TCLCommandForEach.interpertize(command)
+                        foreach_command = TCLCommandForEach.interpertize(command, {})
+
+                        if not any([c for c in foreach_command.body.commands if c.name == "test"]):
+                            self.generate_comment(command)
+                            continue
+
                         self.generate_tests(
                             foreach_command.body,
                             if_expressions,
                             (foreach_commands or []) + [self.generate_parametrize(foreach_command)],
                         )
                     case "tags":
-                        raise ValueError("Tags")
+                        pass
+                        # raise ValueError("Tags")
                     case "proc" | "array" | "for" | "set" | "r":
-                        self.output.write('\n\n"""\n')
-                        self.output.write(f"{textwrap.dedent(str(command))}\n")
-                        self.output.write('"""\n')
+                        self.generate_comment(command)
                     case _:
                         raise ValueError(command.name)
 
@@ -127,11 +149,11 @@ class TestFileGenerator:
 
             tags: list[str] = []
 
-            options = TCLList.interpertize(start_server_command.args[0]).words
+            options = TCLList.interpertize(start_server_command.args[0], namespace={}).words
             for option, value in zip(options[::2], options[1::2]):
-                match option.substitute():
+                match option:
                     case "tags":
-                        tags.extend([word.substitute() for word in TCLList.words_iterator(iter(value.substitute()))])
+                        tags.extend([word for word in TCLList.words_iterator(iter(value), {})])
 
             assert isinstance(start_server_command.args[1], TCLBracesWord)
             start_server_code = TCLScript.read(iter(start_server_command.args[1].value))
@@ -151,8 +173,8 @@ def generate(valkey_directory: Path = typer.Argument(..., envvar="VALKEY_DIRECTO
     type_tests_path = unit_tests_path / "type"
 
     TestFileGenerator().generate_file(Path(type_tests_path / "set.tcl"))
-    # generate_file(Path(type_tests_path / "string.tcl"))
-    # generate_file(Path(type_tests_path / "incr.tcl"))
+    TestFileGenerator().generate_file(Path(type_tests_path / "string.tcl"))
+    TestFileGenerator().generate_file(Path(type_tests_path / "incr.tcl"))
 
 
 if __name__ == "__main__":

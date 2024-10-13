@@ -8,7 +8,7 @@ pytestmark = [pytest.mark.set]
 proc create_set {key entries} {
         r del $key
         foreach entry $entries { r sadd $key $entry }
-}
+    }
 """
 
 
@@ -20,7 +20,7 @@ array set initelems {listpack {foo} hashtable {foo}}
 """
 for {set i 0} {$i < 130} {incr i} {
         lappend initelems(hashtable) [format "i%03d" $i]
-}
+    }
 """
 
 
@@ -28,7 +28,7 @@ for {set i 0} {$i < 130} {incr i} {
 @pytest.mark.parametrize(["type"], [("listpack"), ("hashtable")])
 def sadd_scard_sismember_smismember_smembers_basics_type(s: valkey.Valkey):
     """
-    {
+    test "SADD, SCARD, SISMEMBER, SMISMEMBER, SMEMBERS basics - $type" {
             create_set myset $initelems($type)
             assert_encoding $type myset
             assert_equal 1 [r sadd myset bar]
@@ -43,7 +43,7 @@ def sadd_scard_sismember_smismember_smembers_basics_type(s: valkey.Valkey):
             assert_equal {0 1} [r smismember myset bla foo]
             assert_equal {0} [r smismember myset bla]
             assert_equal "bar $initelems($type)" [lsort [r smembers myset]]
-    }
+        }
     """
     assert False
 
@@ -51,7 +51,7 @@ def sadd_scard_sismember_smismember_smembers_basics_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sadd_scard_sismember_smismember_smembers_basics_intset(s: valkey.Valkey):
     """
-    {
+    test {SADD, SCARD, SISMEMBER, SMISMEMBER, SMEMBERS basics - intset} {
             create_set myset {17}
             assert_encoding intset myset
             assert_equal 1 [r sadd myset 16]
@@ -66,7 +66,7 @@ def sadd_scard_sismember_smismember_smembers_basics_intset(s: valkey.Valkey):
             assert_equal {0 1} [r smismember myset 18 16]
             assert_equal {0} [r smismember myset 18]
             assert_equal {16 17} [lsort [r smembers myset]]
-    }
+        }
     """
     assert False
 
@@ -74,12 +74,12 @@ def sadd_scard_sismember_smismember_smembers_basics_intset(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smismember_smembers_scard_against_non_set(s: valkey.Valkey):
     """
-    {
+    test {SMISMEMBER SMEMBERS SCARD against non set} {
             r lpush mylist foo
             assert_error WRONGTYPE* {r smismember mylist bar}
             assert_error WRONGTYPE* {r smembers mylist}
             assert_error WRONGTYPE* {r scard mylist}
-    }
+        }
     """
     assert False
 
@@ -87,12 +87,12 @@ def smismember_smembers_scard_against_non_set(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smismember_smembers_scard_against_non_existing_key(s: valkey.Valkey):
     """
-    {
+    test {SMISMEMBER SMEMBERS SCARD against non existing key} {
             assert_equal {0} [r smismember myset1 foo]
             assert_equal {0 0} [r smismember myset1 foo bar]
             assert_equal {} [r smembers myset1]
             assert_equal {0} [r scard myset1]
-    }
+        }
     """
     assert False
 
@@ -100,14 +100,14 @@ def smismember_smembers_scard_against_non_existing_key(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smismember_requires_one_or_more_members(s: valkey.Valkey):
     """
-    {
+    test {SMISMEMBER requires one or more members} {
             r del zmscoretest
             r zadd zmscoretest 10 x
             r zadd zmscoretest 20 y
 
             catch {r smismember zmscoretest} e
             assert_match {*ERR*wrong*number*arg*} $e
-    }
+        }
     """
     assert False
 
@@ -115,10 +115,10 @@ def smismember_requires_one_or_more_members(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sadd_against_non_set(s: valkey.Valkey):
     """
-    {
+    test {SADD against non set} {
             r lpush mylist foo
             assert_error WRONGTYPE* {r sadd mylist bar}
-    }
+        }
     """
     assert False
 
@@ -126,12 +126,12 @@ def sadd_against_non_set(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sadd_a_non_integer_against_a_small_intset(s: valkey.Valkey):
     """
-    {
+    test "SADD a non-integer against a small intset" {
             create_set myset {1 2 3}
             assert_encoding intset myset
             assert_equal 1 [r sadd myset a]
             assert_encoding listpack myset
-    }
+        }
     """
     assert False
 
@@ -139,13 +139,13 @@ def sadd_a_non_integer_against_a_small_intset(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sadd_a_non_integer_against_a_large_intset(s: valkey.Valkey):
     """
-    {
+    test "SADD a non-integer against a large intset" {
             create_set myset {0}
             for {set i 1} {$i < 130} {incr i} {r sadd myset $i}
             assert_encoding intset myset
             assert_equal 1 [r sadd myset a]
             assert_encoding hashtable myset
-    }
+        }
     """
     assert False
 
@@ -153,12 +153,12 @@ def sadd_a_non_integer_against_a_large_intset(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sadd_an_integer_larger_than_64_bits(s: valkey.Valkey):
     """
-    {
+    test "SADD an integer larger than 64 bits" {
             create_set myset {213244124402402314402033402}
             assert_encoding listpack myset
             assert_equal 1 [r sismember myset 213244124402402314402033402]
             assert_equal {1} [r smismember myset 213244124402402314402033402]
-    }
+        }
     """
     assert False
 
@@ -166,7 +166,7 @@ def sadd_an_integer_larger_than_64_bits(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sadd_an_integer_larger_than_64_bits_to_a_large_intset(s: valkey.Valkey):
     """
-    {
+    test "SADD an integer larger than 64 bits to a large intset" {
             create_set myset {0}
             for {set i 1} {$i < 130} {incr i} {r sadd myset $i}
             assert_encoding intset myset
@@ -174,7 +174,7 @@ def sadd_an_integer_larger_than_64_bits_to_a_large_intset(s: valkey.Valkey):
             assert_encoding hashtable myset
             assert_equal 1 [r sismember myset 213244124402402314402033402]
             assert_equal {1} [r smismember myset 213244124402402314402033402]
-    }
+        }
     """
     assert False
 
@@ -183,7 +183,7 @@ def sadd_an_integer_larger_than_64_bits_to_a_large_intset(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("single"), ("multiple"), ("single_multiple")])
 def sadd_overflows_the_maximum_allowed_integers_in_an_intset_type(s: valkey.Valkey):
     """
-    {
+    test "SADD overflows the maximum allowed integers in an intset - $type" {
             r del myset
 
             if {$type == "single"} {
@@ -206,7 +206,7 @@ def sadd_overflows_the_maximum_allowed_integers_in_an_intset_type(s: valkey.Valk
             assert_equal 512 [r scard myset]
             assert_equal 1 [r sadd myset 512]
             assert_encoding hashtable myset
-    }
+        }
     """
     assert False
 
@@ -215,7 +215,7 @@ def sadd_overflows_the_maximum_allowed_integers_in_an_intset_type(s: valkey.Valk
 @pytest.mark.parametrize(["type"], [("single"), ("multiple"), ("single_multiple")])
 def sadd_overflows_the_maximum_allowed_elements_in_a_listpack_type(s: valkey.Valkey):
     """
-    {
+    test "SADD overflows the maximum allowed elements in a listpack - $type" {
             r del myset
 
             if {$type == "single"} {
@@ -241,7 +241,7 @@ def sadd_overflows_the_maximum_allowed_elements_in_a_listpack_type(s: valkey.Val
             assert_equal 128 [r scard myset]
             assert_equal 1 [r sadd myset b]
             assert_encoding hashtable myset
-    }
+        }
     """
     assert False
 
@@ -249,12 +249,12 @@ def sadd_overflows_the_maximum_allowed_elements_in_a_listpack_type(s: valkey.Val
 @pytest.mark.xfail(reason="not implemented")
 def variadic_sadd(s: valkey.Valkey):
     """
-    {
+    test {Variadic SADD} {
             r del myset
             assert_equal 3 [r sadd myset a b c]
             assert_equal 2 [r sadd myset A a b c B]
             assert_equal [lsort {A a b c B}] [lsort [r smembers myset]]
-    }
+        }
     """
     assert False
 
@@ -262,7 +262,7 @@ def variadic_sadd(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def set_encoding_after_debug_reload(s: valkey.Valkey):
     """
-    {
+    test "Set encoding after DEBUG RELOAD" {
             r del myintset
             r del myhashset
             r del mylargeintset
@@ -281,7 +281,7 @@ def set_encoding_after_debug_reload(s: valkey.Valkey):
             assert_encoding hashtable mylargeintset
             assert_encoding listpack mysmallset
             assert_encoding hashtable myhashset
-    }
+        } {} {needs:debug}
     """
     assert False
 
@@ -290,14 +290,14 @@ def set_encoding_after_debug_reload(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("listpack"), ("hashtable")])
 def srem_basics_type(s: valkey.Valkey):
     """
-    {
+    test {SREM basics - $type} {
                 create_set myset $initelems($type)
                 r sadd myset ciao
                 assert_encoding $type myset
                 assert_equal 0 [r srem myset qux]
                 assert_equal 1 [r srem myset ciao]
                 assert_equal $initelems($type) [lsort [r smembers myset]]
-    }
+            }
     """
     assert False
 
@@ -305,13 +305,13 @@ def srem_basics_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def srem_basics_intset(s: valkey.Valkey):
     """
-    {
+    test {SREM basics - intset} {
             create_set myset {3 4 5}
             assert_encoding intset myset
             assert_equal 0 [r srem myset 6]
             assert_equal 1 [r srem myset 4]
             assert_equal {3 5} [lsort [r smembers myset]]
-    }
+        }
     """
     assert False
 
@@ -319,13 +319,13 @@ def srem_basics_intset(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def srem_with_multiple_arguments(s: valkey.Valkey):
     """
-    {
+    test {SREM with multiple arguments} {
             r del myset
             r sadd myset a b c d
             assert_equal 0 [r srem myset k k k]
             assert_equal 2 [r srem myset b d x y]
             lsort [r smembers myset]
-    }
+        } {a c}
     """
     assert False
 
@@ -333,11 +333,11 @@ def srem_with_multiple_arguments(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def srem_variadic_version_with_more_args_needed_to_destroy_the_key(s: valkey.Valkey):
     """
-    {
+    test {SREM variadic version with more args needed to destroy the key} {
             r del myset
             r sadd myset 1 2 3
             r srem myset 1 2 3 4 5 6 7 8
-    }
+        } {3}
     """
     assert False
 
@@ -345,7 +345,7 @@ def srem_variadic_version_with_more_args_needed_to_destroy_the_key(s: valkey.Val
 @pytest.mark.xfail(reason="not implemented")
 def sintercard_with_illegal_arguments(s: valkey.Valkey):
     """
-    {
+    test "SINTERCARD with illegal arguments" {
             assert_error "ERR wrong number of arguments for 'sintercard' command" {r sintercard}
             assert_error "ERR wrong number of arguments for 'sintercard' command" {r sintercard 1}
 
@@ -361,7 +361,7 @@ def sintercard_with_illegal_arguments(s: valkey.Valkey):
 
             assert_error "ERR LIMIT*" {r sintercard 1 myset{t} LIMIT -1}
             assert_error "ERR LIMIT*" {r sintercard 1 myset{t} LIMIT a}
-    }
+        }
     """
     assert False
 
@@ -369,7 +369,7 @@ def sintercard_with_illegal_arguments(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sintercard_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SINTERCARD against non-set should throw error" {
             r del set{t}
             r sadd set{t} a b c
             r set key1{t} x
@@ -377,7 +377,7 @@ def sintercard_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r sintercard 1 key1{t}}
             assert_error "WRONGTYPE*" {r sintercard 2 set{t} key1{t}}
             assert_error "WRONGTYPE*" {r sintercard 2 key1{t} noset{t}}
-    }
+        }
     """
     assert False
 
@@ -385,31 +385,35 @@ def sintercard_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sintercard_against_non_existing_key(s: valkey.Valkey):
     """
-    {
+    test "SINTERCARD against non-existing key" {
             assert_equal 0 [r sintercard 1 non-existing-key]
             assert_equal 0 [r sintercard 1 non-existing-key limit 0]
             assert_equal 0 [r sintercard 1 non-existing-key limit 10]
-    }
+        }
     """
     assert False
 
 
 """
-set smallenc listpack
- set bigenc hashtable
-
+if {$type eq "regular"} {
+            set smallenc listpack
+            set bigenc hashtable
+        } else {
+            set smallenc intset
+            set bigenc intset
+        }
 """
 
 
 """
-array set encoding TCLDoubleQuotedWord(value='1 $bigenc 2 $bigenc 3 $smallenc 4 $bigenc 5 $smallenc')
+array set encoding "1 $bigenc 2 $bigenc 3 $smallenc 4 $bigenc 5 $smallenc"
 """
 
 
 """
 for {set i 1} {$i <= 5} {incr i} {
             r del [format "set%d{t}" $i]
-}
+        }
 """
 
 
@@ -417,41 +421,42 @@ for {set i 1} {$i <= 5} {incr i} {
 for {set i 0} {$i < 200} {incr i} {
             r sadd set1{t} $i
             r sadd set2{t} [expr $i+195]
-}
+        }
 """
 
 
 """
-r sadd set3{t} $i
-
+foreach i {199 195 1000 2000} {
+            r sadd set3{t} $i
+        }
 """
 
 
 """
 for {set i 5} {$i < 200} {incr i} {
             r sadd set4{t} $i
-}
+        }
 """
 
 
 """
 r sadd set5{t} 0
 
- # To make sure the sets are encoded as the type we are testing -- also
- # when the VM is enabled and the values may be swapped in and out
- # while the tests are running -- an extra element is added to every
- # set that determines its encoding.
- set large 200
- if {$type eq "regular"} {
+"""
+
+
+"""
+set large 200
+        if {$type eq "regular"} {
             set large foo
-}
+        }
 """
 
 
 """
 for {set i 1} {$i <= 5} {incr i} {
             r sadd [format "set%d{t}" $i] $large
-}
+        }
 """
 
 
@@ -459,11 +464,11 @@ for {set i 1} {$i <= 5} {incr i} {
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def generated_sets_must_be_encoded_correctly_type(s: valkey.Valkey):
     """
-    {
+    test "Generated sets must be encoded correctly - $type" {
                 for {set i 1} {$i <= 5} {incr i} {
                     assert_encoding $encoding($i) [format "set%d{t}" $i]
                 }
-    }
+            }
     """
     assert False
 
@@ -472,9 +477,9 @@ def generated_sets_must_be_encoded_correctly_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sinter_with_two_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTER with two sets - $type" {
                 assert_equal [list 195 196 197 198 199 $large] [lsort [r sinter set1{t} set2{t}]]
-    }
+            }
     """
     assert False
 
@@ -483,12 +488,12 @@ def sinter_with_two_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sintercard_with_two_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTERCARD with two sets - $type" {
                 assert_equal 6 [r sintercard 2 set1{t} set2{t}]
                 assert_equal 6 [r sintercard 2 set1{t} set2{t} limit 0]
                 assert_equal 3 [r sintercard 2 set1{t} set2{t} limit 3]
                 assert_equal 6 [r sintercard 2 set1{t} set2{t} limit 10]
-    }
+            }
     """
     assert False
 
@@ -497,11 +502,11 @@ def sintercard_with_two_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sinterstore_with_two_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE with two sets - $type" {
                 r sinterstore setres{t} set1{t} set2{t}
                 assert_encoding $smallenc setres{t}
                 assert_equal [list 195 196 197 198 199 $large] [lsort [r smembers setres{t}]]
-    }
+            }
     """
     assert False
 
@@ -510,12 +515,12 @@ def sinterstore_with_two_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sinterstore_with_two_sets_after_a_debug_reload_type(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE with two sets, after a DEBUG RELOAD - $type" {
                 r debug reload
                 r sinterstore setres{t} set1{t} set2{t}
                 assert_encoding $smallenc setres{t}
                 assert_equal [list 195 196 197 198 199 $large] [lsort [r smembers setres{t}]]
-    }
+            } {} {needs:debug}
     """
     assert False
 
@@ -524,10 +529,10 @@ def sinterstore_with_two_sets_after_a_debug_reload_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sunion_with_two_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SUNION with two sets - $type" {
                 set expected [lsort -uniq "[r smembers set1{t}] [r smembers set2{t}]"]
                 assert_equal $expected [lsort [r sunion set1{t} set2{t}]]
-    }
+            }
     """
     assert False
 
@@ -536,12 +541,12 @@ def sunion_with_two_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sunionstore_with_two_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SUNIONSTORE with two sets - $type" {
                 r sunionstore setres{t} set1{t} set2{t}
                 assert_encoding $bigenc setres{t}
                 set expected [lsort -uniq "[r smembers set1{t}] [r smembers set2{t}]"]
                 assert_equal $expected [lsort [r smembers setres{t}]]
-    }
+            }
     """
     assert False
 
@@ -550,9 +555,9 @@ def sunionstore_with_two_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sinter_against_three_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTER against three sets - $type" {
                 assert_equal [list 195 199 $large] [lsort [r sinter set1{t} set2{t} set3{t}]]
-    }
+            }
     """
     assert False
 
@@ -561,12 +566,12 @@ def sinter_against_three_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sintercard_against_three_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTERCARD against three sets - $type" {
                 assert_equal 3 [r sintercard 3 set1{t} set2{t} set3{t}]
                 assert_equal 3 [r sintercard 3 set1{t} set2{t} set3{t} limit 0]
                 assert_equal 2 [r sintercard 3 set1{t} set2{t} set3{t} limit 2]
                 assert_equal 3 [r sintercard 3 set1{t} set2{t} set3{t} limit 10]
-    }
+            }
     """
     assert False
 
@@ -575,10 +580,10 @@ def sintercard_against_three_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sinterstore_with_three_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE with three sets - $type" {
                 r sinterstore setres{t} set1{t} set2{t} set3{t}
                 assert_equal [list 195 199 $large] [lsort [r smembers setres{t}]]
-    }
+            }
     """
     assert False
 
@@ -587,10 +592,10 @@ def sinterstore_with_three_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sunion_with_non_existing_keys_type(s: valkey.Valkey):
     """
-    {
+    test "SUNION with non existing keys - $type" {
                 set expected [lsort -uniq "[r smembers set1{t}] [r smembers set2{t}]"]
                 assert_equal $expected [lsort [r sunion nokey1{t} set1{t} set2{t} nokey2{t}]]
-    }
+            }
     """
     assert False
 
@@ -599,9 +604,9 @@ def sunion_with_non_existing_keys_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sdiff_with_two_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SDIFF with two sets - $type" {
                 assert_equal {0 1 2 3 4} [lsort [r sdiff set1{t} set4{t}]]
-    }
+            }
     """
     assert False
 
@@ -610,9 +615,9 @@ def sdiff_with_two_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sdiff_with_three_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SDIFF with three sets - $type" {
                 assert_equal {1 2 3 4} [lsort [r sdiff set1{t} set4{t} set5{t}]]
-    }
+            }
     """
     assert False
 
@@ -621,14 +626,14 @@ def sdiff_with_three_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sdiffstore_with_three_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SDIFFSTORE with three sets - $type" {
                 r sdiffstore setres{t} set1{t} set4{t} set5{t}
                 # When we start with intsets, we should always end with intsets.
                 if {$type eq {intset}} {
                     assert_encoding intset setres{t}
                 }
                 assert_equal {1 2 3 4} [lsort [r smembers setres{t}]]
-    }
+            }
     """
     assert False
 
@@ -637,12 +642,12 @@ def sdiffstore_with_three_sets_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type"], [("regular"), ("intset")])
 def sinter_or_sunion_or_sdiff_with_three_same_sets_type(s: valkey.Valkey):
     """
-    {
+    test "SINTER/SUNION/SDIFF with three same sets - $type" {
                 set expected [lsort "[r smembers set1{t}]"]
                 assert_equal $expected [lsort [r sinter set1{t} set1{t} set1{t}]]
                 assert_equal $expected [lsort [r sunion set1{t} set1{t} set1{t}]]
                 assert_equal {} [lsort [r sdiff set1{t} set1{t} set1{t}]]
-    }
+            }
     """
     assert False
 
@@ -650,7 +655,7 @@ def sinter_or_sunion_or_sdiff_with_three_same_sets_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinterstore_with_two_listpack_sets_where_result_is_intset(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE with two listpack sets where result is intset" {
             r del setres{t} set1{t} set2{t}
             r sadd set1{t} a b c 1 3 6 x y z
             r sadd set2{t} e f g 1 2 3 u v w
@@ -659,7 +664,7 @@ def sinterstore_with_two_listpack_sets_where_result_is_intset(s: valkey.Valkey):
             r sinterstore setres{t} set1{t} set2{t}
             assert_equal [list 1 3] [lsort [r smembers setres{t}]]
             assert_encoding intset setres{t}
-    }
+        }
     """
     assert False
 
@@ -667,7 +672,7 @@ def sinterstore_with_two_listpack_sets_where_result_is_intset(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinterstore_with_two_hashtable_sets_where_result_is_intset(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE with two hashtable sets where result is intset" {
             r del setres{t} set1{t} set2{t}
             r sadd set1{t} a b c 444 555 666
             r sadd set2{t} e f g 111 222 333
@@ -682,7 +687,7 @@ def sinterstore_with_two_hashtable_sets_where_result_is_intset(s: valkey.Valkey)
             r sinterstore setres{t} set1{t} set2{t}
             assert_equal [lsort $expected] [lsort [r smembers setres{t}]]
             assert_encoding intset setres{t}
-    }
+        }
     """
     assert False
 
@@ -690,7 +695,7 @@ def sinterstore_with_two_hashtable_sets_where_result_is_intset(s: valkey.Valkey)
 @pytest.mark.xfail(reason="not implemented")
 def sunion_hashtable_and_listpack(s: valkey.Valkey):
     """
-    {
+    test "SUNION hashtable and listpack" {
             # This adds code coverage for adding a non-sds string to a hashtable set
             # which already contains the string.
             r del set1{t} set2{t}
@@ -700,7 +705,7 @@ def sunion_hashtable_and_listpack(s: valkey.Valkey):
             assert_encoding hashtable set1{t}
             assert_encoding listpack set2{t}
             assert_equal [lsort $union] [lsort [r sunion set1{t} set2{t}]]
-    }
+        }
     """
     assert False
 
@@ -708,12 +713,12 @@ def sunion_hashtable_and_listpack(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiff_with_first_set_empty(s: valkey.Valkey):
     """
-    {
+    test "SDIFF with first set empty" {
             r del set1{t} set2{t} set3{t}
             r sadd set2{t} 1 2 3 4
             r sadd set3{t} a b c d
             r sdiff set1{t} set2{t} set3{t}
-    }
+        } {}
     """
     assert False
 
@@ -721,11 +726,11 @@ def sdiff_with_first_set_empty(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiff_with_same_set_two_times(s: valkey.Valkey):
     """
-    {
+    test "SDIFF with same set two times" {
             r del set1
             r sadd set1 a b c 1 2 3 4 5 6
             r sdiff set1 set1
-    }
+        } {}
     """
     assert False
 
@@ -733,7 +738,7 @@ def sdiff_with_same_set_two_times(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiff_fuzzing(s: valkey.Valkey):
     """
-    {
+    test "SDIFF fuzzing" {
             for {set j 0} {$j < 100} {incr j} {
                 unset -nocomplain s
                 array set s {}
@@ -757,7 +762,7 @@ def sdiff_fuzzing(s: valkey.Valkey):
                 set result [lsort [r sdiff {*}$args]]
                 assert_equal $result [lsort [array names s]]
             }
-    }
+        }
     """
     assert False
 
@@ -765,7 +770,7 @@ def sdiff_fuzzing(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiff_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SDIFF against non-set should throw error" {
             # with an empty set
             r set key1{t} x
             assert_error "WRONGTYPE*" {r sdiff key1{t} noset{t}}
@@ -778,7 +783,7 @@ def sdiff_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r sdiff key1{t} set1{t}}
             # different order
             assert_error "WRONGTYPE*" {r sdiff set1{t} key1{t}}
-    }
+        }
     """
     assert False
 
@@ -786,14 +791,14 @@ def sdiff_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiff_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
     """
-    {
+    test "SDIFF should handle non existing key as empty" {
             r del set1{t} set2{t} set3{t}
 
             r sadd set1{t} a b c
             r sadd set2{t} b c d
             assert_equal {a} [lsort [r sdiff set1{t} set2{t} set3{t}]]
             assert_equal {} [lsort [r sdiff set3{t} set2{t} set1{t}]]
-    }
+        }
     """
     assert False
 
@@ -801,7 +806,7 @@ def sdiff_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiffstore_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SDIFFSTORE against non-set should throw error" {
             r del set1{t} set2{t} set3{t} key1{t}
             r set key1{t} x
 
@@ -822,7 +827,7 @@ def sdiffstore_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r SDIFFSTORE set3{t} set1{t} key1{t} set2{t}}
             assert_equal 1 [r exists set3{t}]
             assert_equal {e} [lsort [r smembers set3{t}]]
-    }
+        }
     """
     assert False
 
@@ -830,7 +835,7 @@ def sdiffstore_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sdiffstore_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
     """
-    {
+    test "SDIFFSTORE should handle non existing key as empty" {
             r del set1{t} set2{t} set3{t}
 
             r set setres{t} xxx
@@ -851,7 +856,7 @@ def sdiffstore_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
             r sadd set3{t} a b c
             assert_equal 0 [r sdiffstore set3{t} set2{t} set1{t}]
             assert_equal 0 [r exists set3{t}]
-    }
+        }
     """
     assert False
 
@@ -859,7 +864,7 @@ def sdiffstore_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinter_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SINTER against non-set should throw error" {
             r set key1{t} x
             assert_error "WRONGTYPE*" {r sinter key1{t} noset{t}}
             # different order
@@ -869,7 +874,7 @@ def sinter_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r sinter key1{t} set1{t}}
             # different order
             assert_error "WRONGTYPE*" {r sinter set1{t} key1{t}}
-    }
+        }
     """
     assert False
 
@@ -877,12 +882,12 @@ def sinter_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinter_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
     """
-    {
+    test "SINTER should handle non existing key as empty" {
             r del set1{t} set2{t} set3{t}
             r sadd set1{t} a b c
             r sadd set2{t} b c d
             r sinter set1{t} set2{t} set3{t}
-    }
+        } {}
     """
     assert False
 
@@ -890,7 +895,7 @@ def sinter_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinter_with_same_integer_elements_but_different_encoding(s: valkey.Valkey):
     """
-    {
+    test "SINTER with same integer elements but different encoding" {
             r del set1{t} set2{t}
             r sadd set1{t} 1 2 3
             r sadd set2{t} 1 2 3 a
@@ -898,7 +903,7 @@ def sinter_with_same_integer_elements_but_different_encoding(s: valkey.Valkey):
             assert_encoding intset set1{t}
             assert_encoding listpack set2{t}
             lsort [r sinter set1{t} set2{t}]
-    }
+        } {1 2 3}
     """
     assert False
 
@@ -906,7 +911,7 @@ def sinter_with_same_integer_elements_but_different_encoding(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinterstore_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE against non-set should throw error" {
             r del set1{t} set2{t} set3{t} key1{t}
             r set key1{t} x
 
@@ -927,7 +932,7 @@ def sinterstore_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r sinterstore set3{t} noset{t} key1{t} set2{t}}
             assert_equal 1 [r exists set3{t}]
             assert_equal {e} [lsort [r smembers set3{t}]]
-    }
+        }
     """
     assert False
 
@@ -935,7 +940,7 @@ def sinterstore_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sinterstore_against_non_existing_keys_should_delete_dstkey(s: valkey.Valkey):
     """
-    {
+    test "SINTERSTORE against non existing keys should delete dstkey" {
             r del set1{t} set2{t} set3{t}
 
             r set setres{t} xxx
@@ -953,7 +958,7 @@ def sinterstore_against_non_existing_keys_should_delete_dstkey(s: valkey.Valkey)
 
             assert_equal 0 [r sinterstore set3{t} set2{t} set1{t}]
             assert_equal 0 [r exists set3{t}]
-    }
+        }
     """
     assert False
 
@@ -961,7 +966,7 @@ def sinterstore_against_non_existing_keys_should_delete_dstkey(s: valkey.Valkey)
 @pytest.mark.xfail(reason="not implemented")
 def sunion_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SUNION against non-set should throw error" {
             r set key1{t} x
             assert_error "WRONGTYPE*" {r sunion key1{t} noset{t}}
             # different order
@@ -972,7 +977,7 @@ def sunion_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r sunion key1{t} set1{t}}
             # different order
             assert_error "WRONGTYPE*" {r sunion set1{t} key1{t}}
-    }
+        }
     """
     assert False
 
@@ -980,13 +985,13 @@ def sunion_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sunion_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
     """
-    {
+    test "SUNION should handle non existing key as empty" {
             r del set1{t} set2{t} set3{t}
 
             r sadd set1{t} a b c
             r sadd set2{t} b c d
             assert_equal {a b c d} [lsort [r sunion set1{t} set2{t} set3{t}]]
-    }
+        }
     """
     assert False
 
@@ -994,7 +999,7 @@ def sunion_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sunionstore_against_non_set_should_throw_error(s: valkey.Valkey):
     """
-    {
+    test "SUNIONSTORE against non-set should throw error" {
             r del set1{t} set2{t} set3{t} key1{t}
             r set key1{t} x
 
@@ -1015,7 +1020,7 @@ def sunionstore_against_non_set_should_throw_error(s: valkey.Valkey):
             assert_error "WRONGTYPE*" {r sunionstore set3{t} noset{t} key1{t} key2{t}}
             assert_equal 1 [r exists set3{t}]
             assert_equal {e} [lsort [r smembers set3{t}]]
-    }
+        }
     """
     assert False
 
@@ -1023,7 +1028,7 @@ def sunionstore_against_non_set_should_throw_error(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sunionstore_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
     """
-    {
+    test "SUNIONSTORE should handle non existing key as empty" {
             r del set1{t} set2{t} set3{t}
 
             r set setres{t} xxx
@@ -1045,7 +1050,7 @@ def sunionstore_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
             assert_equal 3 [r sunionstore set3{t} set2{t} set1{t}]
             assert_equal 1 [r exists set3{t}]
             assert_equal {a b c} [lsort [r smembers set3{t}]]
-    }
+        }
     """
     assert False
 
@@ -1053,11 +1058,11 @@ def sunionstore_should_handle_non_existing_key_as_empty(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def sunionstore_against_non_existing_keys_should_delete_dstkey(s: valkey.Valkey):
     """
-    {
+    test "SUNIONSTORE against non existing keys should delete dstkey" {
             r set setres{t} xxx
             assert_equal 0 [r sunionstore setres{t} foo111{t} bar222{t}]
             assert_equal 0 [r exists setres{t}]
-    }
+        }
     """
     assert False
 
@@ -1066,12 +1071,12 @@ def sunionstore_against_non_existing_keys_should_delete_dstkey(s: valkey.Valkey)
 @pytest.mark.parametrize(["type", "contents"], [("listpack", "a b c"), ("intset", "1 2 3")])
 def spop_basics_type(s: valkey.Valkey):
     """
-    {
+    test "SPOP basics - $type" {
                 create_set myset $contents
                 assert_encoding $type myset
                 assert_equal $contents [lsort [list [r spop myset] [r spop myset] [r spop myset]]]
                 assert_equal 0 [r scard myset]
-    }
+            }
     """
     assert False
 
@@ -1080,12 +1085,12 @@ def spop_basics_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type", "contents"], [("listpack", "a b c"), ("intset", "1 2 3")])
 def spop_with_count_1_type(s: valkey.Valkey):
     """
-    {
+    test "SPOP with <count>=1 - $type" {
                 create_set myset $contents
                 assert_encoding $type myset
                 assert_equal $contents [lsort [list [r spop myset 1] [r spop myset 1] [r spop myset 1]]]
                 assert_equal 0 [r scard myset]
-    }
+            }
     """
     assert False
 
@@ -1094,7 +1099,7 @@ def spop_with_count_1_type(s: valkey.Valkey):
 @pytest.mark.parametrize(["type", "contents"], [("listpack", "a b c"), ("intset", "1 2 3")])
 def srandmember_type(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER - $type" {
                 create_set myset $contents
                 unset -nocomplain myset
                 array set myset {}
@@ -1102,7 +1107,7 @@ def srandmember_type(s: valkey.Valkey):
                     set myset([r srandmember myset]) 1
                 }
                 assert_equal $contents [lsort [array names myset]]
-    }
+            }
     """
     assert False
 
@@ -1110,13 +1115,13 @@ def srandmember_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def spop_integer_from_listpack_set(s: valkey.Valkey):
     """
-    {
+    test "SPOP integer from listpack set" {
             create_set myset {a 1 2 3 4 5 6 7}
             assert_encoding listpack myset
             set a [r spop myset]
             set b [r spop myset]
             assert {[string is digit $a] || [string is digit $b]}
-    }
+        }
     """
     assert False
 
@@ -1132,12 +1137,12 @@ def spop_integer_from_listpack_set(s: valkey.Valkey):
 )
 def spop_with_count_type(s: valkey.Valkey):
     """
-    {
+    test "SPOP with <count> - $type" {
                 create_set myset $contents
                 assert_encoding $type myset
                 assert_equal $contents [lsort [concat [r spop myset 11] [r spop myset 9] [r spop myset 0] [r spop myset 4] [r spop myset 1] [r spop myset 0] [r spop myset 1] [r spop myset 0]]]
                 assert_equal 0 [r scard myset]
-    }
+            }
     """
     assert False
 
@@ -1145,7 +1150,7 @@ def spop_with_count_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def spop_using_integers_testing_knuth_s_and_floyd_s_algorithm(s: valkey.Valkey):
     """
-    {
+    test "SPOP using integers, testing Knuth's and Floyd's algorithm" {
             create_set myset {1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20}
             assert_encoding intset myset
             assert_equal 20 [r scard myset]
@@ -1161,7 +1166,7 @@ def spop_using_integers_testing_knuth_s_and_floyd_s_algorithm(s: valkey.Valkey):
             assert_equal 0 [r scard myset]
             r spop myset 1
             assert_equal 0 [r scard myset]
-    }
+        } {}
     """
     assert False
 
@@ -1169,9 +1174,9 @@ def spop_using_integers_testing_knuth_s_and_floyd_s_algorithm(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def spop_using_integers_with_knuth_s_algorithm(s: valkey.Valkey):
     """
-    {
+    test "SPOP using integers with Knuth's algorithm" {
             r spop nonexisting_key 100
-    }
+        } {}
     """
     assert False
 
@@ -1186,13 +1191,13 @@ def spop_using_integers_with_knuth_s_algorithm(s: valkey.Valkey):
 )
 def spop_new_implementation_code_path_1_type(s: valkey.Valkey):
     """
-    {
+    test "SPOP new implementation: code path #1 $type" {
             create_set myset $content
             assert_encoding $type myset
             set res [r spop myset 30]
             assert {[lsort $content] eq [lsort $res]}
             assert_equal {0} [r exists myset]
-    }
+        }
     """
     assert False
 
@@ -1207,7 +1212,7 @@ def spop_new_implementation_code_path_1_type(s: valkey.Valkey):
 )
 def spop_new_implementation_code_path_2_type(s: valkey.Valkey):
     """
-    {
+    test "SPOP new implementation: code path #2 $type" {
             create_set myset $content
             assert_encoding $type myset
             set res [r spop myset 2]
@@ -1215,7 +1220,7 @@ def spop_new_implementation_code_path_2_type(s: valkey.Valkey):
             assert {[r scard myset] == 18}
             set union [concat [r smembers myset] $res]
             assert {[lsort $union] eq [lsort $content]}
-    }
+        }
     """
     assert False
 
@@ -1230,7 +1235,7 @@ def spop_new_implementation_code_path_2_type(s: valkey.Valkey):
 )
 def spop_new_implementation_code_path_3_type(s: valkey.Valkey):
     """
-    {
+    test "SPOP new implementation: code path #3 $type" {
             create_set myset $content
             assert_encoding $type myset
             set res [r spop myset 18]
@@ -1238,7 +1243,7 @@ def spop_new_implementation_code_path_3_type(s: valkey.Valkey):
             assert {[r scard myset] == 2}
             set union [concat [r smembers myset] $res]
             assert {[lsort $union] eq [lsort $content]}
-    }
+        }
     """
     assert False
 
@@ -1246,7 +1251,7 @@ def spop_new_implementation_code_path_3_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def spop_new_implementation_code_path_1_propagate_as_del_or_unlink(s: valkey.Valkey):
     """
-    {
+    test "SPOP new implementation: code path #1 propagate as DEL or UNLINK" {
             r del myset1{t} myset2{t}
             r sadd myset1{t} 1 2 3 4 5
             r sadd myset2{t} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65
@@ -1267,7 +1272,7 @@ def spop_new_implementation_code_path_1_propagate_as_del_or_unlink(s: valkey.Val
             }
 
             close_replication_stream $repl
-    }
+        } {} {needs:repl}
     """
     assert False
 
@@ -1275,9 +1280,9 @@ def spop_new_implementation_code_path_1_propagate_as_del_or_unlink(s: valkey.Val
 @pytest.mark.xfail(reason="not implemented")
 def srandmember_count_of_0_is_handled_correctly(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER count of 0 is handled correctly" {
             r srandmember myset 0
-    }
+        } {}
     """
     assert False
 
@@ -1285,9 +1290,9 @@ def srandmember_count_of_0_is_handled_correctly(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def srandmember_with_count_against_non_existing_key(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER with <count> against non existing key" {
             r srandmember nonexisting_key 100
-    }
+        } {}
     """
     assert False
 
@@ -1295,10 +1300,10 @@ def srandmember_with_count_against_non_existing_key(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def srandmember_count_overflow(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER count overflow" {
             r sadd myset a
             assert_error {*value is out of range*} {r srandmember myset -9223372036854775808}
-    }
+        } {}
     """
     assert False
 
@@ -1306,18 +1311,25 @@ def srandmember_count_overflow(s: valkey.Valkey):
 """
 r readraw 1
 
- test TCLDoubleQuotedWord(value='SRANDMEMBER count of 0 is handled correctly - emptyarray') {
-        r srandmember myset 0
-} {*0}
 """
+
+
+@pytest.mark.xfail(reason="not implemented")
+def srandmember_count_of_0_is_handled_correctly_emptyarray(s: valkey.Valkey):
+    """
+    test "SRANDMEMBER count of 0 is handled correctly - emptyarray" {
+            r srandmember myset 0
+        } {*0}
+    """
+    assert False
 
 
 @pytest.mark.xfail(reason="not implemented")
 def srandmember_with_count_against_non_existing_key_emptyarray(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER with <count> against non existing key - emptyarray" {
             r srandmember nonexisting_key 100
-    }
+        } {*0}
     """
     assert False
 
@@ -1325,24 +1337,35 @@ def srandmember_with_count_against_non_existing_key_emptyarray(s: valkey.Valkey)
 """
 r readraw 0
 
- foreach {type contents} {
-        listpack {
-            1 5 10 50 125 50000 33959417 4775547 65434162
+"""
+
+
+@pytest.mark.xfail(reason="not implemented")
+@pytest.mark.parametrize(
+    ["type", "contents"],
+    [
+        (
+            "listpack",
+            """            1 5 10 50 125 50000 33959417 4775547 65434162
             12098459 427716 483706 2726473884 72615637475
             MARY PATRICIA LINDA BARBARA ELIZABETH JENNIFER MARIA
             SUSAN MARGARET DOROTHY LISA NANCY KAREN BETTY HELEN
             SANDRA DONNA CAROL RUTH SHARON MICHELLE LAURA SARAH
             KIMBERLY DEBORAH JESSICA SHIRLEY CYNTHIA ANGELA MELISSA
             BRENDA AMY ANNA REBECCA VIRGINIA KATHLEEN
-        }
-        intset {
-            0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+        """,
+        ),
+        (
+            "intset",
+            """            0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
             20 21 22 23 24 25 26 27 28 29
             30 31 32 33 34 35 36 37 38 39
             40 41 42 43 44 45 46 47 48 49
-        }
-        hashtable {
-            ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+        """,
+        ),
+        (
+            "hashtable",
+            """            ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
             1 5 10 50 125 50000 33959417 4775547 65434162
             12098459 427716 483706 2726473884 72615637475
             MARY PATRICIA LINDA BARBARA ELIZABETH JENNIFER MARIA
@@ -1350,87 +1373,47 @@ r readraw 0
             SANDRA DONNA CAROL RUTH SHARON MICHELLE LAURA SARAH
             KIMBERLY DEBORAH JESSICA SHIRLEY CYNTHIA ANGELA MELISSA
             BRENDA AMY ANNA REBECCA VIRGINIA
-        }
-} {
-        test "SRANDMEMBER with <count> - $type" {
-            create_set myset $contents
-            assert_encoding $type myset
-            unset -nocomplain myset
-            array set myset {}
-            foreach ele [r smembers myset] {
-                set myset($ele) 1
-            }
-            assert_equal [lsort $contents] [lsort [array names myset]]
-
-            # Make sure that a count of 0 is handled correctly.
-            assert_equal [r srandmember myset 0] {}
-
-            # We'll stress different parts of the code, see the implementation
-            # of SRANDMEMBER for more information, but basically there are
-            # four different code paths.
-            #
-            # PATH 1: Use negative count.
-            #
-            # 1) Check that it returns repeated elements.
-            set res [r srandmember myset -100]
-            assert_equal [llength $res] 100
-
-            # 2) Check that all the elements actually belong to the
-            # original set.
-            foreach ele $res {
-                assert {[info exists myset($ele)]}
-            }
-
-            # 3) Check that eventually all the elements are returned.
-            unset -nocomplain auxset
-            set iterations 1000
-            while {$iterations != 0} {
-                incr iterations -1
-                set res [r srandmember myset -10]
-                foreach ele $res {
-                    set auxset($ele) 1
+        """,
+        ),
+    ],
+)
+def srandmember_with_count_type(s: valkey.Valkey):
+    """
+    test "SRANDMEMBER with <count> - $type" {
+                create_set myset $contents
+                assert_encoding $type myset
+                unset -nocomplain myset
+                array set myset {}
+                foreach ele [r smembers myset] {
+                    set myset($ele) 1
                 }
-                if {[lsort [array names myset]] eq
-                    [lsort [array names auxset]]} {
-                    break;
-                }
-            }
-            assert {$iterations != 0}
+                assert_equal [lsort $contents] [lsort [array names myset]]
 
-            # PATH 2: positive count (unique behavior) with requested size
-            # equal or greater than set size.
-            foreach size {50 100} {
-                set res [r srandmember myset $size]
-                assert_equal [llength $res] 50
-                assert_equal [lsort $res] [lsort [array names myset]]
-            }
+                # Make sure that a count of 0 is handled correctly.
+                assert_equal [r srandmember myset 0] {}
 
-            # PATH 3: Ask almost as elements as there are in the set.
-            # In this case the implementation will duplicate the original
-            # set and will remove random elements up to the requested size.
-            #
-            # PATH 4: Ask a number of elements definitely smaller than
-            # the set size.
-            #
-            # We can test both the code paths just changing the size but
-            # using the same code.
+                # We'll stress different parts of the code, see the implementation
+                # of SRANDMEMBER for more information, but basically there are
+                # four different code paths.
+                #
+                # PATH 1: Use negative count.
+                #
+                # 1) Check that it returns repeated elements.
+                set res [r srandmember myset -100]
+                assert_equal [llength $res] 100
 
-            foreach size {45 5} {
-                set res [r srandmember myset $size]
-                assert_equal [llength $res] $size
-
-                # 1) Check that all the elements actually belong to the
+                # 2) Check that all the elements actually belong to the
                 # original set.
                 foreach ele $res {
                     assert {[info exists myset($ele)]}
                 }
 
-                # 2) Check that eventually all the elements are returned.
+                # 3) Check that eventually all the elements are returned.
                 unset -nocomplain auxset
                 set iterations 1000
                 while {$iterations != 0} {
                     incr iterations -1
-                    set res [r srandmember myset $size]
+                    set res [r srandmember myset -10]
                     foreach ele $res {
                         set auxset($ele) 1
                     }
@@ -1440,10 +1423,54 @@ r readraw 0
                     }
                 }
                 assert {$iterations != 0}
+
+                # PATH 2: positive count (unique behavior) with requested size
+                # equal or greater than set size.
+                foreach size {50 100} {
+                    set res [r srandmember myset $size]
+                    assert_equal [llength $res] 50
+                    assert_equal [lsort $res] [lsort [array names myset]]
+                }
+
+                # PATH 3: Ask almost as elements as there are in the set.
+                # In this case the implementation will duplicate the original
+                # set and will remove random elements up to the requested size.
+                #
+                # PATH 4: Ask a number of elements definitely smaller than
+                # the set size.
+                #
+                # We can test both the code paths just changing the size but
+                # using the same code.
+
+                foreach size {45 5} {
+                    set res [r srandmember myset $size]
+                    assert_equal [llength $res] $size
+
+                    # 1) Check that all the elements actually belong to the
+                    # original set.
+                    foreach ele $res {
+                        assert {[info exists myset($ele)]}
+                    }
+
+                    # 2) Check that eventually all the elements are returned.
+                    unset -nocomplain auxset
+                    set iterations 1000
+                    while {$iterations != 0} {
+                        incr iterations -1
+                        set res [r srandmember myset $size]
+                        foreach ele $res {
+                            set auxset($ele) 1
+                        }
+                        if {[lsort [array names myset]] eq
+                            [lsort [array names auxset]]} {
+                            break;
+                        }
+                    }
+                    assert {$iterations != 0}
+                }
             }
-        }
-}
-"""
+    """
+    assert False
 
 
 @pytest.mark.xfail(reason="not implemented")
@@ -1472,7 +1499,7 @@ r readraw 0
 )
 def srandmember_histogram_distribution_type(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER histogram distribution - $type" {
                 create_set myset $contents
                 assert_encoding $type myset
                 unset -nocomplain myset
@@ -1500,7 +1527,7 @@ def srandmember_histogram_distribution_type(s: valkey.Valkey):
                     # df = 9, 40 means 0.00001 probability
                     assert_lessthan [chi_square_value $allkey] 40
                 }
-    }
+            }
     """
     assert False
 
@@ -1509,7 +1536,7 @@ def srandmember_histogram_distribution_type(s: valkey.Valkey):
 proc is_rehashing {myset} {
         set htstats [r debug HTSTATS-KEY $myset]
         return [string match {*rehashing target*} $htstats]
-}
+    }
 """
 
 
@@ -1534,7 +1561,7 @@ proc rem_hash_set_top_N {myset n} {
             }
         }
         r srem $myset {*}$members
-}
+    }
 """
 
 
@@ -1543,14 +1570,14 @@ proc verify_rehashing_completed_key {myset table_size keys} {
         set htstats [r debug HTSTATS-KEY $myset]
         assert {![string match {*rehashing target*} $htstats]}
         return {[string match {*table size: $table_size*number of elements: $keys*} $htstats]}
-}
+    }
 """
 
 
 @pytest.mark.xfail(reason="not implemented")
 def srandmember_with_a_dict_containing_long_chain(s: valkey.Valkey):
     """
-    {
+    test "SRANDMEMBER with a dict containing long chain" {
             set origin_save [config_get_set save ""]
             set origin_max_lp [config_get_set set-max-listpack-entries 0]
             set origin_save_delay [config_get_set rdb-key-save-delay 2147483647]
@@ -1647,7 +1674,7 @@ def srandmember_with_a_dict_containing_long_chain(s: valkey.Valkey):
             r config set save $origin_save
             r config set set-max-listpack-entries $origin_max_lp
             r config set rdb-key-save-delay $origin_save_delay
-    }
+        } {OK} {needs:debug slow}
     """
     assert False
 
@@ -1659,14 +1686,14 @@ proc setup_move {} {
         create_set myset2{t} {2 3 4}
         assert_encoding listpack myset1{t}
         assert_encoding intset myset2{t}
-}
+    }
 """
 
 
 @pytest.mark.xfail(reason="not implemented")
 def smove_basics_from_regular_set_to_intset(s: valkey.Valkey):
     """
-    {
+    test "SMOVE basics - from regular set to intset" {
             # move a non-integer element to an intset should convert encoding
             setup_move
             assert_equal 1 [r smove myset1{t} myset2{t} a]
@@ -1680,7 +1707,7 @@ def smove_basics_from_regular_set_to_intset(s: valkey.Valkey):
             assert_equal {a b} [lsort [r smembers myset1{t}]]
             assert_equal {1 2 3 4} [lsort [r smembers myset2{t}]]
             assert_encoding intset myset2{t}
-    }
+        }
     """
     assert False
 
@@ -1688,12 +1715,12 @@ def smove_basics_from_regular_set_to_intset(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_basics_from_intset_to_regular_set(s: valkey.Valkey):
     """
-    {
+    test "SMOVE basics - from intset to regular set" {
             setup_move
             assert_equal 1 [r smove myset2{t} myset1{t} 2]
             assert_equal {1 2 a b} [lsort [r smembers myset1{t}]]
             assert_equal {3 4} [lsort [r smembers myset2{t}]]
-    }
+        }
     """
     assert False
 
@@ -1701,13 +1728,13 @@ def smove_basics_from_intset_to_regular_set(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_non_existing_key(s: valkey.Valkey):
     """
-    {
+    test "SMOVE non existing key" {
             setup_move
             assert_equal 0 [r smove myset1{t} myset2{t} foo]
             assert_equal 0 [r smove myset1{t} myset1{t} foo]
             assert_equal {1 a b} [lsort [r smembers myset1{t}]]
             assert_equal {2 3 4} [lsort [r smembers myset2{t}]]
-    }
+        }
     """
     assert False
 
@@ -1715,11 +1742,11 @@ def smove_non_existing_key(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_non_existing_src_set(s: valkey.Valkey):
     """
-    {
+    test "SMOVE non existing src set" {
             setup_move
             assert_equal 0 [r smove noset{t} myset2{t} foo]
             assert_equal {2 3 4} [lsort [r smembers myset2{t}]]
-    }
+        }
     """
     assert False
 
@@ -1727,13 +1754,13 @@ def smove_non_existing_src_set(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_from_regular_set_to_non_existing_destination_set(s: valkey.Valkey):
     """
-    {
+    test "SMOVE from regular set to non existing destination set" {
             setup_move
             assert_equal 1 [r smove myset1{t} myset3{t} a]
             assert_equal {1 b} [lsort [r smembers myset1{t}]]
             assert_equal {a} [lsort [r smembers myset3{t}]]
             assert_encoding listpack myset3{t}
-    }
+        }
     """
     assert False
 
@@ -1741,13 +1768,13 @@ def smove_from_regular_set_to_non_existing_destination_set(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_from_intset_to_non_existing_destination_set(s: valkey.Valkey):
     """
-    {
+    test "SMOVE from intset to non existing destination set" {
             setup_move
             assert_equal 1 [r smove myset2{t} myset3{t} 2]
             assert_equal {3 4} [lsort [r smembers myset2{t}]]
             assert_equal {2} [lsort [r smembers myset3{t}]]
             assert_encoding intset myset3{t}
-    }
+        }
     """
     assert False
 
@@ -1755,10 +1782,10 @@ def smove_from_intset_to_non_existing_destination_set(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_wrong_src_key_type(s: valkey.Valkey):
     """
-    {
+    test "SMOVE wrong src key type" {
             r set x{t} 10
             assert_error "WRONGTYPE*" {r smove x{t} myset2{t} foo}
-    }
+        }
     """
     assert False
 
@@ -1766,10 +1793,10 @@ def smove_wrong_src_key_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_wrong_dst_key_type(s: valkey.Valkey):
     """
-    {
+    test "SMOVE wrong dst key type" {
             r set x{t} 10
             assert_error "WRONGTYPE*" {r smove myset2{t} x{t} foo}
-    }
+        }
     """
     assert False
 
@@ -1777,12 +1804,12 @@ def smove_wrong_dst_key_type(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_with_identical_source_and_destination(s: valkey.Valkey):
     """
-    {
+    test "SMOVE with identical source and destination" {
             r del set{t}
             r sadd set{t} a b c
             r smove set{t} set{t} b
             lsort [r smembers set{t}]
-    }
+        } {a b c}
     """
     assert False
 
@@ -1790,7 +1817,7 @@ def smove_with_identical_source_and_destination(s: valkey.Valkey):
 @pytest.mark.xfail(reason="not implemented")
 def smove_only_notify_dstset_when_the_addition_is_successful(s: valkey.Valkey):
     """
-    {
+    test "SMOVE only notify dstset when the addition is successful" {
             r del srcset{t}
             r del dstset{t}
 
@@ -1810,45 +1837,6 @@ def smove_only_notify_dstset_when_the_addition_is_successful(s: valkey.Valkey):
             set res [r scard dstset{t}]
             assert_equal $res 2
             $r2 close
-    }
+        }
     """
     assert False
-
-
-"""
-tags {slow} {
-        test {intsets implementation stress testing} {
-            for {set j 0} {$j < 20} {incr j} {
-                unset -nocomplain s
-                array set s {}
-                r del s
-                set len [randomInt 1024]
-                for {set i 0} {$i < $len} {incr i} {
-                    randpath {
-                        set data [randomInt 65536]
-                    } {
-                        set data [randomInt 4294967296]
-                    } {
-                        set data [randomInt 18446744073709551616]
-                    }
-                    set s($data) {}
-                    r sadd s $data
-                }
-                assert_equal [lsort [r smembers s]] [lsort [array names s]]
-                set len [array size s]
-                for {set i 0} {$i < $len} {incr i} {
-                    set e [r spop s]
-                    if {![info exists s($e)]} {
-                        puts "Can't find '$e' on local array"
-                        puts "Local array: [lsort [r smembers s]]"
-                        puts "Remote array: [lsort [array names s]]"
-                        error "exception"
-                    }
-                    array unset s $e
-                }
-                assert_equal [r scard s] 0
-                assert_equal [array size s] 0
-            }
-        }
-}
-"""
