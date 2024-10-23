@@ -58,7 +58,7 @@ class TCLCommandIf:
     def _read_if(
         cls, args_iterator: Iterator[TCLCommandArguments], namespace: dict[str, Any]
     ) -> tuple[TCLExpression, TCLScript]:
-        expression = TCLExpression.interpertize(next(args_iterator))
+        expression = TCLExpression.interpertize(next(args_iterator), namespace)
         body = next(args_iterator)
         if body.substitute(namespace) == "then":
             body = next(args_iterator)
@@ -93,9 +93,6 @@ class TCLCommandIf:
 class TCLExpression:
     word: TCLCommandArguments
 
-    def substitute(self) -> Iterator[str]:
-        return iter("0")
-
     @classmethod
-    def interpertize(cls, word: TCLCommandArguments) -> Self:
+    def interpertize(cls, word: TCLCommandArguments, namespace: dict[str, Any]) -> Self:
         return cls(word)
