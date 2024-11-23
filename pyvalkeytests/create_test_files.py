@@ -11,7 +11,7 @@ from typing import IO
 
 import typer
 
-from pytcl.commands import TCLBracesWord, TCLCommand, TCLCommandForEach, TCLCommandIf, TCLList, TCLScript
+from pytcl.commands import TCLBracesWord, TCLCommandBase, TCLCommandForEach, TCLCommandIf, TCLList, TCLScript
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
@@ -61,7 +61,7 @@ class TestFileGenerator:
 
     def generate_test(
         self,
-        test_command: TCLCommand,
+        test_command: TCLCommandBase,
         if_expressions: list[str] | None = None,
         parametrizes: list[str] | None = None,
     ) -> None:
@@ -90,7 +90,7 @@ class TestFileGenerator:
         self.output.write('    """\n')
         self.output.write("    assert False\n")
 
-    def generate_comment(self, command: TCLCommand) -> None:
+    def generate_comment(self, command: TCLCommandBase) -> None:
         self.output.write('\n\n"""\n')
         self.output.write(f"{textwrap.dedent(str(command))}\n")
         self.output.write('"""\n')
@@ -99,12 +99,12 @@ class TestFileGenerator:
         self, script: TCLScript, if_expressions: list[str] | None = None, foreach_commands: list[str] | None = None
     ) -> None:
         for command in script.commands:
-            if isinstance(command, TCLCommand):
+            if isinstance(command, TCLCommandBase):
                 match command.name:
                     case "test":
                         self.generate_test(command, if_expressions, foreach_commands)
                     case "if":
-                        if_command = TCLCommandIf.interpertize(command, {})
+                        if_command = TCLCommandIf.interpertize(command.args, {})
                         expression, body = if_command.if_part
 
                         if not any([c for c in body.commands if c.name == "test"]):
@@ -113,7 +113,7 @@ class TestFileGenerator:
 
                         self.generate_tests(
                             body,
-                            (if_expressions or []) + [str(expression.word)],
+                            (if_expressions or []) + [str(expression.result)],
                             foreach_commands,
                         )
                     case "foreach":
@@ -144,7 +144,7 @@ class TestFileGenerator:
             script = TCLScript.read_text_io(source_file)
 
             start_server_command = script.commands[0]
-            assert isinstance(start_server_command, TCLCommand)
+            assert isinstance(start_server_command, TCLCommandBase)
             assert start_server_command.name == "start_server"
 
             tags: list[str] = []

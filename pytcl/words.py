@@ -276,7 +276,7 @@ TCLCommandArguments = TCLBracesWord | TCLDoubleQuotedWord | TCLBracketWord | Var
 
 
 @tcl_word
-class TCLCommand(TCLWordBase):
+class TCLCommandWord(TCLWordBase):
     name: str
     args: list[TCLCommandArguments]
 
@@ -325,12 +325,12 @@ class TCLCommand(TCLWordBase):
         return cls(name, arguments)
 
 
-EMPTY_COMMAND = TCLCommand(name="", args=[])
+EMPTY_COMMAND = TCLCommandWord(name="", args=[])
 
 
 @dataclass
 class TCLScript(TCLWordBase):
-    commands: list[TCLCommand]
+    commands: list[TCLCommandWord]
 
     def substitute_iterator(self, namespace: dict[str, Any]) -> Iterator[str]:
         for command in self.commands:
@@ -345,7 +345,7 @@ class TCLScript(TCLWordBase):
 
     @classmethod
     def _read(cls, chars: CharsIterator, in_bracket: bool = False) -> Self:
-        commands: list[TCLCommand] = []
+        commands: list[TCLCommandWord] = []
         while char := next(chars, None):
             match char:
                 case "\n" | ";" | " ":
@@ -353,7 +353,7 @@ class TCLScript(TCLWordBase):
                 case "#":
                     cls.handle_comment(chars)
                 case _:
-                    commands.append(TCLCommand.read(chain([char], chars)))
+                    commands.append(TCLCommandWord.read(chain([char], chars)))
 
         return cls(commands)
 
