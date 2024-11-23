@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from io import IOBase
 from typing import AnyStr, BinaryIO
 
 
@@ -59,7 +60,7 @@ def load(stream: BinaryIO) -> list | None:
 
 @dataclass
 class RespDumper:
-    writer: BinaryIO
+    writer: BinaryIO | IOBase
 
     def dump_bulk_string(self, value: AnyStr) -> None:
         if isinstance(value, str):
@@ -111,5 +112,5 @@ class RespDumper:
             self.writer.write(b"$-1\r\n")
 
 
-def dump(value: ValueType, stream: BinaryIO) -> None:
+def dump(value: ValueType, stream: BinaryIO | IOBase) -> None:
     RespDumper(stream).dump(value)
