@@ -38,11 +38,21 @@ testpaths = "tests valkey_tests"
 target-version = "py311"
 line-length = 120
 
-lint.select = ["ANN", "I", "N", "UP", "PGH", "RUF", "F", "FA"]
-lint.ignore = ["E731", "ANN101", "ANN102", "RUF009"]
+lint.select = ["ANN", "I", "N", "UP", "PGH", "RUF", "F", "FA", "PL", "E"]
+lint.ignore = [
+    "E731",
+    "ANN101",
+    "ANN102",
+    "RUF009",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLW2901",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"**/{tests}/*" = ["ANN"]
+"**/{tests}/*" = ["ANN", "PLR2004", "PLR0913", "E501"]
 
 
 [[tool.mypy.overrides]]

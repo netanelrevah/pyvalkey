@@ -292,11 +292,10 @@ class ObjectParametersParser(ParametersGroup):
                 if isinstance(flag, dict):
                     for flag_key in flag.keys():
                         optional_keyword_parameters[flag_key] = named_parameter_parser, False
+                elif isinstance(parameter_field.default, bool):
+                    optional_keyword_parameters[flag] = named_parameter_parser, False
                 else:
-                    if isinstance(parameter_field.default, bool):
-                        optional_keyword_parameters[flag] = named_parameter_parser, False
-                    else:
-                        optional_keyword_parameters[flag] = named_parameter_parser, True
+                    optional_keyword_parameters[flag] = named_parameter_parser, True
             else:
                 if optional_keyword_parameters:
                     parameters_parsers.append(OptionalKeywordParametersGroup(optional_keyword_parameters))
