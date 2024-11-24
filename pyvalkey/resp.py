@@ -20,7 +20,7 @@ LoadedType = list | bytes | int | None
 
 @dataclass
 class RespLoader:
-    reader: BinaryIO
+    reader: BinaryIO | IOBase
 
     def load_array(self, length: int) -> list[LoadedType]:
         array: list[LoadedType] = [None] * length
@@ -54,7 +54,7 @@ class RespLoader:
         return self.load_array(int(line[1:]))
 
 
-def load(stream: BinaryIO) -> list | None:
+def load(stream: BinaryIO | IOBase) -> list | None:
     return RespLoader(stream).load_dynamic_array()
 
 
