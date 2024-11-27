@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 import functools
-import operator
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Any, ClassVar, Literal, Self, TypeVar, dataclass_transform
+from operator import add, lt, mul
+from typing import Any, ClassVar, Literal, Self, TypeVar, Union, dataclass_transform
 
 from pytcl.errors import TCLInterpretationError
 from pytcl.types import TCLList
-from pytcl.words import TCLBracesWord, TCLCommandArguments, TCLScript, TCLWord
+from pytcl.words import (
+    TCLBracesWord,
+    TCLCommandArguments,
+    TCLDoubleQuotedWord,
+    TCLScript,
+    TCLVariableSubstitutionWord,
+    TCLWord,
+)
 
 
 class TCLCommandBase:
-    def execute(self) -> str:
+    def execute(self, namespace: dict[str, Any]) -> str:
         raise NotImplementedError()
 
     @classmethod
@@ -112,7 +119,7 @@ class TCLStringIs(TCLCommandBase):
     strict: bool = False
     fail_index: str = ""
 
-    def execute(self) -> str:
+    def execute(self, namespace: dict[str, Any]) -> str:
         match self.class_:
             case "true":
                 return "1" if self.string.lower() in ["yes", "true", "1", "on"] else "0"
@@ -147,22 +154,46 @@ class TCLStringIs(TCLCommandBase):
         return cls(class_, string, strict, fail_index)
 
 
+TCLMathOperandType = Union[str, "TCLMathOperator", TCLCommandArguments]
+
+
 @functools.total_ordering
 class TCLMathOperator(TCLCommandBase):
     PRECEDENCE: ClassVar[int]
     NUMBER_OF_OPERANDS: ClassVar[int | None] = None
     ASSOCIATIVITY: ClassVar[Literal["L", "R"]] = "L"
 
-    def __init__(self, *args: str | TCLMathOperator | Sequence[str | TCLMathOperator]) -> None: ...
+    def __init__(self, *args: TCLMathOperandType | Sequence[TCLMathOperandType]) -> None: ...
 
     @classmethod
-    def from_args(cls, *args: str | TCLMathOperator) -> Self:
+    def from_args(cls, *args: TCLMathOperandType) -> Self:
         raise NotImplementedError()
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, TCLMathOperator):
             raise ValueError()
         return self.PRECEDENCE < other.PRECEDENCE
+
+    @classmethod
+    def _parse_operand(cls, operand: TCLMathOperandType, namespace: dict[str, Any]) -> int | float | str:
+        if isinstance(operand, TCLMathOperator):
+            operand = operand.execute(namespace)
+        if isinstance(operand, TCLCommandArguments):
+            operand = operand.substitute(namespace)
+        try:
+            return int(operand)
+        except ValueError:
+            try:
+                return float(operand)
+            except ValueError:
+                return operand
+
+    @classmethod
+    def _operator_execute(cls, operator: Callable[..., int | float], *operands: str, namespace: dict[str, Any]) -> str:
+        result = reduce(operator, map(lambda x: cls._parse_operand(x, namespace), operands))
+        if isinstance(result, bool):
+            return "1" if result else "0"
+        return str(result)
 
 
 class Operators:
@@ -185,11 +216,11 @@ def tcl_math_operator(
 
         if number_of_operands is None:
 
-            def from_args(a_cls: type[T], *args: str | TCLMathOperator) -> T:
+            def from_args(a_cls: type[T], *args: TCLMathOperandType) -> T:
                 return a_cls(args)
         else:
 
-            def from_args(a_cls: type[T], *args: str | TCLMathOperator) -> T:
+            def from_args(a_cls: type[T], *args: TCLMathOperandType) -> T:
                 return a_cls(*args)
 
         setattr(cls, "from_args", classmethod(from_args))
@@ -222,8 +253,8 @@ class TCLMathOperatorSubtraction(TCLMathOperator):
 class TCLMathOperatorSummation(TCLMathOperator):
     operands: list[str]
 
-    def execute(self) -> str:
-        return str(reduce(operator.add, map(float, self.operands)))
+    def execute(self, namespace: dict[str, Any]) -> str:
+        return self._operator_execute(add, *self.operands, namespace=namespace)
 
 
 @tcl_math_operator("**", 3, associativity="R")
@@ -272,6 +303,9 @@ class TCLMathOperatorNotEqual(TCLMathOperator):
 class TCLMathOperatorLess(TCLMathOperator):
     operands: list[str]
 
+    def execute(self, namespace: dict[str, Any]) -> str:
+        return self._operator_execute(lt, *self.operands, namespace=namespace)
+
 
 @tcl_math_operator(">", 0)
 class TCLMathOperatorGreater(TCLMathOperator):
@@ -291,6 +325,9 @@ class TCLMathOperatorGreaterOrEqual(TCLMathOperator):
 @tcl_math_operator("*", 2)
 class TCLMathOperatorMultiply(TCLMathOperator):
     operands: list[str]
+
+    def execute(self, namespace: dict[str, Any]) -> str:
+        return self._operator_execute(mul, *self.operands, namespace=namespace)
 
 
 @tcl_math_operator("/", 2)
@@ -336,11 +373,17 @@ class TCLExpression(TCLCommandBase):
         return value
 
     @classmethod
-    def _iterate_tokens(cls, chars: Iterator[str]) -> Iterator[str]:
+    def _iterate_tokens(cls, chars: Iterator[str]) -> Iterator[str | TCLCommandArguments]:
         while char := next(chars, None):
             match char:
                 case " " | "\t" | "\n":
                     continue
+                case '"':
+                    yield TCLDoubleQuotedWord.read(chars)
+                case "$":
+                    yield TCLVariableSubstitutionWord.read(chars)
+                case "{":
+                    yield TCLBracesWord.read(chars)
                 case _:
                     yield cls._read_value(chain([char], chars))
 
@@ -350,9 +393,9 @@ class TCLExpression(TCLCommandBase):
         tokens_iterator = cls._iterate_tokens(expression_iterator)
 
         operators_stack: list[str] = []
-        postfix: list[str] = []
+        postfix: list[str | TCLCommandArguments] = []
         while token := next(tokens_iterator, None):
-            if operator := Operators.OPERATOR_CLASSES.get(token):
+            if isinstance(token, str) and (operator := Operators.OPERATOR_CLASSES.get(token)):
                 while operators_stack:
                     if not (top_operator := Operators.OPERATOR_CLASSES.get(operators_stack[-1])):
                         break
@@ -362,9 +405,9 @@ class TCLExpression(TCLCommandBase):
                         break
                     postfix.append(operators_stack.pop())
                 operators_stack.append(token)
-            elif token == "(":
+            elif isinstance(token, str) and token == "(":
                 operators_stack.append(token)
-            elif token == ")":
+            elif isinstance(token, str) and token == ")":
                 while operators_stack:
                     operator_string = operators_stack.pop()
                     if operator_string == "(":
@@ -376,15 +419,15 @@ class TCLExpression(TCLCommandBase):
         while operators_stack:
             postfix.append(operators_stack.pop())
 
-        commands_stack: list[str | TCLMathOperator] = []
+        commands_stack: list[TCLMathOperandType] = []
         while postfix:
             token = postfix.pop(0)
 
-            if (operator := Operators.OPERATOR_CLASSES.get(token, None)) is not None:
+            if isinstance(token, str) and (operator := Operators.OPERATOR_CLASSES.get(token, None)) is not None:
                 operands = []
                 for _ in range(operator.NUMBER_OF_OPERANDS if operator.NUMBER_OF_OPERANDS else 2):
                     operands.append(commands_stack.pop())
-                commands_stack.append(operator.from_args(*operands))
+                commands_stack.append(operator.from_args(*reversed(operands)))
                 continue
 
             commands_stack.append(token)
@@ -394,5 +437,5 @@ class TCLExpression(TCLCommandBase):
 
         return cls(commands_stack[0])
 
-    def execute(self) -> str:
-        return self.evaluator.execute()
+    def execute(self, namespace: dict[str, Any]) -> str:
+        return self.evaluator.execute(namespace)

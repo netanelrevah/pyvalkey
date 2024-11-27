@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import string
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import chain
@@ -66,7 +67,7 @@ def tcl_word(*args: Any) -> Any:
 
 
 @tcl_word
-class VariableSubstitution(TCLWordBase):
+class TCLVariableSubstitutionWord(TCLWordBase):
     variable_name: str
 
     def substitute_iterator(self, namespace: dict[str, Any]) -> Iterator[str]:
@@ -79,7 +80,7 @@ class VariableSubstitution(TCLWordBase):
         variable_name = ""
         while char := next(chars, None):
             match char:
-                case " " | "\n":
+                case non_name_char if non_name_char not in string.digits + string.ascii_letters + ":":
                     chars.push_back()
                     chars.drop_last()
                     break
@@ -203,7 +204,7 @@ class TCLDoubleQuotedWord(TCLWordBase):
                         yield from ["$", next_char]
                         continue
                     chars.push_back()
-                    yield from VariableSubstitution.read(chars).substitute_iterator(namespace)
+                    yield from TCLVariableSubstitutionWord.read(chars).substitute_iterator(namespace)
                 case _:
                     yield char
 
@@ -272,7 +273,7 @@ class TCLBracesWord(TCLWordBase):
         return cls("".join(collected_chars))
 
 
-TCLCommandArguments = TCLBracesWord | TCLDoubleQuotedWord | TCLBracketWord | VariableSubstitution | TCLWord
+TCLCommandArguments = TCLBracesWord | TCLDoubleQuotedWord | TCLBracketWord | TCLVariableSubstitutionWord | TCLWord
 
 
 @tcl_word
