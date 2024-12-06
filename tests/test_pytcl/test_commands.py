@@ -14,6 +14,8 @@ from pytcl.words import TCLBracesWord, TCLWord
 @Parametrization.case("5.6 full", [TCLWord("2"), TCLWord("+"), TCLWord("3.6")], "5.6")
 @Parametrization.case("32 in parts", [TCLWord("4"), TCLWord("*"), TCLWord("8")], "32")
 @Parametrization.case("string compare", [TCLBracesWord('{word one} < "word $a"')], "0")
+@Parametrization.case("8<7", [TCLBracesWord("4*2 < 7")], "0")
+@Parametrization.case("512", [TCLBracesWord("2**3**2")], "512")
 def test_tcl_expression__substitute(word, expected_interpretation, should_raise):
     namespace = {"a": "3", "b": "6"}
 
