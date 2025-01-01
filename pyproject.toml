@@ -41,8 +41,6 @@ line-length = 120
 lint.select = ["ANN", "I", "N", "UP", "PGH", "RUF", "F", "FA", "PL", "E"]
 lint.ignore = [
     "E731",
-    "ANN101",
-    "ANN102",
     "RUF009",
     "PLR0911",
     "PLR0912",

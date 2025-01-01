@@ -155,7 +155,7 @@ class TCLStringIs(TCLCommandBase):
         return cls(class_, string, strict, fail_index)
 
 
-TCLMathOperandType = Union[str, TCLCommandArguments]
+TCLMathOperandType = str | TCLCommandArguments
 
 
 @functools.total_ordering
