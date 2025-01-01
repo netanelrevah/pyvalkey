@@ -6,6 +6,29 @@ on:
       - main
 
 jobs:
+  valkey-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pyvalkey
+      - uses: actions/checkout@v4
+        with:
+          repository: valkey-io/valkey
+          path: valkey
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+      - uses: snok/install-poetry@v1
+      - working-directory: ./pyvalkey
+        run: poetry install --no-interaction --no-root
+      - working-directory: ./pyvalkey
+        run: poetry run python -m pyvalkey &
+      - working-directory: ./valkey
+        run: apt-get install tcl
+      - working-directory: ./valkey
+        run: ./runtest --host localhost --port 6379 &
+
   valkey-py:
     runs-on: ubuntu-latest
     steps:
