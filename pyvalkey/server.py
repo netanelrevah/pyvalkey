@@ -23,7 +23,7 @@ from pyvalkey.database_objects.errors import (
     ValkeySyntaxError,
 )
 from pyvalkey.database_objects.information import Information
-from pyvalkey.resp import RESP_OK, RespError, ValueType, dump, load
+from pyvalkey.resp import RESP_OK, DesyncError, RespError, ValueType, dump, load
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +94,14 @@ class ServerConnectionHandler(StreamRequestHandler):
             ready = select.select([self.connection], [], [], 1)
             if not ready:
                 continue
-            command = load(self.rfile)
+            try:
+                command = load(self.rfile)
+            except DesyncError:
+                self.request.close()
+                break
 
             if command is None:
-                break
+                continue
             if command[0] == b"QUIT":
                 self.dump(RESP_OK)
                 break

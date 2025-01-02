@@ -3,6 +3,10 @@ from io import IOBase
 from typing import AnyStr, BinaryIO
 
 
+class DesyncError(Exception):
+    pass
+
+
 class RespSimpleString(bytes):
     pass
 
@@ -31,8 +35,12 @@ class RespLoader:
     def load(self) -> LoadedType:
         line = self.reader.readline().strip(b"\r\n")
         match line[0:1], line[1:]:
-            case b"*", length:
-                return self.load_array(int(length))
+            case b"*", length_bytes:
+                try:
+                    length = int(length_bytes)
+                except ValueError:
+                    raise DesyncError(line)
+                return self.load_array(length)
             case b"$", length:
                 bulk_string = self.reader.read(int(length) + 2)[:-2]
                 if len(bulk_string) != int(length):
@@ -45,13 +53,21 @@ class RespLoader:
             case b"-", value:
                 return RespError(value)
             case _:
-                return None
+                raise DesyncError(line)
 
     def load_dynamic_array(self) -> list | None:
         line = self.reader.readline().strip(b"\r\n")
-        if not line[1:]:
+        if not line:
             return None
-        return self.load_array(int(line[1:]))
+        if line[0:1] != b"*":
+            raise DesyncError(line)
+
+        try:
+            length = int(line[1:])
+        except ValueError:
+            raise DesyncError(line)
+
+        return self.load_array(length)
 
 
 def load(stream: BinaryIO | IOBase) -> list | None:
