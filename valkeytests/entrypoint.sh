@@ -1,9 +1,7 @@
 #!/bin/bash
 
 cd /code/ || exit 1
-while /bin/true; do
-  /root/.local/bin/poetry run python -m pyvalkey > pyvalkey.log 2>&1
-done &
+/root/.local/bin/poetry run python -m pyvalkey > pyvalkey.log 2>&1 &
 
 sleep 3
 
