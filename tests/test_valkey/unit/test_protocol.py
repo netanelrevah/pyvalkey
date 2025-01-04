@@ -6,10 +6,32 @@ from parametrization import Parametrization
 
 def test_handle_an_empty_query(connection: socket):
     connection.send(b"\r\n")
-    connection.send(b"*1\r\n$4\r\nPING\r\n")
-    a = connection.recv(20)
 
+    connection.send(b"*1\r\n$4\r\nPING\r\n")
+    a = connection.recv(100)
     assert a == b"$4\r\nPONG\r\n"
+
+
+def test_negative_multibulk_length(connection: socket):
+    connection.send(b"*-10\r\n")
+
+    connection.send(b"*1\r\n$4\r\nPING\r\n")
+    a = connection.recv(100)
+    assert a == b"$4\r\nPONG\r\n"
+
+
+def test_out_of_range_multibulk_length(connection: socket):
+    connection.send(b"*3000000000\r\n")
+
+    a = connection.recv(100)
+    assert a == b"-invalid multibulk length\r\n"
+
+
+def test_wrong_multibulk_payload_header(connection: socket):
+    connection.send(b"*3\r\n$3\r\nSET\r\n$1\r\nx\r\nfooz\r\n")
+
+    a = connection.recv(100)
+    assert a == b"-expected '$', got 'f'\r\n"
 
 
 @Parametrization.autodetect_parameters()
@@ -30,5 +52,4 @@ def test_protocol_desync_regression_test(connection: socket, sequence: bytes):
             break
 
         if datetime.now() - test_start > test_time_limit:
-            connection.close()
-            assert False, "assertion:Valkey did not closed connection after protocol desync"
+            assert False, "Valkey did not closed connection after protocol desync"

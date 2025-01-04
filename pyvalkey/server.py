@@ -23,7 +23,7 @@ from pyvalkey.database_objects.errors import (
     ValkeySyntaxError,
 )
 from pyvalkey.database_objects.information import Information
-from pyvalkey.resp import RESP_OK, DesyncError, RespError, ValueType, dump, load
+from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespSyntaxError, ValueType, dump, load
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +96,14 @@ class ServerConnectionHandler(StreamRequestHandler):
                 continue
             try:
                 command = load(self.rfile)
-            except DesyncError:
-                self.request.close()
+            except RespSyntaxError as e:
+                if e.args:
+                    self.dump(RespError(e.args[0]))
+                continue
+            except RespFatalError:
                 break
 
-            if command is None:
+            if not command:
                 continue
             if command[0] == b"QUIT":
                 self.dump(RESP_OK)
@@ -108,7 +111,7 @@ class ServerConnectionHandler(StreamRequestHandler):
 
             self.server.information.total_commands_processed += 1
 
-            print(self.current_client.client_id, [i[:100] for i in command])
+            print(self.current_client.client_id, [i[:100] if i and not isinstance(i, int) else i for i in command])
 
             try:
                 routed_command = self.router.route(list(command), self.client_context)
@@ -124,8 +127,8 @@ class ServerConnectionHandler(StreamRequestHandler):
             except RouterKeyError:
                 self.dump(
                     RespError(
-                        f"ERR unknown command '{command[0]}', "
-                        f"with args beginning with: {command[1] if len(command) > 1 else ''}".encode()
+                        f"ERR unknown command '{command[0].decode()}', "
+                        f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
                     )
                 )
             except ServerWrongNumberOfArgumentsError:

@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from io import IOBase
 from typing import AnyStr, BinaryIO
 
 
-class DesyncError(Exception):
+class RespFatalError(Exception):
+    pass
+
+
+class RespSyntaxError(Exception):
     pass
 
 
@@ -18,60 +24,73 @@ class RespError(bytes):
     pass
 
 
-ValueType = bool | int | float | RespSimpleString | RespError | str | bytes | list | set | dict | None
-LoadedType = list | bytes | int | None
+ValueType = (
+    bool
+    | int
+    | float
+    | RespSimpleString
+    | RespError
+    | str
+    | bytes
+    | list["ValueType"]
+    | set["ValueType"]
+    | dict["ValueType", "ValueType"]
+)
 
 
 @dataclass
-class RespLoader:
+class RespQueryLoader:
     reader: BinaryIO | IOBase
 
-    def load_array(self, length: int) -> list[LoadedType]:
-        array: list[LoadedType] = [None] * length
+    def read_line(self) -> bytes:
+        line = self.reader.readline().strip(b"\r\n")
+        if b"\x00" in line:
+            raise RespFatalError()
+        return line
+
+    def load_array(self, length_bytes: bytes) -> list[bytes]:
+        try:
+            length = int(length_bytes)
+        except ValueError:
+            raise RespSyntaxError()
+        if length <= 0:
+            raise RespSyntaxError()
+        if length > 1024 * 1024:
+            raise RespSyntaxError(b"invalid multibulk length")
+
+        array: list[bytes] = [b""] * length
         for i in range(length):
-            array[i] = self.load()
+            array[i] = self.load_bulk_string()
         return array
 
-    def load(self) -> LoadedType:
-        line = self.reader.readline().strip(b"\r\n")
-        match line[0:1], line[1:]:
-            case b"*", length_bytes:
-                try:
-                    length = int(length_bytes)
-                except ValueError:
-                    raise DesyncError(line)
-                return self.load_array(length)
-            case b"$", length:
-                bulk_string = self.reader.read(int(length) + 2)[:-2]
-                if len(bulk_string) != int(length):
-                    raise ValueError()
-                return bulk_string
-            case b":", value:
-                return int(value)
-            case b"+", value:
-                return RespSimpleString(value)
-            case b"-", value:
-                return RespError(value)
-            case _:
-                raise DesyncError(line)
+    def load_bulk_string(self) -> bytes:
+        line = self.read_line()
+        if line[0:1] != b"$":
+            raise RespSyntaxError(f"expected '$', got '{line[0:1].decode()}'".encode())
 
-    def load_dynamic_array(self) -> list | None:
-        line = self.reader.readline().strip(b"\r\n")
-        if not line:
-            return None
-        if line[0:1] != b"*":
-            raise DesyncError(line)
-
+        length_bytes = line[1:]
         try:
-            length = int(line[1:])
+            length = int(length_bytes)
         except ValueError:
-            raise DesyncError(line)
+            raise RespSyntaxError()
 
-        return self.load_array(length)
+        bulk_string = self.reader.read(int(length) + 2)[:-2]
+        if len(bulk_string) != int(length):
+            raise ValueError()
+        return bulk_string
+
+    def load_dynamic_array(self) -> list[bytes]:
+        line = self.read_line()
+        if not line:
+            return []
+        if line[0:1] != b"*":
+            raise RespSyntaxError()
+
+        return self.load_array(line[1:])
 
 
-def load(stream: BinaryIO | IOBase) -> list | None:
-    return RespLoader(stream).load_dynamic_array()
+def load(stream: BinaryIO | IOBase) -> list[bytes]:
+    return RespQueryLoader(stream).load_dynamic_array()
 
 
 @dataclass

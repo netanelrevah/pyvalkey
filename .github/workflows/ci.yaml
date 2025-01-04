@@ -25,9 +25,9 @@ jobs:
       - working-directory: ./pyvalkey
         run: poetry run python -m pyvalkey &
       - working-directory: ./valkey
-        run: sudo apt-get install tcl
+        run: sudo apt-get install tcl8.6 tclx
       - working-directory: ./valkey
-        run: ./runtest --host localhost --port 6379 --durable --quiet &
+        run: ./runtest --verbose --host localhost --port 6379 --dump-logs
 
   valkey-py:
     runs-on: ubuntu-latest

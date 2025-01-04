@@ -23,7 +23,12 @@ class ServerCommandsRouter:
         parameters: list[bytes],
         routes: dict[bytes, type[Command]] | dict[bytes, type[Command] | dict[bytes, type[Command]]],
     ) -> type[Command]:
-        command = parameters.pop(0).lower()
+        first_parameter = parameters.pop(0)
+
+        if isinstance(first_parameter, int):
+            raise RouterKeyError()
+
+        command = first_parameter.lower()
 
         if command not in routes:
             raise RouterKeyError()
