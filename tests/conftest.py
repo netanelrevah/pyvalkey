@@ -38,8 +38,8 @@ def connection(external):
     port = 6379
     if not external:
         port = next_free_port()
-        server = ValkeyServer(("127.0.0.1", port))
-        t = Thread(target=server.serve_forever, daemon=True)
+        server = ValkeyServer("127.0.0.1", port)
+        t = Thread(target=server.run)
         t.start()
 
         time.sleep(1)
@@ -68,15 +68,17 @@ def s(external):
         return
 
     port = next_free_port()
-    server = ValkeyServer(("127.0.0.1", port))
-    t = Thread(target=server.serve_forever, daemon=True)
+    server = ValkeyServer("127.0.0.1", port)
+    t = Thread(target=server.run)
     t.start()
 
     time.sleep(1)
     c = valkey.Valkey(port=port, db=9)
-    yield c
-    c.close()
-    server.shutdown()
+    try:
+        yield c
+    finally:
+        c.close()
+        server.shutdown()
 
 
 @fixture

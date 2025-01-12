@@ -53,11 +53,6 @@ def test_set_10000_numeric_keys_and_access_all_them_in_reverse_order(s: valkey.V
     assert s.dbsize() == 10000
 
 
-@pytest.mark.skip("previously included")
-def test_dbsize_should_be_10000_now(s: valkey.Valkey):
-    pass
-
-
 def test_setnx_target_key_missing(s: valkey.Valkey):
     s.delete("novar")
     assert s.setnx("novar", "foobared") is True
@@ -155,16 +150,6 @@ def test_getdel_command(s: valkey.Valkey):
     s.set("foo", "bar")
     assert s.getdel("foo") == b"bar"
     assert s.getdel("foo") is None
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getdel_propagate_as_del_command_to_replica(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getex_without_argument_does_not_propagate_to_replica(s: valkey.Valkey):
-    assert False
 
 
 def test_mget(s: valkey.Valkey):
@@ -267,11 +252,6 @@ def test_setbit_against_string_encoded_key(s: valkey.Valkey):
     assert s.get("mykey") == bits_to_bytes("00100000")
 
 
-@pytest.mark.xfail(reason="object encoding not implemented")
-def test_setbit_against_integer_encoded_key(s: valkey.Valkey):
-    assert False
-
-
 def test_setbit_against_key_with_wrong_type(s: valkey.Valkey):
     s.lpush("mykey", "foo")
     with assert_raises(valkey.ValkeyError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
@@ -331,21 +311,6 @@ def test_getbit_against_string_encoded_key(s: valkey.Valkey):
     assert s.getbit("mykey", 10000) == 0
 
 
-@pytest.mark.xfail(reason="object encoding not implemented")
-def test_getbit_against_integer_encoded_key(s: valkey.Valkey):
-    s.set("mykey", 1)
-    assert s.object("encoding", "mykey") == b"int"
-
-    assert s.getbit("mykey", 0) == 0
-    assert s.getbit("mykey", 1) == 0
-    assert s.getbit("mykey", 2) == 1
-    assert s.getbit("mykey", 3) == 1
-
-    assert s.getbit("mykey", 8) == 0
-    assert s.getbit("mykey", 100) == 0
-    assert s.getbit("mykey", 10000) == 0
-
-
 def test_setrange_against_non_existing_key(s: valkey.Valkey):
     s.delete("mykey")
     assert s.setrange("mykey", 0, "foo") == 3
@@ -378,33 +343,6 @@ def test_setrange_against_string_encoded_key(s: valkey.Valkey):
     assert s.get("mykey") == b"foo\x00bar"
 
 
-@pytest.mark.xfail(reason="not implemented")
-def test_setrange_against_integer_encoded_key(s: valkey.Valkey):
-    s.set("mykey", 1234)
-    assert s.object("encoding", "mykey") == "int"
-    assert s.setrange("mykey", 0, 2) == 4
-    assert s.object("encoding", "mykey") == "raw"
-    assert s.get("mykey") == b"2234"
-
-    s.set("mykey", 1234)
-    assert s.object("encoding", "mykey") == "int"
-    assert s.setrange("mykey", 0, "") == 4
-    assert s.object("encoding", "mykey") == "int"
-    assert s.get("mykey") == b"1234"
-
-    s.set("mykey", 1234)
-    assert s.object("encoding", "mykey") == "int"
-    assert s.setrange("mykey", 1, 3) == 4
-    assert s.object("encoding", "mykey") == "raw"
-    assert s.get("mykey") == b"1334"
-
-    s.set("mykey", 1234)
-    assert s.object("encoding", "mykey") == "int"
-    assert s.setrange("mykey", 5, "2") == 6
-    assert s.object("encoding", "mykey") == "raw"
-    assert s.get("mykey") == b"1234\x002"
-
-
 def test_setrange_against_key_with_wrong_type(s: valkey.Valkey):
     assert s.lpush("mykey", "foo")
     with assert_raises(valkey.ValkeyError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
@@ -421,153 +359,3 @@ def test_setrange_with_out_of_range_offset(s: valkey.Valkey):
 
     with assert_raises(valkey.ValkeyError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
         s.setrange("mykey", 512 * 1024 * 1024 - 4, "world")
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getrange_against_non_existing_key(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getrange_against_wrong_key_type(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getrange_against_string_value(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getrange_against_integer_encoded_value(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getrange_fuzzing(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_coverage_substr(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_trim_on_set_with_big_value(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_can_detect_syntax_errors(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_nx_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_xx_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_option_with_no_previous_value(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_option_with_xx(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_option_with_xx_and_no_previous_value(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_option_with_nx(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_option_with_nx_and_previous_value(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_get_with_incorrect_type_should_result_in_wrong_type_error(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_ex_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_px_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_exat_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_pxat_option(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_extended_set_using_multiple_options_at_once(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_getrange_with_huge_ranges_github_issue_1844(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_lcs_basic(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_lcs_len(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_lcs_indexes(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_lcs_indexes_with_match_len(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_lcs_indexes_with_match_len_and_minimum_match_len(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_setrange_with_huge_offset(s: valkey.Valkey):
-    assert False
-
-
-@pytest.mark.xfail(reason="not implemented")
-def test_append_modifies_the_encoding_from_int_to_raw(s: valkey.Valkey):
-    assert False
