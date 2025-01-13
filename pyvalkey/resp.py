@@ -3,7 +3,7 @@ from __future__ import annotations
 from asyncio import Transport
 from dataclasses import dataclass, field
 from io import IOBase
-from typing import AnyStr, BinaryIO
+from typing import Any, AnyStr, BinaryIO
 
 
 class RespFatalError(Exception):
@@ -26,16 +26,7 @@ class RespError(bytes):
 
 
 ValueType = (
-    bool
-    | int
-    | float
-    | RespSimpleString
-    | RespError
-    | str
-    | bytes
-    | list["ValueType"]
-    | set["ValueType"]
-    | dict["ValueType", "ValueType"]
+    bool | int | float | RespSimpleString | RespError | str | bytes | list[Any] | set[Any] | dict[bytes, Any] | None
 )
 
 
