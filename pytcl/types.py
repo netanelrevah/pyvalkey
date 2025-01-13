@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from itertools import chain
 from typing import Any, Self
 
-from pytcl.words import TCLBracesWord, TCLBracketWord, TCLDoubleQuotedWord, TCLWord, VariableSubstitution
+from pytcl.words import TCLBracesWord, TCLBracketWord, TCLDoubleQuotedWord, TCLVariableSubstitutionWord, TCLWord
 
 
 @dataclass
@@ -39,11 +39,11 @@ class TCLList:
     @classmethod
     def interpertize(
         cls,
-        list_word: TCLWord | TCLDoubleQuotedWord | TCLBracesWord | TCLBracketWord | VariableSubstitution,
+        list_word: TCLWord | TCLDoubleQuotedWord | TCLBracesWord | TCLBracketWord | TCLVariableSubstitutionWord,
         namespace: dict[str, Any],
     ) -> Self:
         if isinstance(list_word, TCLWord | TCLBracesWord):
             return cls(list(cls.words_iterator(iter(list_word.value), namespace)))
-        if isinstance(list_word, TCLBracketWord | TCLDoubleQuotedWord | VariableSubstitution):
+        if isinstance(list_word, TCLBracketWord | TCLDoubleQuotedWord | TCLVariableSubstitutionWord):
             return cls(list(cls.words_iterator(list_word.substitute_iterator(namespace), namespace)))
         raise TypeError()

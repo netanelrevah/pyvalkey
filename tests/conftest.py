@@ -33,6 +33,30 @@ def next_free_port(min_port=57343, max_port=65535):
 
 
 @fixture()
+def connection(external):
+    server = None
+    port = 6379
+    if not external:
+        port = next_free_port()
+        server = ValkeyServer("127.0.0.1", port)
+        t = Thread(target=server.run)
+        t.start()
+
+        time.sleep(1)
+
+    connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    connection.connect(("localhost", port))
+    connection.settimeout(3)
+    try:
+        yield connection
+    finally:
+        connection.close()
+
+    if server:
+        server.shutdown()
+
+
+@fixture()
 def s(external):
     if external:
         c = valkey.Valkey(db=9)
@@ -44,15 +68,17 @@ def s(external):
         return
 
     port = next_free_port()
-    server = ValkeyServer(("127.0.0.1", port))
-    t = Thread(target=server.serve_forever, daemon=True)
+    server = ValkeyServer("127.0.0.1", port)
+    t = Thread(target=server.run)
     t.start()
 
     time.sleep(1)
     c = valkey.Valkey(port=port, db=9)
-    yield c
-    c.close()
-    server.shutdown()
+    try:
+        yield c
+    finally:
+        c.close()
+        server.shutdown()
 
 
 @fixture

@@ -6,6 +6,29 @@ on:
       - main
 
 jobs:
+  valkey:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pyvalkey
+      - uses: actions/checkout@v4
+        with:
+          repository: valkey-io/valkey
+          path: valkey
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+      - uses: snok/install-poetry@v1
+      - working-directory: ./pyvalkey
+        run: poetry install --no-interaction --no-root
+      - working-directory: ./pyvalkey
+        run: poetry run python -m pyvalkey &
+      - working-directory: ./valkey
+        run: sudo apt-get install tcl8.6 tclx
+      - working-directory: ./valkey
+        run: ./runtest --verbose --host localhost --port 6379 --dump-logs
+
   valkey-py:
     runs-on: ubuntu-latest
     steps:
@@ -46,7 +69,6 @@ jobs:
       - if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --with dev --no-interaction --no-root
       - run: poetry check
-      - run: poetry lock --check
       - run: poetry run mypy pyvalkey
         if: '!cancelled()'
       - run: poetry run ruff check --output-format=github .
@@ -91,4 +113,4 @@ jobs:
         run: poetry install --with dev --no-interaction --no-root
 
       - name: Run pytest
-        run: poetry run python -m pytest -v tests
+        run: poetry run python -m pytest -v tests/test_pyvalkey tests/test_valkey

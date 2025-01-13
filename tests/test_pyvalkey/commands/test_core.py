@@ -5,6 +5,7 @@ from parametrization import Parametrization
 
 from pyvalkey.commands.clients import ClientKill
 from pyvalkey.commands.core import Command
+from pyvalkey.commands.debug import Debug
 from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
@@ -86,6 +87,12 @@ class ListCommand(Command):
     parameters=b"ID 1".split(),
     command_cls=ClientKill,
     expected_kwargs={"client_id": 1},
+)
+@Parametrization.case(
+    name="",
+    parameters=b"set-active-expire 0".split(),
+    command_cls=Debug,
+    expected_kwargs={"set_active_expire": 0},
 )
 @Parametrization.case(
     name="ping_without_parameters",

@@ -2,11 +2,11 @@ import pytest
 from parametrization import Parametrization
 
 from pytcl.errors import TCLSubstituteError
-from pytcl.words import TCLDoubleQuotedWord, VariableSubstitution
+from pytcl.words import TCLDoubleQuotedWord, TCLVariableSubstitutionWord
 
 
 def test_variable_substitution_word__get_empty__fail():
-    instance = VariableSubstitution.read("abc")
+    instance = TCLVariableSubstitutionWord.read("abc")
 
     assert instance.variable_name == "abc"
     assert instance.origin == "abc"

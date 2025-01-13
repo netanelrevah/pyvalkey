@@ -11,8 +11,8 @@ from pyvalkey.server import ValkeyServer
 
 @fixture
 def s():
-    server = ValkeyServer(("127.0.0.1", 6379))
-    t = Thread(target=server.serve_forever)
+    server = ValkeyServer("127.0.0.1", 6379)
+    t = Thread(target=server.run)
     t.start()
     yield t
     server.shutdown()
