@@ -86,7 +86,7 @@ class TestFileGenerator:
 
         self.output.write(f"def {test_name}(s: valkey.Valkey):\n")
         self.output.write('    """\n')
-        self.output.write(f"{textwrap.indent(textwrap.dedent(str(test_command)),"    ")}\n")
+        self.output.write(f"{textwrap.indent(textwrap.dedent(str(test_command)), '    ')}\n")
         self.output.write('    """\n')
         self.output.write("    assert False\n")
 
