@@ -52,7 +52,7 @@ def test_multi_bulk_request_not_followed_by_bulk_arguments(connection: socket):
 
 
 def test_generic_wrong_number_of_args(s: valkey.Valkey):
-    with pytest.raises(ResponseError, match="ERR wrong number of arguments for 'PING' command"):
+    with pytest.raises(ResponseError, match="wrong number of arguments for 'ping' command"):
         s.execute_command("ping", "x", "y", "z")
 
 

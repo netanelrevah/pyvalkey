@@ -148,7 +148,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 )
             )
         except ServerWrongNumberOfArgumentsError:
-            self.dump(RespError(b"ERR wrong number of arguments for '" + command[0] + b"' command"))
+            self.dump(RespError(b"ERR wrong number of arguments for '" + command[0].lower() + b"' command"))
         except ServerWrongTypeError:
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
         except ValkeySyntaxError:
