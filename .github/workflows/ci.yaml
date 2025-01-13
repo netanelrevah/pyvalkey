@@ -69,7 +69,6 @@ jobs:
       - if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --with dev --no-interaction --no-root
       - run: poetry check
-      - run: poetry lock --check
       - run: poetry run mypy pyvalkey
         if: '!cancelled()'
       - run: poetry run ruff check --output-format=github .
