@@ -1,19 +1,25 @@
-[tool.poetry]
+[project]
 name = "pyvalkey"
 version = "0.0.5"
 description = "pyvalkey: Python implemented Valkey server"
-authors = ["Netanel Revah <netanelrevah@outlook.com>"]
-license = "MIT License"
 readme = "README.md"
+license = "MIT License"
+authors = [
+    { name = "Netanel Revah", email = "netanelrevah@outlook.com" },
+]
+requires-python = ">=3.11"
+dynamic = [ "dependencies" ]
+
+[tool.poetry]
 packages = [
     { include = "pyvalkey" },
 ]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-typer = "^0"
-sortedcontainers = "^2.4.0"
-typing-extensions = "^4.8.0"
+typer = "*"
+sortedcontainers = "*"
+typing-extensions = "*"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "*"
