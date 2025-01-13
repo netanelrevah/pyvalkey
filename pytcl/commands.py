@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Any, ClassVar, Literal, Self, TypeVar, Union, dataclass_transform
+from typing import Any, ClassVar, Literal, Self, TypeVar, dataclass_transform
 
 from pytcl.errors import TCLInterpretationError
 from pytcl.iterators import CharsIterator

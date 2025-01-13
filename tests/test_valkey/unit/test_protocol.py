@@ -75,3 +75,19 @@ def test_protocol_desync_regression_test(connection: socket, sequence: bytes):
 
         if datetime.now() - test_start > test_time_limit:
             assert False, "Valkey did not closed connection after protocol desync"
+
+
+"""
+    test "raw protocol response - multiline" {
+        r sadd ss a
+        assert_equal [r read] {:1}
+        r srandmember ss 100
+        assert_equal [r read] {*1}
+        assert_equal [r read] {$1}
+        assert_equal [r read] {a}
+    }
+"""
+
+
+def test_raw_protocol_response_multiline(s: valkey.Valkey):
+    pass
