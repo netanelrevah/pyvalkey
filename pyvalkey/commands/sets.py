@@ -169,20 +169,18 @@ class SetRandomMember(DatabaseCommand):
         if s is None:
             return None
 
-        s = list(s)
+        items = list(s)
 
         if self.count is None:
-            return random.choice(s)
+            return random.choice(items)
 
         if self.count < 0:
-            return [random.choice(list(s)) for _ in range(abs(self.count))]
+            return [random.choice(items) for _ in range(abs(self.count))]
 
         result = []
         for _ in range(self.count):
             try:
-                result.append(s.pop(random.randrange(len(s))))
+                result.append(items.pop(random.randrange(len(items))))
             except IndexError:
                 break
         return result
-
-
