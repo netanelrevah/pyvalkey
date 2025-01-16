@@ -29,7 +29,7 @@ from pyvalkey.database_objects.errors import (
     ServerWrongTypeError,
     ValkeySyntaxError,
 )
-from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespQueryParser, RespSyntaxError, ValueType, dump
+from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
     _client_context: ClientContext | None = None
     data: BytesIO = field(default_factory=BytesIO)
 
-    _resp_query_parser: RespQueryParser = field(default_factory=RespQueryParser)
+    _resp_query_parser: RespParser = field(default_factory=RespParser)
+
+    parser_task: asyncio.Task | None = None
 
     @property
     def configurations(self) -> Configurations:
@@ -86,6 +88,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
         host, port = transport.get_extra_info("peername")
         self._client_context = ClientContext.create(self.server_context, host, port)
 
+        self.parser_task = asyncio.create_task(self.parse())
+
     def connection_lost(self, exception: Exception | None) -> None:
         del self.clients[self.current_client.client_id]
 
@@ -103,20 +107,27 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
         dump(value, self.transport)
 
-    def data_received(self, data: bytes) -> None:
+    async def parse(self) -> None:
         try:
-            self._resp_query_parser.feed(data)
+            async for query in self._resp_query_parser:
+                self.handle(query)
         except RespSyntaxError as e:
             if e.args:
                 self.dump(RespError(e.args[0]))
-            self.transport.close()
-            return
+            self.cancel()
         except RespFatalError:
-            self.transport.close()
-            return
+            self.cancel()
 
-        while self._resp_query_parser.ready_queries:
-            self.handle(self._resp_query_parser.ready_queries.pop(0))
+    def cancel(self):
+        self.transport.close()
+        if self.parser_task:
+            self.parser_task.cancel()
+
+    def data_received(self, data: bytes) -> None:
+        try:
+            self._resp_query_parser.feed(data)
+        except RespFatalError:
+            self.cancel()
 
     def handle(self, command: list[bytes]) -> None:
         if not command:

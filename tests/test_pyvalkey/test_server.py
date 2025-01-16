@@ -1,31 +1,12 @@
-from threading import Thread
 
 import valkey
 from parametrization import Parametrization
-from pytest import fixture
 
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import MAX_BYTES
-from pyvalkey.server import ValkeyServer
 
 
-@fixture
-def s():
-    server = ValkeyServer("127.0.0.1", 6379)
-    t = Thread(target=server.run)
-    t.start()
-    yield t
-    server.shutdown()
-
-
-@fixture
-def c():
-    c = valkey.Valkey()
-    yield c
-    c.close()
-
-
-def test_simple(s, c):
+def test_simple(s: valkey.Valkey, c: valkey.Valkey):
     c.set("b", 1)
     assert c.get("b") == b"1"
     c.set("a", "bla")
