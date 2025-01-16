@@ -167,7 +167,7 @@ class SetRandomMember(DatabaseCommand):
         s = self.database.get_set_or_none(self.key)
 
         if s is None:
-            return None
+            return None if self.count is not None else []
 
         items = list(s)
 
