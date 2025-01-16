@@ -1,4 +1,5 @@
 import functools
+import random
 from collections.abc import Callable
 
 from pyvalkey.commands.parameters import positional_parameter
@@ -155,3 +156,33 @@ class SetDifferenceStore(DatabaseCommand):
 
     def execute(self) -> ValueType:
         return apply_set_store_operation(self.database, set.difference, self.keys, self.destination)
+
+
+@ServerCommandsRouter.command(b"srandmember", [b"write", b"string", b"slow"])
+class SetRandomMember(DatabaseCommand):
+    key: bytes = positional_parameter()
+    count: int | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        s = self.database.get_set_or_none(self.key)
+
+        if s is None:
+            return None
+
+        s = list(s)
+
+        if self.count is None:
+            return random.choice(s)
+
+        if self.count < 0:
+            return [random.choice(list(s)) for _ in range(abs(self.count))]
+
+        result = []
+        for _ in range(self.count):
+            try:
+                result.append(s.pop(random.randrange(len(s))))
+            except IndexError:
+                break
+        return result
+
+

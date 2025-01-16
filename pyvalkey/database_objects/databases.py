@@ -386,6 +386,9 @@ class Database:
     def get_set(self, key: bytes) -> set:
         return self.get_by_type(key, set)
 
+    def get_set_or_none(self, key: bytes) -> set:
+        return self.get_or_none_by_type(key, set)
+
     def get_or_create_set(self, key: bytes) -> set:
         return self.typesafe_get_or_create(key, set)
 

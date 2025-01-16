@@ -1,6 +1,5 @@
 import fnmatch
 import operator
-import random
 from enum import Enum
 from functools import reduce
 from typing import Any, ClassVar
@@ -220,26 +219,6 @@ class SetMultiple(DatabaseCommand):
             s = self.database.get_or_create_string(key)
             s.value = value
         return RESP_OK
-
-
-@ServerCommandsRouter.command(b"srandmember", [b"write", b"string", b"slow"])
-class SetRandomMember(DatabaseCommand):
-    key: bytes = positional_parameter()
-    count: int = positional_parameter(default=1)
-
-    def execute(self) -> ValueType:
-        s = list(self.database.get_or_create_set(self.key))
-
-        if self.count >= 0:
-            result = []
-            for _ in range(self.count):
-                try:
-                    result.append(s.pop(random.randrange(len(s))))
-                except IndexError:
-                    break
-            return result
-
-        return [random.choice(list(s)) for _ in range(abs(self.count))]
 
 
 @ServerCommandsRouter.command(b"msetnx", [b"write", b"string", b"slow"])
