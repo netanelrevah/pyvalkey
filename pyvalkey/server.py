@@ -118,7 +118,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         except RespFatalError:
             self.cancel()
 
-    def cancel(self):
+    def cancel(self) -> None:
         self.transport.close()
         if self.parser_task:
             self.parser_task.cancel()
