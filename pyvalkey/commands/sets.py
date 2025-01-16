@@ -166,13 +166,15 @@ class SetRandomMember(DatabaseCommand):
     def execute(self) -> ValueType:
         s = self.database.get_set_or_none(self.key)
 
+        if self.count is None:
+            if s is None:
+                return None
+            return random.choice(list(s))
+
         if s is None:
-            return None if self.count is not None else []
+            return []
 
         items = list(s)
-
-        if self.count is None:
-            return random.choice(items)
 
         if self.count < 0:
             return [random.choice(items) for _ in range(abs(self.count))]
