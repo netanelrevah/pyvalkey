@@ -181,8 +181,8 @@ class SetRandomMember(DatabaseCommand):
 
         result = []
         for _ in range(self.count):
-            try:
-                result.append(items.pop(random.randrange(len(items))))
-            except IndexError:
+            if not items:
                 break
+
+            result.append(items.pop(random.randrange(len(items))))
         return result
