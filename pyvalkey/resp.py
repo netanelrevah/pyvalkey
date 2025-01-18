@@ -48,7 +48,11 @@ class BufferedLineReader:
         return self
 
     async def wait_for_new_line(self) -> None:
-        while b"\r\n" not in self._buffer:
+        while True:
+            if b"\r\n" in self._buffer:
+                break
+            if len(self._buffer) > 1024 * 64:
+                raise RespSyntaxError(b"Protocol error: too big inline request")
             await self._fed.wait()
             self._fed.clear()
 
@@ -145,8 +149,6 @@ class RespParser:
             yield line.split()
 
     def feed(self, data: bytes) -> None:
-        if b"\x00" in data:
-            raise RespFatalError()
         self.buffered_reader.feed(data)
 
 
