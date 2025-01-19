@@ -35,32 +35,37 @@ class Configurations:
 
     @classmethod
     def get_number_of_values(cls, name: bytes) -> int:
+        field_name = name.decode().replace("-", "_")
+
         try:
-            a_field: Field = cls.__dataclass_fields__[name.decode().replace("-", "_")]
+            a_field: Field = cls.__dataclass_fields__[field_name]
             return a_field.metadata["number_of_values"]
         except KeyError:
             return 0
 
     @classmethod
     def get_type(cls, name: bytes) -> str:
+        field_name = name.decode().replace("-", "_")
+
         try:
-            a_field: Field = cls.__dataclass_fields__[name.decode().replace("-", "_")]
+            a_field: Field = cls.__dataclass_fields__[field_name]
             return a_field.metadata["type"]
         except KeyError:
             return ""
 
     def set_values(self, name: bytes, *values: bytes) -> None:
         field_type = self.get_type(name)
+        field_name = name.decode().replace("-", "_")
 
         if field_type == "password":
             (value,) = values
-            setattr(self, name.decode(), sha256(value).hexdigest().encode())
+            setattr(self, field_name, sha256(value).hexdigest().encode())
         elif field_type == "integer":
             (value,) = values
-            setattr(self, name.decode(), int(value.decode()))
+            setattr(self, field_name, int(value.decode()))
         else:
             (value,) = values
-            setattr(self, name.decode(), value)
+            setattr(self, field_name, value)
 
     def get_names(self, *patterns: bytes) -> set[bytes]:
         names: set[bytes] = set([])
