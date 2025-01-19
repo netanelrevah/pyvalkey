@@ -1,4 +1,3 @@
-
 import pytest
 
 from pyvalkey.commands.connections import Hello
