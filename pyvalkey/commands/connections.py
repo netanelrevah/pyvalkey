@@ -3,18 +3,18 @@ from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.resp import RespError, RespProtocolVersion, ValueType
+from pyvalkey.resp import RespProtocolVersion, ValueType
 
 
-@ServerCommandsRouter.command(b"multi", [b"connection", b"fast"])
+@ServerCommandsRouter.command(b"hello", [b"connection", b"fast"])
 class Hello(Command):
     client_context: ClientContext = server_command_dependency()
-    protocol_version: RespProtocolVersion | None = positional_parameter(default=None)
+    protocol_version: RespProtocolVersion | None = positional_parameter(
+        default=None, parse_error=b"NOPROTO unsupported protocol version"
+    )
 
     def execute(self) -> ValueType:
         if self.protocol_version is not None:
-            if self.protocol_version not in RespProtocolVersion:
-                return RespError(b"NOPROTO unsupported protocol version")
             self.client_context.protocol = self.protocol_version
 
         return {

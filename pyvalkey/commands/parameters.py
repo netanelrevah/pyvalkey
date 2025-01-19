@@ -10,6 +10,7 @@ class ParameterMetadata(Enum):
     VALUES_MAPPING = auto()
     FLAG = auto()
     KEY_MODE = auto()
+    PARSE_ERROR = auto()
 
 
 def server_parameter(
@@ -17,8 +18,10 @@ def server_parameter(
     default: Any = MISSING,  # noqa: ANN401
     flag: bytes | dict[bytes, Any] | None = None,
     key_mode: bytes | None = None,
+    parse_error: bytes | None = None,
 ) -> Any:  # noqa: ANN401
     metadata: dict[ParameterMetadata, Any] = {ParameterMetadata.SERVER_PARAMETER: True}
+    metadata[ParameterMetadata.PARSE_ERROR] = parse_error
     if values_mapping:
         metadata[ParameterMetadata.VALUES_MAPPING] = values_mapping
     if flag:
@@ -41,8 +44,9 @@ def positional_parameter(
     values_mapping: dict[bytes, Any] | None = None,
     default: Any = MISSING,  # noqa: ANN401
     key_mode: bytes | None = None,
+    parse_error: bytes | None = None,
 ) -> Any:  # noqa: ANN401
-    return server_parameter(values_mapping=values_mapping, default=default, key_mode=key_mode)
+    return server_parameter(values_mapping=values_mapping, default=default, key_mode=key_mode, parse_error=parse_error)
 
 
 def keyword_parameter(

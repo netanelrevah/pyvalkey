@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from types import UnionType
 from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, get_type_hints, overload
 
@@ -44,7 +44,9 @@ class ParameterParser:
         parameter_type = cls._extract_optional_type(parameter_type)
 
         if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
-            return EnumParameterParser(parameter_type)
+            return EnumParameterParser(
+                parameter_type, parse_error=parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR)
+            )
 
         if is_dataclass(parameter_type):
             return ObjectParser.create_from_object(parameter_type)
@@ -186,11 +188,17 @@ class FloatParameterParser(ParameterParser):
 class EnumParameterParser(ParameterParser):
     enum_cls: type[Enum]
 
+    parse_error: bytes | None = None
+
     def parse(self, parameters: list[bytes]) -> Enum:
         enum_value = self.next_parameter(parameters).upper()
         try:
+            if issubclass(self.enum_cls, IntEnum):
+                return self.enum_cls(int(enum_value))
             return self.enum_cls(enum_value)
         except ValueError as e:
+            if self.parse_error is not None:
+                raise ServerError(self.parse_error)
             raise ValkeySyntaxError(enum_value) from e
 
 
