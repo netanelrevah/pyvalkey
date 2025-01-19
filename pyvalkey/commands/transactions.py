@@ -3,10 +3,11 @@ from dataclasses import dataclass
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
-@dataclass
+@ServerCommandsRouter.command(b"multi", [b"transaction", b"fast"])
 class TransactionStart(Command):
     client_context: ClientContext = server_command_dependency()
 
@@ -16,7 +17,7 @@ class TransactionStart(Command):
         return RESP_OK
 
 
-@dataclass
+@ServerCommandsRouter.command(b"exec", [b"connection", b"fast"])
 class TransactionExecute(Command):
     client_context: ClientContext = server_command_dependency()
 
