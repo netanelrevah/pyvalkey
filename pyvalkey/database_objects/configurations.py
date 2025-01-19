@@ -31,6 +31,7 @@ class Configurations:
     aof_rewrite_incremental_fsync: bytes = configuration(default=b"yes")
     tls_ca_cert_file: bytes = configuration(default=b"")
     timeout: int = configuration(default=0, type_="integer")
+    availability_zone: bytes = configuration(default=b"")
 
     @classmethod
     def get_number_of_values(cls, name: bytes) -> int:

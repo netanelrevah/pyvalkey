@@ -17,7 +17,7 @@ class Hello(Command):
         if self.protocol_version is not None:
             self.client_context.protocol = self.protocol_version
 
-        return {
+        response = {
             b"server": b"redis",
             b"version": self.client_context.server_context.information.server_version,
             b"proto": self.client_context.protocol,
@@ -26,3 +26,8 @@ class Hello(Command):
             b"role": b"master",
             b"modules": [],
         }
+
+        if self.client_context.server_context.configurations.availability_zone != b"":
+            response[b"availability_zone"] = self.client_context.server_context.configurations.availability_zone
+
+        return response
