@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
