@@ -11,6 +11,7 @@ from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.information import Information
+from pyvalkey.resp import RespProtocolVersion
 
 if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
@@ -38,6 +39,8 @@ class ClientContext:
     current_user: ACLUser | None = None
 
     transaction_commands: list[Command] | None = None
+
+    protocol: RespProtocolVersion = RespProtocolVersion.RESP2
 
     @property
     def database(self) -> Database:

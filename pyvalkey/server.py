@@ -96,7 +96,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
     def dump(self, value: ValueType) -> None:
         dumped = BytesIO()
-        dump(value, dumped)
+        dump(value, dumped, self.client_context.protocol)
         print(self.current_client.client_id, "result", dumped.getvalue()[:100])
 
         if self.current_client.reply_mode == "skip":
@@ -106,7 +106,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         if self.current_client.reply_mode == "off":
             return
 
-        dump(value, self.transport)
+        dump(value, self.transport, self.client_context.protocol)
 
     async def parse(self) -> None:
         try:
@@ -136,6 +136,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         if command[0] == b"QUIT":
             self.dump(RESP_OK)
             self.transport.close()
+            return
 
         self.server_context.information.total_commands_processed += 1
 

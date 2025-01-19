@@ -4,8 +4,14 @@ import asyncio
 from asyncio import Transport
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from enum import IntEnum
 from io import IOBase
 from typing import Any, AnyStr, BinaryIO, Self
+
+
+class RespProtocolVersion(IntEnum):
+    RESP2 = 2
+    RESP3 = 3
 
 
 class RespFatalError(Exception):
@@ -212,8 +218,13 @@ def load(stream: BinaryIO | IOBase) -> list[bytes]:
     return RespQueryLoader(stream).load_dynamic_array()
 
 
-@dataclass
 class RespDumper:
+    def dump(self, value: ValueType) -> None:
+        raise NotImplementedError()
+
+
+@dataclass
+class Resp2Dumper(RespDumper):
     writer: BinaryIO | IOBase | Transport
 
     def dump_bulk_string(self, value: AnyStr) -> None:
@@ -266,5 +277,70 @@ class RespDumper:
             self.writer.write(b"$-1\r\n")
 
 
-def dump(value: ValueType, stream: BinaryIO | IOBase | Transport) -> None:
-    RespDumper(stream).dump(value)
+@dataclass
+class Resp3Dumper(RespDumper):
+    writer: BinaryIO | IOBase | Transport
+
+    def dump_bulk_string(self, value: AnyStr) -> None:
+        if isinstance(value, str):
+            bytes_value = value.encode()
+        else:
+            bytes_value = value
+        self.writer.write(b"$" + str(len(bytes_value)).encode() + b"\r\n" + bytes_value + b"\r\n")
+
+    def dump_string(self, value: AnyStr) -> None:
+        if isinstance(value, str):
+            bytes_value = value.encode()
+        else:
+            bytes_value = value
+        self.writer.write(b"+" + bytes_value + b"\r\n")
+
+    def dump_array(self, value: list) -> None:
+        self.writer.write(f"*{len(value)}\r\n".encode())
+        for item in value:
+            self.dump(item)
+
+    def dump_map(self, value: dict) -> None:
+        self.writer.write(f"%{len(value)}\r\n".encode())
+        for k, v in value.items():
+            self.dump(k)
+            self.dump(v)
+
+    def dump(self, value: ValueType) -> None:
+        if isinstance(value, bool):
+            if value:
+                self.dump(1)
+            else:
+                self.dump(0)
+        elif isinstance(value, int):
+            self.writer.write(f":{value}\r\n".encode())
+        elif isinstance(value, float):
+            self.dump_bulk_string(f"{value:g}")
+        elif isinstance(value, RespSimpleString):
+            self.dump_string(value)
+        elif isinstance(value, RespError):
+            self.writer.write(f"-{value.decode()}\r\n".encode())
+        elif isinstance(value, str | bytes):
+            if isinstance(value, str):
+                value = value.encode()
+            self.dump_bulk_string(value)
+        elif isinstance(value, list):
+            self.dump_array(value)
+        elif isinstance(value, set):
+            self.dump_array(list(value))
+        elif isinstance(value, dict):
+            self.dump_map(value)
+        elif value is None:
+            self.writer.write(b"$-1\r\n")
+
+
+def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: RespProtocolVersion) -> None:
+    dumper: RespDumper
+    if protocol == RespProtocolVersion.RESP2:
+        dumper = Resp2Dumper(stream)
+    elif protocol == RespProtocolVersion.RESP3:
+        dumper = Resp3Dumper(stream)
+    else:
+        raise ValueError(protocol)
+
+    dumper.dump(value)
