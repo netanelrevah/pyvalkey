@@ -1,15 +1,19 @@
+from __future__ import annotations
+
 import itertools
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
-from pyvalkey.commands.core import Command
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.information import Information
+
+if TYPE_CHECKING:
+    from pyvalkey.commands.core import Command
 
 
 @dataclass

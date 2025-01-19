@@ -1,10 +1,14 @@
-from dataclasses import dataclass
-from typing import Any, Self
+from __future__ import annotations
 
-from pyvalkey.commands.context import ClientContext
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Self
+
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import ValueType
+
+if TYPE_CHECKING:
+    from pyvalkey.commands.context import ClientContext
 
 
 @dataclass
