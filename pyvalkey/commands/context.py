@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Self
 
+from pyvalkey.commands.core import Command
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
@@ -31,6 +32,8 @@ class ClientContext:
 
     current_database: int = 0
     current_user: ACLUser | None = None
+
+    transaction_commands: list[Command] | None = None
 
     @property
     def database(self) -> Database:

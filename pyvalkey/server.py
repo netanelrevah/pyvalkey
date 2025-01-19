@@ -16,6 +16,7 @@ from typing import cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.transactions import TransactionExecute
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
@@ -142,6 +143,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
         try:
             routed_command = self.router.route(list(command), self.client_context)
+
+            if self.client_context.transaction_commands is not None and not isinstance(
+                routed_command, TransactionExecute
+            ):
+                self.client_context.transaction_commands.append(routed_command)
+                self.dump("QUEUED")
+                return
 
             if self.current_user:
                 self.current_user.check_permissions(routed_command)
