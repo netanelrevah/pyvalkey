@@ -77,7 +77,7 @@ class Exists(DatabaseCommand):
     keys: list[bytes] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        return sum(1 for key in self.keys if self.database.get_string_or_none(key) is not None)
+        return sum(1 for key in self.keys if self.database.get_or_none(key) is not None)
 
 
 @ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])
@@ -120,34 +120,6 @@ class GetExpire(DatabaseCommand):
                 self.database.set_persist(self.key)
 
         return s.value
-
-
-@ServerCommandsRouter.command(b"ttl", [b"write", b"string", b"fast"])
-class TimeToLive(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"R")
-
-    def execute(self) -> ValueType:
-        try:
-            expiration = self.database.get_expiration(self.key)
-            if expiration is None:
-                return -1
-            return expiration // 1000
-        except KeyError:
-            return -2
-
-
-@ServerCommandsRouter.command(b"pttl", [b"write", b"string", b"fast"])
-class TimeToLiveMilliseconds(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"R")
-
-    def execute(self) -> ValueType:
-        try:
-            expiration = self.database.get_expiration(self.key)
-            if expiration is None:
-                return -1
-            return expiration
-        except KeyError:
-            return -2
 
 
 @ServerCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
@@ -486,3 +458,13 @@ class DecrementBy(DatabaseCommand):
 
     def execute(self) -> ValueType:
         return increment_by(self.database, self.key, self.decrement * -1)
+
+
+@ServerCommandsRouter.command(b"getrange", [b"stream", b"write", b"fast"])
+class StringGetRange(Command):
+    key: bytes = positional_parameter()
+    start: int = positional_parameter()
+    end: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return 1

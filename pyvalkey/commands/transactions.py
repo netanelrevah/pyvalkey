@@ -22,4 +22,6 @@ class TransactionExecute(Command):
     def execute(self) -> ValueType:
         if self.client_context.transaction_commands is None:
             return RespError(b"ERR EXEC without MULTI")
-        return [command.execute() for command in self.client_context.transaction_commands]
+        results = [command.execute() for command in self.client_context.transaction_commands]
+        self.client_context.transaction_commands = None
+        return results

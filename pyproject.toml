@@ -28,6 +28,7 @@ pytest = "*"
 pytest-parametrization = "*"
 ruff = "*"
 sortedcontainers-stubs = "*"
+docker = "*"
 
 [build-system]
 requires = ["poetry-core"]

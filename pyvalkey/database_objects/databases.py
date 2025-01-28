@@ -40,7 +40,7 @@ MAX_BYTES = MaxBytes()
 @dataclass(slots=True)
 class KeyValue:
     key: bytes
-    value: ServerSortedSet | dict | StringType | set
+    value: ServerSortedSet | dict[bytes, Any] | StringType | set[bytes] | list[bytes]
     expiration: int | None = field(default=None)
 
     def __hash__(self) -> int:
@@ -243,19 +243,29 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
+MISSING = KeyValue(b"", {})
+
+
 @dataclass
 class Database:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
 
-    def pop(self, key: bytes) -> KeyValue | None:
+    def pop(self, key: bytes, default: KeyValue | None = MISSING) -> KeyValue | None:
         key_value = self.data.pop(key, None)
         if key_value is None:
-            return None
+            if default is MISSING:
+                raise IndexError()
+            return default
         if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
             self.key_with_expiration.discard(key_value)
             return None
         return key_value
+
+    def set_value(self, key: bytes, value: KeyValue, block_overwrite: bool = False) -> None:
+        if block_overwrite is True and key in self.data:
+            raise KeyError()
+        self.data[key] = value
 
     @classmethod
     def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
@@ -264,7 +274,7 @@ class Database:
         return key_value
 
     def typesafe_pop(self, key: bytes, type_: type) -> KeyValue | None:
-        key_value = self.pop(key)
+        key_value = self.pop(key, default=None)
         return self.check_type_ang_get(key_value, type_)
 
     def get(self, key: bytes) -> KeyValue | None:
@@ -274,6 +284,11 @@ class Database:
             self.key_with_expiration.remove(key_value)
             return None
         return key_value
+
+    def get_or_none(self, key: bytes) -> KeyValue | None:
+        if key not in self.data:
+            return None
+        return self.get(key)
 
     def typesafe_get(self, key: bytes, type_: type) -> KeyValue | None:
         key_value = self.get(key)

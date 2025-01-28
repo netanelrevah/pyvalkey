@@ -10,7 +10,7 @@ from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from pyvalkey.commands.strings_commands import Ping
+from pyvalkey.commands.string_commands import Ping
 from pyvalkey.database_objects.errors import ServerWrongNumberOfArgumentsError, ValkeySyntaxError
 
 
