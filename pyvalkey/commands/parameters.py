@@ -36,7 +36,8 @@ def server_parameter(
             metadata[ParameterMetadata.TOKEN] = metadata[ParameterMetadata.VALUES_MAPPING] = {
                 key.upper(): value for key, value in flag.items()
             }
-            default = None
+            if default == MISSING:
+                default = None
         else:
             metadata[ParameterMetadata.TOKEN] = flag.upper()
             metadata[ParameterMetadata.VALUES_MAPPING] = {
