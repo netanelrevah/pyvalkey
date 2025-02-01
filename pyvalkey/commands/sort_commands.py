@@ -2,7 +2,7 @@ from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.database_objects.databases import Database, KeyValue, ServerSortedSet, StringType
+from pyvalkey.database_objects.databases import Database, KeyValue, StringType, ValkeySortedSet
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import ValueType
 
@@ -40,11 +40,11 @@ class SortReadOnly(Command):
         if key_value is None:
             return None
 
-        if not isinstance(key_value.value, list | set | ServerSortedSet):
+        if not isinstance(key_value.value, list | set | ValkeySortedSet):
             raise ServerWrongTypeError(b"Operation against a key holding the wrong kind of value")
 
         values: list[bytes]
-        if isinstance(key_value.value, ServerSortedSet):
+        if isinstance(key_value.value, ValkeySortedSet):
             values = [member for score, member in key_value.value.members]
         else:
             values = list(key_value.value)

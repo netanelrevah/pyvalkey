@@ -25,7 +25,7 @@ class ConfigSet(Command):
 
     def execute(self) -> ValueType:
         for name, value in self.parameters_values:
-            self.configurations.set_values(name, value)
+            self.configurations.set_value(name, value)
         return RESP_OK
 
 

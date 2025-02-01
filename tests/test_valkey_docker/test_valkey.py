@@ -7,11 +7,16 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
     image, logs = client.images.build(path=".", rm=True)
 
-    tags += (tags + " -needs:debug").strip()
+    tags = (tags + " -needs:debug").strip()
+    command = (
+        f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
+    )
+
+    print(command)
+
     container = client.containers.run(
         image,
-        command=f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
-        + additional_args,
+        command=command + additional_args,
         detach=True,
     )
 
@@ -34,3 +39,7 @@ def test_sort(s: Valkey):
 
 def test_keyspace(s: Valkey):
     run_tests(s, tags="keyspace")
+
+
+def test_type_hash(s: Valkey):
+    run_tests(s, tags="hash")

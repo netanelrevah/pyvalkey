@@ -1,25 +1,90 @@
 import fnmatch
-from dataclasses import Field, dataclass, field, fields
+from dataclasses import Field, dataclass, field
 from hashlib import sha256
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal, TypeVar, dataclass_transform
 
-from pyvalkey.database_objects.utils import to_bytes
+
+@dataclass
+class ConfigurationFieldData:
+    type_: Literal["string", "password", "integer"] = "string"
+    alias: bytes | None = None
+    _name: bytes | None = None
+    _field_name: str | None = None
+
+    @property
+    def name(self) -> bytes:
+        if self._name is None:
+            raise ValueError()
+        return self._name
+
+    @name.setter
+    def name(self, value: bytes) -> None:
+        self._name = value
+
+    @property
+    def field_name(self) -> str:
+        if self._field_name is None:
+            raise ValueError()
+        return self._field_name
+
+    @field_name.setter
+    def field_name(self, value: str) -> None:
+        self._field_name = value
 
 
 def configuration(
-    default: int | bytes, type_: Literal["string", "password", "integer"] = "string", number_of_values: int = 1
+    default: int | bytes,
+    type_: Literal["string", "password", "integer"] = "string",
+    alias: bytes | None = None,
 ) -> Any:  # noqa:ANN401
     return field(
         default=default,
         metadata={
-            "type": type_,
-            "number_of_values": number_of_values,
+            "configuration": ConfigurationFieldData(type_, alias),
         },
     )
 
 
+@dataclass_transform()
 @dataclass
-class Configurations:
+class ConfigurationBase:
+    FIELD_BY_NAME: ClassVar[dict[bytes, ConfigurationFieldData]] = {}
+    CONFIGURATIONS_NAMES: ClassVar[list[bytes]] = []
+    ALIASES_TO_FIELDS_NAMES: ClassVar[dict[bytes, str]] = {}
+
+
+ConfigurationType = TypeVar("ConfigurationType", bound=ConfigurationBase)
+
+
+def configurations(cls: type[ConfigurationType]) -> type[ConfigurationType]:
+    for name, f in cls.__dict__.items():
+        if not isinstance(f, Field):
+            continue
+
+        configuration_field_data = f.metadata.get("configuration")
+        if configuration_field_data is None:
+            continue
+
+        configuration_field_data.field_name = name
+
+        try:
+            configuration_field_data.name
+        except ValueError:
+            configuration_field_data.name = name.replace("_", "-").encode()
+
+        cls.FIELD_BY_NAME[configuration_field_data.name] = configuration_field_data
+        cls.CONFIGURATIONS_NAMES.append(configuration_field_data.name)
+
+        if configuration_field_data.alias is not None:
+            cls.CONFIGURATIONS_NAMES.append(configuration_field_data.alias)
+            if configuration_field_data.alias in cls.FIELD_BY_NAME:
+                raise ValueError(f"only one alias ({configuration_field_data.alias}) allowed per configuration")
+            cls.FIELD_BY_NAME[configuration_field_data.alias] = configuration_field_data
+    return dataclass(cls)
+
+
+@configurations
+class Configurations(ConfigurationBase):
     requirepass: bytes = configuration(default=b"", type_="password")
     maxclients: bytes = configuration(default=b"10000")
     unixsocket: bytes = configuration(default=b"")
@@ -38,57 +103,53 @@ class Configurations:
     tls_port: bytes = configuration(default=b"0")
     tls_ca_cert_file: bytes = configuration(default=b"")
 
-    hash_max_ziplist_value: int = configuration(default=64, type_="integer")
+    hash_max_listpack_value: int = configuration(default=64, type_="integer", alias=b"hash-max-ziplist-value")
+    hash_max_listpack_entries: int = configuration(default=512, type_="integer", alias=b"hash-max-ziplist-entries")
 
+    set_max_listpack_value: int = configuration(default=64, type_="integer")
+    set_max_listpack_entries: int = configuration(default=128, type_="integer")
     set_max_intset_entries: int = configuration(default=512, type_="integer")
 
     list_compress_depth: int = configuration(default=0, type_="integer")
-    list_max_listpack_size: int = configuration(default=-2, type_="integer")
-    list_max_ziplist_size: int = configuration(default=2, type_="integer")
+    list_max_listpack_size: int = configuration(default=-2, type_="integer", alias=b"list-max-ziplist-size")
+
+    zset_max_listpack_value: int = configuration(default=64, type_="integer", alias=b"zset-max-ziplist-value")
+    zset_max_listpack_entries: int = configuration(default=128, type_="integer", alias=b"zset-max-ziplist-entries")
+
+    sanitize_dump_payload: bytes = configuration(default=b"yes")
 
     @classmethod
-    def get_number_of_values(cls, name: bytes) -> int:
-        field_name = name.decode().replace("-", "_")
-
-        try:
-            a_field: Field = cls.__dataclass_fields__[field_name]
-            return a_field.metadata["number_of_values"]
-        except KeyError:
-            return 0
+    def get_field_name(cls, name: bytes) -> str:
+        return cls.FIELD_BY_NAME[name].field_name
 
     @classmethod
-    def get_type(cls, name: bytes) -> str:
-        field_name = name.decode().replace("-", "_")
+    def get_configuration_type(cls, name: bytes) -> str:
+        if name in cls.FIELD_BY_NAME:
+            return cls.FIELD_BY_NAME[name].type_
+        return ""
 
-        try:
-            a_field: Field = cls.__dataclass_fields__[field_name]
-            return a_field.metadata["type"]
-        except KeyError:
-            return ""
-
-    def set_values(self, name: bytes, *values: bytes) -> None:
-        field_type = self.get_type(name)
-        field_name = name.decode().replace("-", "_")
+    def set_value(self, name: bytes, value: bytes) -> None:
+        field_name = self.get_field_name(name)
+        field_type = self.get_configuration_type(name)
 
         if field_type == "password":
-            (value,) = values
             setattr(self, field_name, sha256(value).hexdigest().encode())
         elif field_type == "integer":
-            (value,) = values
             setattr(self, field_name, int(value.decode()))
         else:
-            (value,) = values
             setattr(self, field_name, value)
 
     def get_names(self, *patterns: bytes) -> set[bytes]:
         names: set[bytes] = set([])
         for pattern in patterns:
-            names.update(set(fnmatch.filter((f.name.replace("_", "-").encode() for f in fields(self)), pattern)))
+            names.update(set(fnmatch.filter(self.CONFIGURATIONS_NAMES, pattern)))
         return names
 
     def info(self, names: set[bytes]) -> dict[bytes, bytes]:
-        return {
-            f.name.replace("_", "-").encode(): to_bytes(getattr(self, f.name))
-            for f in fields(self)
-            if f.name.replace("_", "-").encode() in names
-        }
+        info = {}
+        for name in names:
+            if name not in self.FIELD_BY_NAME:
+                continue
+            f = self.FIELD_BY_NAME[name]
+            info[name] = getattr(self, f.field_name)
+        return info

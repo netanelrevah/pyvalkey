@@ -227,12 +227,20 @@ class RespDumper:
 class Resp2Dumper(RespDumper):
     writer: BinaryIO | IOBase | Transport
 
-    def dump_bulk_string(self, value: AnyStr) -> None:
+    @classmethod
+    def dumps_float(cls, value: float) -> bytes:
+        return cls.dumps_bulk_string(f"{value:.17f}".rstrip("0").rstrip("."))
+
+    @classmethod
+    def dumps_bulk_string(cls, value: str | bytes) -> bytes:
         if isinstance(value, str):
             bytes_value = value.encode()
         else:
             bytes_value = value
-        self.writer.write(b"$" + str(len(bytes_value)).encode() + b"\r\n" + bytes_value + b"\r\n")
+        return b"$" + str(len(bytes_value)).encode() + b"\r\n" + bytes_value + b"\r\n"
+
+    def dump_bulk_string(self, value: AnyStr) -> None:
+        self.writer.write(self.dumps_bulk_string(value))
 
     def dump_string(self, value: AnyStr) -> None:
         if isinstance(value, str):
@@ -255,15 +263,13 @@ class Resp2Dumper(RespDumper):
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.dump_bulk_string(f"{value:g}")
+            self.writer.write(self.dumps_float(value))
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
             self.writer.write(f"-{value.decode()}\r\n".encode())
         elif isinstance(value, str | bytes):
-            if isinstance(value, str):
-                value = value.encode()
-            self.dump_bulk_string(value)
+            self.writer.write(self.dumps_bulk_string(value))
         elif isinstance(value, list):
             self.dump_array(value)
         elif isinstance(value, set):
@@ -281,13 +287,6 @@ class Resp2Dumper(RespDumper):
 class Resp3Dumper(RespDumper):
     writer: BinaryIO | IOBase | Transport
 
-    def dump_bulk_string(self, value: AnyStr) -> None:
-        if isinstance(value, str):
-            bytes_value = value.encode()
-        else:
-            bytes_value = value
-        self.writer.write(b"$" + str(len(bytes_value)).encode() + b"\r\n" + bytes_value + b"\r\n")
-
     def dump_string(self, value: AnyStr) -> None:
         if isinstance(value, str):
             bytes_value = value.encode()
@@ -303,7 +302,7 @@ class Resp3Dumper(RespDumper):
     def dump_map(self, value: dict) -> None:
         self.writer.write(f"%{len(value)}\r\n".encode())
         for k, v in value.items():
-            self.dump(k)
+            self.dump_string(k)
             self.dump(v)
 
     def dump(self, value: ValueType) -> None:
@@ -315,15 +314,13 @@ class Resp3Dumper(RespDumper):
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.dump_bulk_string(f"{value:g}")
+            self.writer.write(Resp2Dumper.dumps_float(value))
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
             self.writer.write(f"-{value.decode()}\r\n".encode())
         elif isinstance(value, str | bytes):
-            if isinstance(value, str):
-                value = value.encode()
-            self.dump_bulk_string(value)
+            self.writer.write(Resp2Dumper.dumps_bulk_string(value))
         elif isinstance(value, list):
             self.dump_array(value)
         elif isinstance(value, set):
@@ -331,7 +328,7 @@ class Resp3Dumper(RespDumper):
         elif isinstance(value, dict):
             self.dump_map(value)
         elif value is None:
-            self.writer.write(b"$-1\r\n")
+            self.writer.write(b"_\r\n")
 
 
 def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: RespProtocolVersion) -> None:

@@ -43,10 +43,10 @@ class ParameterParser:
     def create(cls, parameter_field: Field, parameter_type: Any, is_multi: bool = False) -> ParameterParser:  # noqa: ANN401
         parameter_type = cls._extract_optional_type(parameter_type)
 
+        parse_error = parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR)
+
         if isinstance(parameter_type, type) and issubclass(parameter_type, Enum):
-            return EnumParameterParser(
-                parameter_type, parse_error=parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR)
-            )
+            return EnumParameterParser(parameter_type, parse_error=parse_error)
 
         if is_dataclass(parameter_type):
             return ObjectParser.create_from_object(parameter_type)
@@ -63,7 +63,7 @@ class ParameterParser:
                     )
                 )
             case int():
-                return IntParameterParser()
+                return IntParameterParser(parse_error=parse_error)
             case float():
                 return FloatParameterParser()
             case list():
@@ -170,11 +170,16 @@ class TupleParameterParser(ParameterParser):
         return cls(tuple(parameter_parser_tuple))
 
 
+@dataclass
 class IntParameterParser(ParameterParser):
+    parse_error: bytes | None = None
+
     def parse(self, parameters: list[bytes]) -> int:
         try:
             return int(self.next_parameter(parameters))
         except ValueError:
+            if self.parse_error is not None:
+                raise ServerError(self.parse_error)
             raise ServerError(b"ERR value is not an integer or out of range")
 
 

@@ -26,6 +26,9 @@ class ServerContext:
     configurations: Configurations = field(default_factory=Configurations)
     information: Information = field(default_factory=Information)
 
+    def __post_init__(self) -> None:
+        self.information.server_context = self
+
     is_paused: bool = False
     pause_timeout: float = 0
 

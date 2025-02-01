@@ -25,7 +25,6 @@ from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     RouterKeyError,
     ServerError,
-    ServerInvalidIntegerError,
     ServerWrongNumberOfArgumentsError,
     ServerWrongTypeError,
     ValkeySyntaxError,
@@ -173,8 +172,6 @@ class ValkeyClientProtocol(asyncio.Protocol):
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
         except ValkeySyntaxError:
             self.dump(RespError(b"ERR syntax error"))
-        except ServerInvalidIntegerError:
-            self.dump(RespError(b"ERR hash value is not an integer"))
         except CommandPermissionError as e:
             if not self.current_user:
                 raise e
