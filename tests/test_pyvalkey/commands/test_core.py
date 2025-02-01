@@ -10,7 +10,7 @@ from pyvalkey.commands.keyspace_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
 from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from pyvalkey.commands.strings_commands import Ping
+from pyvalkey.commands.string_commands import Ping
 from pyvalkey.database_objects.errors import ServerWrongNumberOfArgumentsError, ValkeySyntaxError
 
 
@@ -68,13 +68,17 @@ class ListCommand(Command):
     name="",
     parameters=b"myzset 2 two 3 three".split(),
     command_cls=SortedSetAdd,
-    expected_kwargs={"key": b"myzset", "scores_members": [(2, b"two"), (3, b"three")]},
+    expected_kwargs={"key": b"myzset", "scores_members": [(b"2", b"two"), (b"3", b"three")]},
 )
 @Parametrization.case(
     name="",
     parameters=b"myzset NX 2 two 3 three".split(),
     command_cls=SortedSetAdd,
-    expected_kwargs={"key": b"myzset", "scores_members": [(2, b"two"), (3, b"three")], "add_mode": AddMode.INSERT_ONLY},
+    expected_kwargs={
+        "key": b"myzset",
+        "scores_members": [(b"2", b"two"), (b"3", b"three")],
+        "add_mode": AddMode.INSERT_ONLY,
+    },
 )
 @Parametrization.case(
     name="",

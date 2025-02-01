@@ -30,9 +30,5 @@ class ValkeySyntaxError(ServerError):
     pass
 
 
-class ServerInvalidIntegerError(ServerError):
-    pass
-
-
 class ServerWrongNumberOfArgumentsError(ServerError):
     pass

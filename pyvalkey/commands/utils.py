@@ -1,3 +1,22 @@
+import re
+
+NUMERIC_REGEX = re.compile(r"^-?\d+(\.\d*)?$")
+INTEGER_REGEX = re.compile(r"^-?\d+$")
+FLOATING_POINT_REGEX = NUMERIC_REGEX
+
+
+def is_numeric(value: bytes | str) -> bool:
+    return NUMERIC_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+
+
+def is_integer(value: bytes | str) -> bool:
+    return INTEGER_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+
+
+def is_floating_point(value: bytes | str) -> bool:
+    return FLOATING_POINT_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+
+
 def parse_range_parameters(start: int, stop: int, is_reversed: bool = False) -> slice:
     if not is_reversed:
         python_start = start

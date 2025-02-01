@@ -27,7 +27,8 @@ jobs:
       - working-directory: ./valkey
         run: sudo apt-get install tcl8.6 tclx
       - working-directory: ./valkey
-        run: ./runtest --verbose --host localhost --port 6379 --dump-logs
+        run: ./runtest --host localhost --port 6379 --verbose --dump-logs --tags "-needs:debug"
+        timeout-minutes: 5
 
   valkey-py:
     runs-on: ubuntu-latest

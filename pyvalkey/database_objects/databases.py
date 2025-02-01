@@ -37,17 +37,7 @@ class MaxBytes(bytes):
 MAX_BYTES = MaxBytes()
 
 
-@dataclass(slots=True)
-class KeyValue:
-    key: bytes
-    value: ServerSortedSet | dict | StringType | set
-    expiration: int | None = field(default=None)
-
-    def __hash__(self) -> int:
-        return hash(self.key)
-
-
-@dataclass
+@dataclass()
 class StringType:
     value: bytes = b""
 
@@ -136,7 +126,7 @@ class RangeLimit:
     count: int = positional_parameter()
 
 
-class ServerSortedSet:
+class ValkeySortedSet:
     def __init__(self, members_and_scores: Iterable[tuple[bytes, float]] | None = None) -> None:
         members_and_scores = members_and_scores or []
         self.members = SortedSet({(score, member) for member, score in members_and_scores})
@@ -243,19 +233,80 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
+KeyValueType = ValkeySortedSet | dict[bytes, bytes] | StringType | set[bytes] | list[bytes]
+
+
+@dataclass(slots=True)
+class KeyValue:
+    key: bytes
+    value: KeyValueType
+    expiration: int | None = field(default=None)
+
+    def __hash__(self) -> int:
+        return hash(self.key)
+
+    def copy(self, new_key: bytes) -> KeyValue:
+        new_value: KeyValueType
+        if isinstance(self.value, StringType):
+            new_value = StringType(self.value.value)
+        elif isinstance(self.value, dict):
+            new_value = dict(self.value)
+        elif isinstance(self.value, ValkeySortedSet):
+            new_value = ValkeySortedSet(self.value.members_scores.items())
+        elif isinstance(self.value, list):
+            new_value = list(self.value)
+        elif isinstance(self.value, set):
+            new_value = set(self.value)
+        else:
+            raise NotImplementedError(f"copy of {type(self.value)} not implemented")
+
+        return KeyValue(new_key, new_value, self.expiration)
+
+
+MISSING = KeyValue(b"", {})
+
+
 @dataclass
 class Database:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
 
-    def pop(self, key: bytes) -> KeyValue | None:
+    def rename_unsafely(self, key: bytes, new_key: bytes) -> None:
+        key_value = self.data.pop(key)
+        if key_value.expiration is not None:
+            self.key_with_expiration.discard(key_value)
+
+        if new_key in self.data:
+            new_key_value = self.data.pop(new_key)
+            if new_key_value.expiration is not None:
+                self.key_with_expiration.discard(new_key_value)
+
+        key_value.key = new_key
+        self.data[new_key] = key_value
+        if key_value.expiration is not None:
+            self.key_with_expiration.add(key_value)
+
+    def copy_from(self, key_value: KeyValue, new_key: bytes) -> None:
+        self.data[new_key] = key_value.copy(new_key)
+        if key_value.expiration:
+            self.key_with_expiration.add(key_value)
+
+    def pop(self, key: bytes, default: KeyValue | None = MISSING) -> KeyValue | None:
         key_value = self.data.pop(key, None)
         if key_value is None:
-            return None
-        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
+            if default is MISSING:
+                raise IndexError()
+            return default
+        if key_value.expiration is not None:
             self.key_with_expiration.discard(key_value)
-            return None
+            if int(time.time() * 1000) > key_value.expiration:
+                return None
         return key_value
+
+    def set_value(self, key: bytes, value: KeyValue, block_overwrite: bool = False) -> None:
+        if block_overwrite is True and key in self.data:
+            raise KeyError()
+        self.data[key] = value
 
     @classmethod
     def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
@@ -264,7 +315,7 @@ class Database:
         return key_value
 
     def typesafe_pop(self, key: bytes, type_: type) -> KeyValue | None:
-        key_value = self.pop(key)
+        key_value = self.pop(key, default=None)
         return self.check_type_ang_get(key_value, type_)
 
     def get(self, key: bytes) -> KeyValue | None:
@@ -275,11 +326,16 @@ class Database:
             return None
         return key_value
 
+    def get_or_none(self, key: bytes) -> KeyValue | None:
+        if key not in self.data:
+            return None
+        return self.get(key)
+
     def typesafe_get(self, key: bytes, type_: type) -> KeyValue | None:
         key_value = self.get(key)
         return self.check_type_ang_get(key_value, type_)
 
-    def unsafe_get(self, key: bytes) -> KeyValue:
+    def get_unsafely(self, key: bytes) -> KeyValue:
         if key not in self.data:
             raise KeyError()
         key_value = self.data[key]
@@ -291,17 +347,18 @@ class Database:
 
     def set_persist(self, key: bytes) -> bool:
         try:
-            key_value = self.unsafe_get(key)
+            key_value = self.get_unsafely(key)
         except KeyError:
             return False
 
-        self.key_with_expiration.remove(key_value)
+        if key_value.expiration is not None:
+            self.key_with_expiration.remove(key_value)
         key_value.expiration = None
         return True
 
     def set_expiration(self, key: bytes, expiration_milliseconds: int) -> bool:
         try:
-            key_value = self.unsafe_get(key)
+            key_value = self.get_unsafely(key)
         except KeyError:
             return False
 
@@ -311,7 +368,7 @@ class Database:
 
     def set_expiration_at(self, key: bytes, expiration_milliseconds_at: int) -> bool:
         try:
-            key_value = self.unsafe_get(key)
+            key_value = self.get_unsafely(key)
         except KeyError:
             return False
 
@@ -371,20 +428,26 @@ class Database:
     def get_or_create_hash_table(self, key: bytes) -> dict:
         return self.typesafe_get_or_create(key, dict)
 
+    def get_or_none_hash_table(self, key: bytes) -> dict:
+        return self.get_or_none_by_type(key, dict)
+
     def get_list(self, key: bytes) -> list:
         return self.get_by_type(key, list)
 
     def get_or_create_list(self, key: bytes) -> list:
         return self.typesafe_get_or_create(key, list)
 
-    def get_sorted_set(self, key: bytes) -> ServerSortedSet:
-        return self.get_by_type(key, ServerSortedSet)
+    def get_sorted_set(self, key: bytes) -> ValkeySortedSet:
+        return self.get_by_type(key, ValkeySortedSet)
 
-    def get_or_create_sorted_set(self, key: bytes) -> ServerSortedSet:
-        return self.typesafe_get_or_create(key, ServerSortedSet)
+    def get_or_create_sorted_set(self, key: bytes) -> ValkeySortedSet:
+        return self.typesafe_get_or_create(key, ValkeySortedSet)
 
     def get_set(self, key: bytes) -> set:
         return self.get_by_type(key, set)
+
+    def get_set_or_none(self, key: bytes) -> set:
+        return self.get_or_none_by_type(key, set)
 
     def get_or_create_set(self, key: bytes) -> set:
         return self.typesafe_get_or_create(key, set)

@@ -1,9 +1,15 @@
-from pyvalkey.commands.parameters import positional_parameter
+import random
+
+from pyvalkey.commands.consts import LONG_MAX
+from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.commands.strings_commands import DatabaseCommand
+from pyvalkey.commands.string_commands import DatabaseCommand
+from pyvalkey.commands.utils import is_numeric
 from pyvalkey.database_objects.databases import Database
-from pyvalkey.database_objects.errors import ServerInvalidIntegerError
-from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.database_objects.utils import flatten
+from pyvalkey.resp import RESP_OK, RespProtocolVersion, ValueType
 
 
 def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, increment: int | float) -> dict:
@@ -12,7 +18,11 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
     if field not in hash_get:
         hash_get[field] = 0
     if not isinstance(hash_get[field], int | float):
-        raise ServerInvalidIntegerError
+        if not is_numeric(hash_get[field]):
+            raise ServerError(b"ERR hash value is not an " + (b"integer" if isinstance(increment, int) else b"float"))
+        hash_get[field] = type(increment)(hash_get[field])
+    if not -LONG_MAX < hash_get[field] + increment < LONG_MAX:
+        raise ServerError(b"ERR increment or decrement would overflow")
     hash_get[field] += increment
     return hash_get[field]
 
@@ -117,9 +127,17 @@ class HashMapDelete(DatabaseCommand):
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_hash_table(self.key)
+        hash_map = self.database.get_or_none_hash_table(self.key)
 
-        return sum([1 if hash_map.pop(f, None) is not None else 0 for f in self.fields])
+        if hash_map is None:
+            return 0
+
+        result = sum([1 if hash_map.pop(f, None) is not None else 0 for f in self.fields])
+
+        if not hash_map:
+            self.database.pop(self.key)
+
+        return result
 
 
 @ServerCommandsRouter.command(b"hset", [b"write", b"hash", b"fast"])
@@ -138,6 +156,21 @@ class HashMapSet(DatabaseCommand):
         return added_fields
 
 
+@ServerCommandsRouter.command(b"hsetnx", [b"write", b"hash", b"fast"])
+class HashMapSetIfNotExists(DatabaseCommand):
+    key: bytes = positional_parameter()
+    field: bytes = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        hash_map = self.database.get_or_create_hash_table(self.key)
+
+        if self.field in hash_map:
+            return False
+        hash_map[self.field] = self.value
+        return True
+
+
 @ServerCommandsRouter.command(b"hmset", [b"write", b"hash", b"fast"])
 class HashMapSetMultiple(DatabaseCommand):
     key: bytes = positional_parameter()
@@ -149,3 +182,40 @@ class HashMapSetMultiple(DatabaseCommand):
         for field, value in self.fields_values:
             hash_map[field] = value
         return RESP_OK
+
+
+@ServerCommandsRouter.command(b"hrandfield", [b"write", b"hash", b"fast"])
+class HashRandomField(DatabaseCommand):
+    protocol: RespProtocolVersion = server_command_dependency()
+
+    key: bytes = positional_parameter()
+    count: int | None = positional_parameter(default=None)
+    with_values: bool = keyword_parameter(flag=b"WITHVALUES", default=False)
+
+    def execute(self) -> ValueType:
+        hash_map = self.database.get_or_create_hash_table(self.key)
+
+        if self.count is None:
+            if not hash_map:
+                return None
+            return random.choice(list(hash_map.keys()))
+
+        if not hash_map:
+            return [] if not self.with_values else {}
+
+        if self.count > LONG_MAX / 2 or self.count < -LONG_MAX / 2:
+            raise ServerError(b"ERR value is out of range")
+
+        keys = list(hash_map.keys())
+        if self.count > 0:
+            random.shuffle(keys)
+            keys = keys[0 : self.count]
+        else:
+            keys = random.choices(keys, k=abs(self.count))
+
+        if not self.with_values:
+            return keys
+
+        if self.protocol == RespProtocolVersion.RESP3:
+            return [[key, hash_map[key]] for key in keys]
+        return list(flatten([[key, hash_map[key]] for key in keys]))

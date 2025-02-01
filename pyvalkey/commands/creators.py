@@ -10,6 +10,7 @@ from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.information import Information
+from pyvalkey.resp import RespProtocolVersion
 
 if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
@@ -42,6 +43,8 @@ class CommandCreator:
                 command_kwargs[command_dependency.name] = client_context.server_context.information
             elif command_dependency_type == Configurations:
                 command_kwargs[command_dependency.name] = client_context.server_context.configurations
+            elif command_dependency_type == RespProtocolVersion:
+                command_kwargs[command_dependency.name] = client_context.protocol
             else:
                 raise TypeError()
 

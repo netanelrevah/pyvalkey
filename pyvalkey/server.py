@@ -16,6 +16,7 @@ from typing import cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.transactions import TransactionExecute
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
@@ -24,12 +25,11 @@ from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     RouterKeyError,
     ServerError,
-    ServerInvalidIntegerError,
     ServerWrongNumberOfArgumentsError,
     ServerWrongTypeError,
     ValkeySyntaxError,
 )
-from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespQueryParser, RespSyntaxError, ValueType, dump
+from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
     _client_context: ClientContext | None = None
     data: BytesIO = field(default_factory=BytesIO)
 
-    _resp_query_parser: RespQueryParser = field(default_factory=RespQueryParser)
+    _resp_query_parser: RespParser = field(default_factory=RespParser)
+
+    parser_task: asyncio.Task | None = None
 
     @property
     def configurations(self) -> Configurations:
@@ -86,12 +88,14 @@ class ValkeyClientProtocol(asyncio.Protocol):
         host, port = transport.get_extra_info("peername")
         self._client_context = ClientContext.create(self.server_context, host, port)
 
+        self.parser_task = asyncio.create_task(self.parse())
+
     def connection_lost(self, exception: Exception | None) -> None:
         del self.clients[self.current_client.client_id]
 
     def dump(self, value: ValueType) -> None:
         dumped = BytesIO()
-        dump(value, dumped)
+        dump(value, dumped, self.client_context.protocol)
         print(self.current_client.client_id, "result", dumped.getvalue()[:100])
 
         if self.current_client.reply_mode == "skip":
@@ -101,22 +105,29 @@ class ValkeyClientProtocol(asyncio.Protocol):
         if self.current_client.reply_mode == "off":
             return
 
-        dump(value, self.transport)
+        dump(value, self.transport, self.client_context.protocol)
+
+    async def parse(self) -> None:
+        try:
+            async for query in self._resp_query_parser:
+                self.handle(query)
+        except RespSyntaxError as e:
+            if e.args:
+                self.dump(RespError(e.args[0]))
+            self.cancel()
+        except RespFatalError:
+            self.cancel()
+
+    def cancel(self) -> None:
+        self.transport.close()
+        if self.parser_task:
+            self.parser_task.cancel()
 
     def data_received(self, data: bytes) -> None:
         try:
             self._resp_query_parser.feed(data)
-        except RespSyntaxError as e:
-            if e.args:
-                self.dump(RespError(e.args[0]))
-            self.transport.close()
-            return
         except RespFatalError:
-            self.transport.close()
-            return
-
-        while self._resp_query_parser.ready_queries:
-            self.handle(self._resp_query_parser.ready_queries.pop(0))
+            self.cancel()
 
     def handle(self, command: list[bytes]) -> None:
         if not command:
@@ -124,6 +135,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         if command[0] == b"QUIT":
             self.dump(RESP_OK)
             self.transport.close()
+            return
 
         self.server_context.information.total_commands_processed += 1
 
@@ -131,6 +143,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
         try:
             routed_command = self.router.route(list(command), self.client_context)
+
+            if self.client_context.transaction_commands is not None and not isinstance(
+                routed_command, TransactionExecute
+            ):
+                self.client_context.transaction_commands.append(routed_command)
+                self.dump("QUEUED")
+                return
 
             if self.current_user:
                 self.current_user.check_permissions(routed_command)
@@ -153,8 +172,6 @@ class ValkeyClientProtocol(asyncio.Protocol):
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
         except ValkeySyntaxError:
             self.dump(RespError(b"ERR syntax error"))
-        except ServerInvalidIntegerError:
-            self.dump(RespError(b"ERR hash value is not an integer"))
         except CommandPermissionError as e:
             if not self.current_user:
                 raise e

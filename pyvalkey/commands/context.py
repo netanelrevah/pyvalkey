@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import itertools
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.information import Information
+from pyvalkey.resp import RespProtocolVersion
+
+if TYPE_CHECKING:
+    from pyvalkey.commands.core import Command
 
 
 @dataclass
@@ -19,6 +25,9 @@ class ServerContext:
     clients: ClientList = field(default_factory=ClientList)
     configurations: Configurations = field(default_factory=Configurations)
     information: Information = field(default_factory=Information)
+
+    def __post_init__(self) -> None:
+        self.information.server_context = self
 
     is_paused: bool = False
     pause_timeout: float = 0
@@ -31,6 +40,10 @@ class ClientContext:
 
     current_database: int = 0
     current_user: ACLUser | None = None
+
+    transaction_commands: list[Command] | None = None
+
+    protocol: RespProtocolVersion = RespProtocolVersion.RESP2
 
     @property
     def database(self) -> Database:

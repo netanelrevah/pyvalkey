@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 
 from pyvalkey.commands.parameters import (
@@ -5,13 +6,14 @@ from pyvalkey.commands.parameters import (
     positional_parameter,
 )
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.commands.strings_commands import DatabaseCommand
+from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import (
     MAX_BYTES,
     Database,
     RangeLimit,
 )
+from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
 
 
@@ -117,12 +119,21 @@ class SortedSetAdd(DatabaseCommand):
     )
     return_changed_elements: bool = keyword_parameter(flag=b"CH")
     increment_mode: bool = keyword_parameter(flag=b"INCR")
-    scores_members: list[tuple[int, bytes]] = positional_parameter()
+    scores_members: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
         z = self.database.get_or_create_sorted_set(self.key)
         length_before = len(z)
-        for score, member in self.scores_members:
+        for score_bytes, member in self.scores_members:
+            if score_bytes == b"+inf":
+                score = math.inf
+            elif score_bytes == b"-inf":
+                score = -math.inf
+            else:
+                try:
+                    score = float(score_bytes)
+                except ValueError:
+                    raise ServerError(b"ERR value is not valid float")
             z.add(score, member)
         return len(z) - length_before
 

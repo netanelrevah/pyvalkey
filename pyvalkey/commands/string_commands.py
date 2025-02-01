@@ -1,4 +1,3 @@
-import fnmatch
 import operator
 from enum import Enum
 from functools import reduce
@@ -77,7 +76,7 @@ class Exists(DatabaseCommand):
     keys: list[bytes] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        return sum(1 for key in self.keys if self.database.get_string_or_none(key) is not None)
+        return sum(1 for key in self.keys if self.database.get_or_none(key) is not None)
 
 
 @ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])
@@ -122,34 +121,6 @@ class GetExpire(DatabaseCommand):
         return s.value
 
 
-@ServerCommandsRouter.command(b"ttl", [b"write", b"string", b"fast"])
-class TimeToLive(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"R")
-
-    def execute(self) -> ValueType:
-        try:
-            expiration = self.database.get_expiration(self.key)
-            if expiration is None:
-                return -1
-            return expiration // 1000
-        except KeyError:
-            return -2
-
-
-@ServerCommandsRouter.command(b"pttl", [b"write", b"string", b"fast"])
-class TimeToLiveMilliseconds(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"R")
-
-    def execute(self) -> ValueType:
-        try:
-            expiration = self.database.get_expiration(self.key)
-            if expiration is None:
-                return -1
-            return expiration
-        except KeyError:
-            return -2
-
-
 @ServerCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
 class Set(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
@@ -159,9 +130,7 @@ class Set(DatabaseCommand):
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
 
-    def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
-
+    def get_one_and_only_token(self) -> str | None:
         fields_names = ["ex", "px", "exat", "pxat"]
 
         filled = list(map(bool, [getattr(self, name) for name in fields_names]))
@@ -170,12 +139,22 @@ class Set(DatabaseCommand):
 
         if True in filled:
             name = fields_names[filled.index(True)]
-            value = getattr(self, name)
 
-            if name in ["ex", "px"]:
-                self.database.set_expiration(self.key, value * (1000 if name == "ex" else 1))
-            if name in ["exat", "pxat"]:
-                self.database.set_expiration_at(self.key, value * (1000 if name == "exat" else 1))
+            return name
+
+        return None
+
+    def execute(self) -> ValueType:
+        s = self.database.get_or_create_string(self.key)
+
+        if token_name := self.get_one_and_only_token():
+            token_value = getattr(self, token_name)
+            if token_name in ["ex", "px"]:
+                self.database.set_expiration(self.key, token_value * (1000 if token_name == "ex" else 1))
+            if token_name in ["exat", "pxat"]:
+                self.database.set_expiration_at(self.key, token_value * (1000 if token_name == "exat" else 1))
+        else:
+            self.database.set_persist(self.key)
 
         s.value = self.value
         return RESP_OK
@@ -285,24 +264,7 @@ class Delete(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len([1 for _ in filter(None, [self.database.data.pop(key, None) for key in self.keys])])
-
-
-@ServerCommandsRouter.command(b"expire", [b"keyspace", b"write", b"fast"])
-class Expire(DatabaseCommand):
-    key: bytes = positional_parameter()
-    seconds: int = positional_parameter()
-
-    def execute(self) -> ValueType:
-        return self.database.set_expiration(self.key, self.seconds)
-
-
-@ServerCommandsRouter.command(b"keys", [b"keyspace", b"read", b"slow", b"dangerous"])
-class Keys(DatabaseCommand):
-    pattern: bytes = positional_parameter()
-
-    def execute(self) -> ValueType:
-        return list(fnmatch.filter(self.database.data.keys(), self.pattern))
+        return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
 
 
 @ServerCommandsRouter.command(b"dbsize", [b"keyspace", b"read", b"fast"])
@@ -486,3 +448,13 @@ class DecrementBy(DatabaseCommand):
 
     def execute(self) -> ValueType:
         return increment_by(self.database, self.key, self.decrement * -1)
+
+
+@ServerCommandsRouter.command(b"getrange", [b"stream", b"write", b"fast"])
+class StringGetRange(Command):
+    key: bytes = positional_parameter()
+    start: int = positional_parameter()
+    end: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return 1
