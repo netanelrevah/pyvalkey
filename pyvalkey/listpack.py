@@ -3,7 +3,12 @@ from __future__ import annotations
 from array import array
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
+
+if TYPE_CHECKING:
+    int_array = array[int]
+else:
+    int_array = array
 
 
 @dataclass
@@ -12,10 +17,10 @@ class Listpack:
     HEADER_SIZE = 6
     HEADER_NUMBER_OF_ELEMENTS_UNKNOWN = 0xFFFF
 
-    data: array[int] = field(default_factory=lambda: array("B", [7, 0, 0, 0, 0, 0, Listpack.EOF]))
+    data: int_array = field(default_factory=lambda: array("B", [7, 0, 0, 0, 0, 0, Listpack.EOF]))
 
     @staticmethod
-    def get_word_value(data: array[int], index: int = 0) -> int:
+    def get_word_value(data: int_array, index: int = 0) -> int:
         return (data[index] << 0) | (data[index + 1] << 8) | (data[index + 2] << 16) | (data[index + 3] << 24)
 
     @property
@@ -267,7 +272,7 @@ class ListpackElement:
         return self.parent.get_next(self.element_index)
 
     @classmethod
-    def encode(cls, value: bytes | int) -> array[int]:
+    def encode(cls, value: bytes | int) -> int_array:
         raise NotImplementedError()
 
 
@@ -290,11 +295,11 @@ class IntListpackElement(ListpackElement):
         return int(cls.uint_to_int(cls.get_unsigned_value(instance, index)))
 
     @classmethod
-    def encode(cls, value: bytes | int) -> array[int]:
+    def encode(cls, value: bytes | int) -> int_array:
         return cls.encode_int(int(value))
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
+    def encode_int(cls, value: int) -> int_array:
         raise NotImplementedError()
 
 
@@ -323,26 +328,26 @@ class BytesListpackElement(ListpackElement):
         raise NotImplementedError()
 
     @classmethod
-    def encode(cls, value: bytes | int) -> array[int]:
+    def encode(cls, value: bytes | int) -> int_array:
         if isinstance(value, int):
             raise ValueError()
         return cls.encode_string(value)
 
     @classmethod
-    def encode_string(cls, value: bytes) -> array[int]:
+    def encode_string(cls, value: bytes) -> int_array:
         raise NotImplementedError()
 
     @classmethod
-    def encode_back_length(cls, length: int) -> array[int]:
+    def encode_back_length(cls, length: int) -> int_array:
         if length <= cls.BACK_LENGTH_MAX_SIZE_BYTE:
-            return array[int](
+            return int_array(
                 "B",
                 [
                     length,
                 ],
             )
         if length <= cls.BACK_LENGTH_MAX_SIZE_2_BYTES:
-            return array[int](
+            return int_array(
                 "B",
                 [
                     length >> 7,
@@ -350,7 +355,7 @@ class BytesListpackElement(ListpackElement):
                 ],
             )
         if length <= cls.BACK_LENGTH_MAX_SIZE_3_BYTES:
-            return array[int](
+            return int_array(
                 "B",
                 [
                     length >> 14,
@@ -359,7 +364,7 @@ class BytesListpackElement(ListpackElement):
                 ],
             )
         if length <= cls.BACK_LENGTH_MAX_SIZE_4_BYTES:
-            return array[int](
+            return int_array(
                 "B",
                 [
                     length >> 21,
@@ -369,7 +374,7 @@ class BytesListpackElement(ListpackElement):
                 ],
             )
 
-        return array[int](
+        return int_array(
             "B",
             [
                 length >> 28,
@@ -393,8 +398,8 @@ class Listpack7BitUint(IntListpackElement):
         return instance.data[index]
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
-        return array[int](
+    def encode_int(cls, value: int) -> int_array:
+        return int_array(
             "B",
             [
                 int(value),
@@ -413,8 +418,8 @@ class Listpack6BitString(BytesListpackElement):
         return instance.data[index] & 0x3F
 
     @classmethod
-    def encode_string(cls, value: bytes) -> array[int]:
-        encoded = array[int]("B", [len(value) | cls.FLAG])
+    def encode_string(cls, value: bytes) -> int_array:
+        encoded = int_array("B", [len(value) | cls.FLAG])
         encoded.frombytes(value)
         encoded.append(len(value) + cls.HEADER_LENGTH)
         return encoded
@@ -433,10 +438,10 @@ class Listpack13BitInt(IntListpackElement):
         return ((instance.data[index] & cls.UNMASK) << 8) | instance.data[index + 1]
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
+    def encode_int(cls, value: int) -> int_array:
         value_bytes = value.to_bytes(2, signed=True)
 
-        return array[int](
+        return int_array(
             "B",
             [
                 value_bytes[0] | cls.FLAG,
@@ -456,8 +461,8 @@ class Listpack12BitString(BytesListpackElement):
         return ((instance.data[index] & 0xF) << 8) | instance.data[index + 1]
 
     @classmethod
-    def encode_string(cls, value: bytes) -> array[int]:
-        encoded = array[int](
+    def encode_string(cls, value: bytes) -> int_array:
+        encoded = int_array(
             "B",
             [(len(value) >> 8) | cls.FLAG, len(value) & 0xFF],
         )
@@ -472,8 +477,8 @@ class Listpack16BitInt(IntListpackElement):
     ENTRY_SIZE = 4
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
-        return array[int](
+    def encode_int(cls, value: int) -> int_array:
+        return int_array(
             "B",
             [cls.FLAG, (value & 0xFF), value >> 8, 3],
         )
@@ -485,8 +490,8 @@ class Listpack24BitInt(IntListpackElement):
     ENTRY_SIZE = 5
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
-        return array[int](
+    def encode_int(cls, value: int) -> int_array:
+        return int_array(
             "B",
             [
                 cls.FLAG,
@@ -511,8 +516,8 @@ class Listpack32BitInt(IntListpackElement):
         return listpack.get_word_value(instance.data, index)
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
-        return array[int](
+    def encode_int(cls, value: int) -> int_array:
+        return int_array(
             "B",
             [cls.FLAG, (value & 0xFF), (value >> 8) & 0xFF, (value >> 16) & 0xFF, (value >> 24), 5],
         )
@@ -539,8 +544,8 @@ class Listpack64BitInt(IntListpackElement):
         )
 
     @classmethod
-    def encode_int(cls, value: int) -> array[int]:
-        return array[int](
+    def encode_int(cls, value: int) -> int_array:
+        return int_array(
             "B",
             [
                 cls.FLAG,
@@ -567,8 +572,8 @@ class Listpack32BitString(BytesListpackElement):
         return listpack.get_word_value(instance.data, index + 1)
 
     @classmethod
-    def encode_string(cls, value: bytes) -> array[int]:
-        encoded = array[int](
+    def encode_string(cls, value: bytes) -> int_array:
+        encoded = int_array(
             "B",
             [
                 cls.FLAG,
