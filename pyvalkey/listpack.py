@@ -41,6 +41,31 @@ class Listpack:
     def append(self, value: bytes | int) -> None:
         self.insert_by_data_index(len(self.data) - 1, value)
 
+    def pop_by_data_index(self, data_index: int) -> bytes | int:
+        element_index = data_index
+        element = self.get_by_index(element_index)
+
+        element_size = self.get_encoded_size_unsafe(element_index)
+        element_size += self.get_back_length_byte_size(element_size)
+
+        if element_size >= 0:
+            self.data = self.data[:element_index] + self.data[element_index + element_size :]
+            self.total_bytes -= element_size
+            self.number_of_elements -= 1
+
+        return element
+
+    def pop(self, element_index: int) -> bytes | int:
+        reversed_iteration = element_index < 0
+        iteration_count = element_index if element_index >= 0 else abs(element_index + 1)
+
+        iterator = ListpackIterator(self, reversed=reversed_iteration)
+
+        for _ in range(iteration_count):
+            iterator.skip()
+
+        return self.pop_by_data_index(iterator.current_index)
+
     def insert_by_data_index(self, data_index: int, value: bytes | int) -> None:
         new_element = self.get_encoded_type(value).encode(value)
         self.data = self.data[:data_index] + new_element + self.data[data_index:]
@@ -51,16 +76,16 @@ class Listpack:
     def prepend(self, value: bytes | int) -> None:
         self.insert_by_data_index(self.HEADER_SIZE, value)
 
-    def seek(self, element_index: int) -> bytes | int:
+    def seek(self, element_index: int) -> bytes | int | None:
         reversed_iteration = element_index < 0
         iteration_count = element_index if element_index >= 0 else abs(element_index + 1)
 
         iterator = ListpackIterator(self, reversed=reversed_iteration)
 
         for _ in range(iteration_count):
-            next(iterator)
+            iterator.skip()
 
-        return next(iterator)
+        return next(iterator, None)
 
     @classmethod
     def get_encoded_type(cls, element: bytes | int) -> type[IntListpackElement] | type[BytesListpackElement]:
