@@ -397,7 +397,7 @@ class Listpack6BitString(BytesListpackElement):
 
 class Listpack13BitInt(IntListpackElement):
     FLAG = 0b11000000  # 0xC0
-    MASK = 0x11100000  # 0xE0
+    MASK = 0b11100000  # 0xE0
     UNMASK = 0xFF - MASK  # 0x00011111
     ENTRY_SIZE = 3
     NEGATIVE_MAX = (1 << 13) - 1  # 8191
@@ -422,8 +422,8 @@ class Listpack13BitInt(IntListpackElement):
 
 
 class Listpack12BitString(BytesListpackElement):
-    FLAG = 0xE0
-    MASK = 0xF0
+    FLAG = 0b11100000  # 0xE0
+    MASK = 0x11110000  # 0xF0
     HEADER_LENGTH = 2
 
     @classmethod
@@ -442,8 +442,8 @@ class Listpack12BitString(BytesListpackElement):
 
 
 class Listpack16BitInt(IntListpackElement):
-    FLAG = 0xF1
-    MASK = 0xFF
+    FLAG = 0b11110001  # 0xF1
+    MASK = 0b11111111  # 0xFF
     ENTRY_SIZE = 4
 
     @classmethod
@@ -455,8 +455,8 @@ class Listpack16BitInt(IntListpackElement):
 
 
 class Listpack24BitInt(IntListpackElement):
-    FLAG = 0xF2
-    MASK = 0xFF
+    FLAG = 0b11110010  # 0xF1
+    MASK = 0b11111111  # 0xFF
     ENTRY_SIZE = 5
 
     @classmethod
@@ -474,8 +474,8 @@ class Listpack24BitInt(IntListpackElement):
 
 
 class Listpack32BitInt(IntListpackElement):
-    FLAG = 0xF3
-    MASK = 0xFF
+    FLAG = 0b11110011  # 0xF1
+    MASK = 0b11111111  # 0xFF
     ENTRY_SIZE = 6
 
     NEGATIVE_MAX = (1 << 32) - 1
@@ -494,8 +494,8 @@ class Listpack32BitInt(IntListpackElement):
 
 
 class Listpack64BitInt(IntListpackElement):
-    FLAG = 0xF4
-    MASK = 0xFF
+    FLAG = 0b11110100  # 0xF1
+    MASK = 0b11111111  # 0xFF
     ENTRY_SIZE = 10
     NEGATIVE_MAX = (1 << 64) - 1
     NEGATIVE_START = 1 << 63
@@ -533,8 +533,8 @@ class Listpack64BitInt(IntListpackElement):
 
 
 class Listpack32BitString(BytesListpackElement):
-    FLAG = 0xF0
-    MASK = 0xFF
+    FLAG = 0b11110000  # 0xF1
+    MASK = 0b11111111  # 0xFF
     HEADER_LENGTH = 5
 
     @classmethod
