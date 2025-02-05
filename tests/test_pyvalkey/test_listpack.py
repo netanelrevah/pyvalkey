@@ -13,7 +13,7 @@ def create_list():
     return instance
 
 
-def create_int_list():
+def create_integers_list():
     instance = listpack()
     instance.append(INT_LIST[2])
     instance.append(INT_LIST[3])
@@ -30,11 +30,37 @@ def test_listpack_create():
     assert instance.number_of_elements == 0
 
 
-def test_listpack_create_int_list():
-    instance = create_int_list()
+def test_listpack_create_integers_list():
+    instance = create_integers_list()
     assert len(instance) == 6
+    assert instance.number_of_elements == 6
 
 
 def test_listpack_create_list():
     instance = create_list()
     assert len(instance) == 4
+    assert instance.number_of_elements == 4
+
+
+def test_listpack_prepend():
+    instance = listpack()
+    instance.prepend(b"abc")
+    instance.prepend(b"1024")
+    assert instance.number_of_elements == 2
+    assert len(instance) == 2
+    assert instance.seek(0) == 1024
+    assert instance.seek(1) == b"abc"
+
+
+def test_listpack_prepend_integers():
+    instance = listpack()
+    instance.prepend(127)
+    instance.prepend(4095)
+    instance.prepend(32767)
+    instance.prepend(8388607)
+    instance.prepend(2147483647)
+    instance.prepend(9223372036854775807)
+    assert instance.number_of_elements == 6
+    assert len(instance) == 6
+    assert instance.seek(0) == 9223372036854775807
+    assert instance.seek(-1) == 127
