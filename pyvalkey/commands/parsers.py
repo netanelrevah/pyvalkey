@@ -6,6 +6,7 @@ from enum import Enum, IntEnum
 from types import UnionType
 from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, get_type_hints, overload
 
+from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.creators import CommandCreator
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import (
@@ -176,7 +177,10 @@ class IntParameterParser(ParameterParser):
 
     def parse(self, parameters: list[bytes]) -> int:
         try:
-            return int(self.next_parameter(parameters))
+            value = int(self.next_parameter(parameters))
+            if not( LONG_LONG_MIN <= value <= LONG_LONG_MAX):
+                raise ServerError(b"ERR value is not an integer or out of range")
+            return value
         except ValueError:
             if self.parse_error is not None:
                 raise ServerError(self.parse_error)
@@ -291,10 +295,10 @@ class ObjectParametersParser(ParametersGroup):
             parsed_parameters.update(parameter_parser.parse(parameters))
 
         if parameters:
-            if non_optional_parameters == 0:
-                raise ServerWrongNumberOfArgumentsError()
-            else:
-                raise ValkeySyntaxError()
+            raise ServerWrongNumberOfArgumentsError()
+            # if non_optional_parameters == 0:
+            # else:
+            #     raise ValkeySyntaxError()
 
         return parsed_parameters
 

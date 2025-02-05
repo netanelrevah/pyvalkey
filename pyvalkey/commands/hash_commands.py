@@ -1,6 +1,6 @@
 import random
 
-from pyvalkey.commands.consts import LONG_MAX
+from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN, LONG_MAX
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
@@ -21,7 +21,7 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
         if not is_numeric(hash_get[field]):
             raise ServerError(b"ERR hash value is not an " + (b"integer" if isinstance(increment, int) else b"float"))
         hash_get[field] = type(increment)(hash_get[field])
-    if not -LONG_MAX < hash_get[field] + increment < LONG_MAX:
+    if not (LONG_LONG_MIN < hash_get[field] + increment < LONG_LONG_MAX):
         raise ServerError(b"ERR increment or decrement would overflow")
     hash_get[field] += increment
     return hash_get[field]

@@ -1,11 +1,13 @@
 import operator
 from enum import Enum
 from functools import reduce
+from math import inf
 from typing import Any, ClassVar
 
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.utils import is_integer
 from pyvalkey.database_objects.databases import Database, StringType
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError, ValkeySyntaxError
 from pyvalkey.resp import RESP_OK, ValueType
@@ -156,7 +158,10 @@ class Set(DatabaseCommand):
         else:
             self.database.set_persist(self.key)
 
-        s.value = self.value
+        if is_integer(self.value):
+            self.database.data[self.key].value = int(self.value)
+        else:
+            s.value = self.value
         return RESP_OK
 
 
@@ -339,17 +344,17 @@ class BitOperation(DatabaseCommand):
         if self.operation in self.OPERATION_TO_OPERATOR:
             result = reduce(
                 self.OPERATION_TO_OPERATOR[self.operation],
-                (self.database.get_string(source_key).int_value for source_key in self.source_keys),
+                (self.database.get_string(source_key).bytes_value for source_key in self.source_keys),
             )
             s = self.database.get_or_create_string(self.destination_key)
-            s.int_value = result
+            s.bytes_value = result
             return len(s)
 
         (source_key,) = self.source_keys
 
         source_s = self.database.get_string(source_key)
         destination_s = self.database.get_or_create_string(self.destination_key)
-        destination_s.int_value = ~source_s.int_value
+        destination_s.bytes_value = ~source_s.bytes_value
         return len(destination_s)
 
 
@@ -401,10 +406,23 @@ class BitCount(DatabaseCommand):
         return self.handle_byte_mode(s, start, end)
 
 
-def increment_by(database: Database, key: bytes, increment: int | float = 1) -> bytes:
-    s = database.get_or_create_string(key)
-    s.numeric_value = s.numeric_value + increment
-    return s.value
+def increment_by(database: Database, key: bytes, increment: int | float = 1) -> int | float:
+    if isinstance(increment, int):
+        int_value = database.get_or_create_int(key) + increment
+        database.data[key].value = int_value
+        return int_value
+    elif isinstance(increment, float):
+        string_value = database.get_or_create_string(key)
+        if not string_value.value:
+            string_value.value = b"0"
+
+        if abs(string_value.float_value + increment) == inf:
+            raise ServerError(b"ERR increment would produce NaN or Infinity")
+
+        string_value.float_value = string_value.float_value + increment
+        return string_value.float_value
+    else:
+        raise ValueError()
 
 
 @ServerCommandsRouter.command(b"incr", [b"write", b"string", b"fast"])
@@ -444,7 +462,7 @@ class Decrement(DatabaseCommand):
 @ServerCommandsRouter.command(b"decrby", [b"write", b"string", b"fast"])
 class DecrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
-    decrement: float = positional_parameter()
+    decrement: int = positional_parameter()
 
     def execute(self) -> ValueType:
         return increment_by(self.database, self.key, self.decrement * -1)

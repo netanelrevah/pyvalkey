@@ -105,6 +105,21 @@ class ListPop(DatabaseCommand):
         return a_list.pop(0)
 
 
+@ServerCommandsRouter.command(b"rpop", [b"write", b"list", b"fast"])
+class ListRightPop(DatabaseCommand):
+    key: bytes = positional_parameter()
+    count: int = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        a_list = self.database.get_or_create_list(self.key)
+
+        if not a_list:
+            return None
+        if self.count:
+            return [a_list.pop(-1) for _ in range(min(len(a_list), self.count))]
+        return a_list.pop(-1)
+
+
 @ServerCommandsRouter.command(b"lrem", [b"write", b"list", b"slow"])
 class ListRemove(DatabaseCommand):
     key: bytes = positional_parameter()

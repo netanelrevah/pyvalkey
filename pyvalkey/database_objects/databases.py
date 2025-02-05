@@ -11,6 +11,7 @@ from typing import Any
 from sortedcontainers import SortedDict, SortedSet
 
 from pyvalkey.commands.parameters import positional_parameter
+from pyvalkey.commands.utils import is_floating_point, is_integer
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.utils import flatten
 
@@ -42,14 +43,6 @@ class StringType:
     value: bytes = b""
 
     @classmethod
-    def is_float(cls, value: bytes) -> bool:
-        try:
-            float(value)
-            return True
-        except ValueError:
-            return False
-
-    @classmethod
     def int_to_bytes(cls, value: int) -> bytes:
         return value.to_bytes(length=(8 + (value + (value < 0)).bit_length()) // 8, byteorder="big", signed=True)
 
@@ -58,21 +51,31 @@ class StringType:
         return int.from_bytes(value, byteorder="big", signed=True)
 
     @property
-    def numeric_value(self) -> float:
-        if not self.is_float(self.value):
-            raise ServerError(b"ERR value is not an integer or out of range")
+    def float_value(self) -> float:
+        if not is_floating_point(self.value):
+            raise ServerError(b"ERR value is not a valid float")
         return float(self.value)
 
-    @numeric_value.setter
-    def numeric_value(self, value: int | float) -> None:
-        self.value = f"{value:g}".encode()
+    @float_value.setter
+    def float_value(self, value: float) -> None:
+        self.value = str(value).rstrip("0").rstrip(".").encode()
 
     @property
     def int_value(self) -> int:
-        return self.int_from_bytes(self.value)
+        if not is_integer(self.value):
+            raise ServerError(b"ERR value is not an integer or out of range")
+        return int(self.value)
 
     @int_value.setter
     def int_value(self, value: int) -> None:
+        self.value = str(value).encode()
+
+    @property
+    def bytes_value(self) -> int:
+        return self.int_from_bytes(self.value)
+
+    @bytes_value.setter
+    def bytes_value(self, value: int) -> None:
         self.value = self.int_to_bytes(value)
 
     def get_bit(self, offset: int) -> int:
@@ -111,10 +114,10 @@ class StringType:
         return sum(map(int.bit_count, self.value[slice(start, stop)]))
 
     def count_bits_of_int(self, start: int, stop: int) -> int:
-        return ((self.int_value & ((2**stop) - 1)) >> start).bit_count()
+        return ((self.bytes_value & ((2**stop) - 1)) >> start).bit_count()
 
     def bit_length(self) -> int:
-        return self.int_value.bit_length()
+        return self.bytes_value.bit_length()
 
     def __len__(self) -> int:
         return len(self.value)
@@ -233,7 +236,7 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
-KeyValueType = ValkeySortedSet | dict[bytes, bytes] | StringType | set[bytes] | list[bytes]
+KeyValueType = ValkeySortedSet | dict[bytes, bytes] | StringType | set[bytes] | list[bytes] | int
 
 
 @dataclass(slots=True)
@@ -311,7 +314,12 @@ class Database:
     @classmethod
     def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
         if key_value is not None and not isinstance(key_value.value, type_):
-            raise ServerWrongTypeError()
+            if type_ is int and isinstance(key_value.value, StringType):
+                key_value.value = key_value.value.int_value
+            elif type_ == StringType and isinstance(key_value.value, int):
+                key_value.value = StringType(str(key_value.value).encode())
+            else:
+                raise ServerWrongTypeError()
         return key_value
 
     def typesafe_pop(self, key: bytes, type_: type) -> KeyValue | None:
@@ -418,6 +426,9 @@ class Database:
 
     def get_string_or_none(self, key: bytes) -> StringType | None:
         return self.get_or_none_by_type(key, StringType)
+
+    def get_or_create_int(self, key: bytes) -> int:
+        return self.typesafe_get_or_create(key, int)
 
     def get_or_create_string(self, key: bytes) -> StringType:
         return self.typesafe_get_or_create(key, StringType)
