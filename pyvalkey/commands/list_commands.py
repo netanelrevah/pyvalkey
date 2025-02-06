@@ -1,10 +1,12 @@
 from enum import Enum
 
-from pyvalkey.commands.parameters import positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.consts import LONG_MAX
+from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.router import ServerCommandsRouter, valkey_command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
-from pyvalkey.resp import ValueType
+from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.resp import ArrayNone, ValueType
 
 
 @ServerCommandsRouter.command(b"llen", [b"read", b"list", b"fast"])
@@ -90,17 +92,72 @@ class ListPushAtTail(DatabaseCommand):
         return len(a_list)
 
 
-@ServerCommandsRouter.command(b"lpop", [b"write", b"list", b"fast"])
-class ListPop(DatabaseCommand):
+@valkey_command(b"lpos", [b"read", b"list", b"slow"])
+class ListPosition(DatabaseCommand):
     key: bytes = positional_parameter()
-    count: int = positional_parameter(default=None)
+    element: bytes = positional_parameter()
+    rank: int | None = keyword_parameter(token=b"RANK", default=None)
+    number_of_matches: int | None = keyword_parameter(token=b"COUNT", default=None)
+    maximum_length: int | None = keyword_parameter(token=b"MAXLEN", default=None)
 
     def execute(self) -> ValueType:
         a_list = self.database.get_or_create_list(self.key)
 
+        if self.rank is not None:
+            if self.rank == 0:
+                raise ServerError(
+                    b"ERR RANK can't be zero: "
+                    b"use 1 to start from the first match, "
+                    b"2 from the second ... or use negative to start from the end of the list"
+                )
+            if self.rank < -LONG_MAX:
+                raise ServerError(
+                    b"ERR value is out of range, value must between -9223372036854775807 and 9223372036854775807"
+                )
+
+        indexes = []
+        skip = abs(self.rank) - 1 if self.rank is not None else 0
+        for index in range(len(a_list)):
+            real_index = index
+            if self.rank is not None and self.rank < 0:
+                real_index = len(a_list) - 1 - index
+
+            if self.maximum_length and index >= self.maximum_length:
+                break
+
+            item = a_list[real_index]
+
+            if item != self.element:
+                continue
+
+            if skip > 0:
+                skip -= 1
+                continue
+
+            if self.number_of_matches is None:
+                return real_index
+
+            indexes.append(real_index)
+
+            if self.number_of_matches != 0 and len(indexes) >= self.number_of_matches:
+                break
+        return indexes
+
+
+@ServerCommandsRouter.command(b"lpop", [b"write", b"list", b"fast"])
+class ListPop(DatabaseCommand):
+    key: bytes = positional_parameter()
+    count: int | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        if self.count is not None and self.count < 0:
+            raise ServerError(b"ERR value is out of range, must be positive")
+
+        a_list = self.database.get_or_create_list(self.key)
+
         if not a_list:
-            return None
-        if self.count:
+            return None if (self.count is None) else ArrayNone
+        if self.count is not None:
             return [a_list.pop(0) for _ in range(min(len(a_list), self.count))]
         return a_list.pop(0)
 
@@ -108,14 +165,17 @@ class ListPop(DatabaseCommand):
 @ServerCommandsRouter.command(b"rpop", [b"write", b"list", b"fast"])
 class ListRightPop(DatabaseCommand):
     key: bytes = positional_parameter()
-    count: int = positional_parameter(default=None)
+    count: int | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
+        if self.count is not None and self.count < 0:
+            raise ServerError(b"ERR value is out of range, must be positive")
+
         a_list = self.database.get_or_create_list(self.key)
 
         if not a_list:
-            return None
-        if self.count:
+            return None if (self.count is None) else ArrayNone
+        if self.count is not None:
             return [a_list.pop(-1) for _ in range(min(len(a_list), self.count))]
         return a_list.pop(-1)
 

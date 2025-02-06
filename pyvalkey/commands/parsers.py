@@ -178,7 +178,7 @@ class IntParameterParser(ParameterParser):
     def parse(self, parameters: list[bytes]) -> int:
         try:
             value = int(self.next_parameter(parameters))
-            if not( LONG_LONG_MIN <= value <= LONG_LONG_MAX):
+            if not (LONG_LONG_MIN <= value <= LONG_LONG_MAX):
                 raise ServerError(b"ERR value is not an integer or out of range")
             return value
         except ValueError:

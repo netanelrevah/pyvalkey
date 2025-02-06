@@ -34,7 +34,7 @@ def test_all(s: Valkey):
 
 
 def test_all_known_tags(s: Valkey):
-    run_tests(s, tags="sort keyspace hash incr")
+    run_tests(s, tags="sort keyspace hash incr list")
 
 
 def test_sort(s: Valkey):
@@ -51,3 +51,7 @@ def test_type_hash(s: Valkey):
 
 def test_type_incr(s: Valkey):
     run_tests(s, tags="incr")
+
+
+def test_type_list(s: Valkey):
+    run_tests(s, tags="list")
