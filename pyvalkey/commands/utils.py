@@ -14,7 +14,10 @@ def is_integer(value: bytes | str) -> bool:
 
 
 def is_floating_point(value: bytes | str) -> bool:
-    return FLOATING_POINT_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+    str_value = value if isinstance(value, str) else value.decode()
+    if str_value in ["+inf", "-inf", "inf"]:
+        return True
+    return FLOATING_POINT_REGEX.match(str_value) is not None
 
 
 def parse_range_parameters(start: int, stop: int, is_reversed: bool = False) -> slice:

@@ -258,6 +258,9 @@ class ObjectEncoding(DatabaseCommand):
                 return b"listpack"
             return b"hashtable"
 
+        if isinstance(key_value.value, int):
+            return b"int"
+
         return b"raw"
 
 

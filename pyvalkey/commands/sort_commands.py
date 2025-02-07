@@ -18,7 +18,7 @@ class SortReadOnly(Command):
     descending: bool = keyword_parameter(flag={b"ASC": False, b"DESC": True}, default=False)
     alpha: bool = keyword_parameter(flag=b"ALPHA", default=False)
 
-    def _get_referenced_value(self, value: bytes, reference: bytes) -> bytes | None:
+    def _get_referenced_value(self, value: bytes, reference: bytes) -> int | bytes | None:
         reference_key, reference_field = reference, None
         if b"->" in reference_key and not reference_key.endswith(b"->"):
             reference_key, reference_field = reference.rsplit(b"->", 1)
@@ -30,6 +30,8 @@ class SortReadOnly(Command):
             if isinstance(key_value.value, dict):
                 return key_value.value[reference_field]
             return None
+        if isinstance(key_value.value, int):
+            return key_value.value
         if not isinstance(key_value.value, StringType):
             return None
         return key_value.value.value
@@ -50,7 +52,7 @@ class SortReadOnly(Command):
             values = list(key_value.value)
 
         if self.by != b"nosort":
-            referenced_values: dict[bytes, bytes] | None = None
+            referenced_values: dict[bytes, bytes | int] | None = None
             if self.by is not None:
                 referenced_values = {}
                 for value in values:
@@ -78,7 +80,7 @@ class SortReadOnly(Command):
             offset, count = self.limit
             values = values[offset : offset + count]
 
-        result_values: list[bytes | None] = list(values)
+        result_values: list[int | bytes | None] = list(values)
         if self.get_values:
             get_result: list[bytes | None] = []
             for value in values:

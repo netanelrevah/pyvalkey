@@ -29,12 +29,30 @@ class RespSimpleString(bytes):
 RESP_OK = RespSimpleString(b"OK")
 
 
+class ArrayNoneType:
+    __slots__ = ()
+
+
+ArrayNone = ArrayNoneType()
+
+
 class RespError(bytes):
     pass
 
 
 ValueType = (
-    bool | int | float | RespSimpleString | RespError | str | bytes | list[Any] | set[Any] | dict[bytes, Any] | None
+    bool
+    | int
+    | float
+    | RespSimpleString
+    | RespError
+    | str
+    | bytes
+    | list[Any]
+    | set[Any]
+    | dict[bytes, Any]
+    | None
+    | ArrayNoneType
 )
 
 
@@ -279,6 +297,8 @@ class Resp2Dumper(RespDumper):
             for k, v in value.items():
                 result += [k, v]
             self.dump_array(result)
+        elif value == ArrayNone:
+            self.writer.write(b"*-1\r\n")
         elif value is None:
             self.writer.write(b"$-1\r\n")
 
@@ -327,6 +347,8 @@ class Resp3Dumper(RespDumper):
             self.dump_array(list(value))
         elif isinstance(value, dict):
             self.dump_map(value)
+        elif value == ArrayNone:
+            self.writer.write(b"_\r\n")
         elif value is None:
             self.writer.write(b"_\r\n")
 

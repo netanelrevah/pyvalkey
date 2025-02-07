@@ -1,6 +1,6 @@
 from unittest.mock import Mock, call
 
-from pyvalkey.commands.lists import ListLength
+from pyvalkey.commands.list_commands import ListLength
 
 
 class TestListLength:
