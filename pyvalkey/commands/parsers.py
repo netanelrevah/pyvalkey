@@ -295,10 +295,10 @@ class ObjectParametersParser(ParametersGroup):
             parsed_parameters.update(parameter_parser.parse(parameters))
 
         if parameters:
+            if self._is_optional(self.parameters_parsers[-1]):
+                raise ValkeySyntaxError()
+
             raise ServerWrongNumberOfArgumentsError()
-            # if non_optional_parameters == 0:
-            # else:
-            #     raise ValkeySyntaxError()
 
         return parsed_parameters
 
