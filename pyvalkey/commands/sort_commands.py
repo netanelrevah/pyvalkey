@@ -36,7 +36,7 @@ class SortReadOnly(Command):
             return None
         return key_value.value.value
 
-    def internal_execute(self) -> list[bytes | None] | None:
+    def internal_execute(self) -> list[int | bytes | None] | None:
         key_value = self.database.get_or_none(self.key)
 
         if key_value is None:
@@ -82,7 +82,7 @@ class SortReadOnly(Command):
 
         result_values: list[int | bytes | None] = list(values)
         if self.get_values:
-            get_result: list[bytes | None] = []
+            get_result: list[int | bytes | None] = []
             for value in values:
                 for get_value in self.get_values:
                     if get_value == b"#":
@@ -128,6 +128,7 @@ class Sort(Command):
             return 0
 
         self.database.set_value(
-            self.destination, KeyValue(self.destination, [v if v is not None else b"" for v in result_values])
+            self.destination,
+            KeyValue(self.destination, [str(v).encode() if v is not None else b"" for v in result_values]),
         )
         return len(result_values)
