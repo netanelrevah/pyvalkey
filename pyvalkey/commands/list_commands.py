@@ -1,10 +1,13 @@
 from enum import Enum
 
 from pyvalkey.commands.consts import LONG_MAX
+from pyvalkey.commands.core import AsyncCommand
+from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter, valkey_command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ArrayNone, ValueType
 
@@ -178,6 +181,17 @@ class ListRightPop(DatabaseCommand):
         if self.count is not None:
             return [a_list.pop(-1) for _ in range(min(len(a_list), self.count))]
         return a_list.pop(-1)
+
+
+@ServerCommandsRouter.command(b"blpop", [b"write", b"list", b"fast"])
+class ListBlockingLeftPop(AsyncCommand):
+    database: Database = server_command_dependency()
+
+    keys: list[bytes] = positional_parameter()
+    timeout: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return None
 
 
 @ServerCommandsRouter.command(b"lrem", [b"write", b"list", b"slow"])

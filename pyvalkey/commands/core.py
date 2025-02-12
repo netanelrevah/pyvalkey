@@ -27,8 +27,19 @@ class Command:
 
 
 @dataclass
+class AsyncCommand(Command):
+    async def execute_async(self) -> ValueType:
+        raise NotImplementedError()
+
+    @staticmethod
+    def parse(parameters: list[bytes]) -> dict[str, Any]:
+        raise NotImplementedError()
+
+    @classmethod
+    def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
+        raise NotImplementedError()
+
+
+@dataclass
 class DatabaseCommand(Command):
     database: Database = server_command_dependency()
-
-    def execute(self) -> ValueType:
-        raise NotImplementedError()
