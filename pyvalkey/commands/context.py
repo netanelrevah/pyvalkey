@@ -32,6 +32,15 @@ class ServerContext:
     is_paused: bool = False
     pause_timeout: float = 0
 
+    def reset(self) -> None:
+        self.databases.clear()
+        self.databases[0] = Database()
+        self.acl = ACL.create()
+        self.client_ids = itertools.count(0)
+        self.clients = ClientList()
+        self.configurations = Configurations()
+        self.information = Information()
+
 
 @dataclass
 class ClientContext:

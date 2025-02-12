@@ -2,6 +2,7 @@ import socket
 import time
 from random import randrange
 from threading import Thread
+from typing import ClassVar
 
 import valkey
 from pytest import fixture
@@ -16,7 +17,7 @@ def pytest_addoption(parser):
 def pytest_generate_tests(metafunc):
     option_value = metafunc.config.option.external
     if "external" in metafunc.fixturenames and option_value is not None:
-        metafunc.parametrize("external", [option_value])
+        metafunc.parametrize("external", [option_value], scope="session")
 
 
 def next_free_port(min_port=57343, max_port=65535):
@@ -42,7 +43,7 @@ def connection(external):
         t = Thread(target=server.run)
         t.start()
 
-        time.sleep(1)
+        time.sleep(0.1)
 
     connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     connection.connect(("localhost", port))
@@ -56,8 +57,50 @@ def connection(external):
         server.shutdown()
 
 
+class ValkeyPool:
+    _pool: ClassVar[list] = []
+
+    @classmethod
+    def fill_pool(cls, count):
+        for _ in range(count):
+            port = next_free_port()
+            server = ValkeyServer("127.0.0.1", port)
+            t = Thread(target=server.run)
+            t.start()
+
+            c = valkey.Valkey(port=port, db=9)
+
+            cls._pool.append({"server": server, "thread": t, "client": c})
+
+    @classmethod
+    def drain_pool(cls):
+        while cls._pool:
+            server = cls._pool.pop(0)
+            server["client"].close()
+            server["server"].shutdown()
+
+    @classmethod
+    def get_server(cls):
+        return cls._pool.pop(0)
+
+    @classmethod
+    def return_server(cls, server: ValkeyServer, thread, client):
+        server.context.reset()
+        cls._pool.append({"server": server, "thread": thread, "client": client})
+
+
+@fixture(scope="session")
+def valkey_pool(external):
+    if external:
+        yield
+        return
+    ValkeyPool.fill_pool(5)
+    yield
+    ValkeyPool.drain_pool()
+
+
 @fixture()
-def s(external):
+def s(external, valkey_pool):
     if external:
         c = valkey.Valkey(db=9)
         yield c
@@ -67,18 +110,12 @@ def s(external):
             c.close()
         return
 
-    port = next_free_port()
-    server = ValkeyServer("127.0.0.1", port)
-    t = Thread(target=server.run)
-    t.start()
+    server = ValkeyPool.get_server()
 
-    time.sleep(1)
-    c = valkey.Valkey(port=port, db=9)
     try:
-        yield c
+        yield server["client"]
     finally:
-        c.close()
-        server.shutdown()
+        ValkeyPool.return_server(**server)
 
 
 @fixture
