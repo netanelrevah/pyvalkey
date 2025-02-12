@@ -127,8 +127,9 @@ class SetDifference(DatabaseCommand):
 def apply_set_store_operation(
     database: Database, operation: Callable[[set, set], set], keys: list[bytes], destination: bytes
 ) -> int:
-    database.data[destination].value = functools.reduce(operation, map(database.get_set, keys))
-    return len(database.data[destination].value)
+    new_set: set = functools.reduce(operation, map(database.get_set, keys))
+    database.data[destination].value = new_set
+    return len(new_set)
 
 
 @ServerCommandsRouter.command(b"sunionstore", [b"write", b"set", b"slow"])
