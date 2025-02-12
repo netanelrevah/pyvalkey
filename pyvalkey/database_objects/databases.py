@@ -140,13 +140,10 @@ class ValkeySortedSet:
             self.add(score, member)
 
     def update_with_iterator(self, iterator: Iterable[bytes | float]) -> None:
-        member = None
-        for item in iterator:
-            if member is None:
-                member = item
-            else:
-                self.add(item, member)
-                member = None
+        score: float
+        member: bytes
+        for score, member in zip(*([iter(iterator)] * 2), strict=True):
+            self.add(score, member)
 
     def add(self, score: float, member: bytes) -> None:
         if member in self.members_scores:
