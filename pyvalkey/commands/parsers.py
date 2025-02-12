@@ -295,7 +295,7 @@ class ObjectParametersParser(ParametersGroup):
             parsed_parameters.update(parameter_parser.parse(parameters))
 
         if parameters:
-            if self._is_optional(self.parameters_parsers[-1]):
+            if isinstance(self.parameters_parsers[-1], OptionalKeywordParametersGroup):
                 raise ValkeySyntaxError()
 
             raise ServerWrongNumberOfArgumentsError()
