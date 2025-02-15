@@ -1,4 +1,3 @@
-
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
