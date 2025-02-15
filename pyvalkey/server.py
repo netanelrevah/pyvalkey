@@ -17,7 +17,7 @@ from typing import cast
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import AsyncCommand
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.commands.transactions import TransactionExecute
+from pyvalkey.commands.transactions_commands import TransactionExecute
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations

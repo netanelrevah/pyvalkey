@@ -12,12 +12,20 @@ from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ArrayNone, ValueType
 
 
-@ServerCommandsRouter.command(b"llen", [b"read", b"list", b"fast"])
-class ListLength(DatabaseCommand):
-    key: bytes = positional_parameter()
+class DirectionMode(Enum):
+    BEFORE = b"before"
+    AFTER = b"after"
+
+
+@ServerCommandsRouter.command(b"blpop", [b"write", b"list", b"fast"])
+class ListBlockingLeftPop(AsyncCommand):
+    database: Database = server_command_dependency()
+
+    keys: list[bytes] = positional_parameter()
+    timeout: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.get_list(self.key))
+        return None
 
 
 @ServerCommandsRouter.command(b"lindex", [b"read", b"list", b"slow"])
@@ -32,21 +40,6 @@ class ListIndex(DatabaseCommand):
             return server_list[self.index]
         except IndexError:
             return None
-
-
-@ServerCommandsRouter.command(b"lrange", [b"read", b"list", b"slow"])
-class ListRange(DatabaseCommand):
-    key: bytes = positional_parameter()
-    start: int = positional_parameter()
-    stop: int = positional_parameter()
-
-    def execute(self) -> ValueType:
-        return self.database.get_list(self.key)[parse_range_parameters(self.start, self.stop)]
-
-
-class DirectionMode(Enum):
-    BEFORE = b"before"
-    AFTER = b"after"
 
 
 @ServerCommandsRouter.command(b"linsert", [b"write", b"list", b"slow"])
@@ -69,30 +62,40 @@ class ListInsert(DatabaseCommand):
         return len(a_list)
 
 
-@ServerCommandsRouter.command(b"lpush", [b"write", b"list", b"fast"])
-class ListPush(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"W")
-    values: list[bytes] = positional_parameter()
-
-    def execute(self) -> ValueType:
-        a_list = self.database.get_or_create_list(self.key)
-
-        for v in self.values:
-            a_list.insert(0, v)
-        return len(a_list)
-
-
-@ServerCommandsRouter.command(b"rpush", [b"write", b"list", b"fast"])
-class ListPushAtTail(DatabaseCommand):
+@ServerCommandsRouter.command(b"llen", [b"read", b"list", b"fast"])
+class ListLength(DatabaseCommand):
     key: bytes = positional_parameter()
-    values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
+        return len(self.database.get_list(self.key))
+
+
+@ServerCommandsRouter.command(b"lrange", [b"read", b"list", b"slow"])
+class ListRange(DatabaseCommand):
+    key: bytes = positional_parameter()
+    start: int = positional_parameter()
+    stop: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return self.database.get_list(self.key)[parse_range_parameters(self.start, self.stop)]
+
+
+@ServerCommandsRouter.command(b"lpop", [b"write", b"list", b"fast"])
+class ListPop(DatabaseCommand):
+    key: bytes = positional_parameter()
+    count: int | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        if self.count is not None and self.count < 0:
+            raise ServerError(b"ERR value is out of range, must be positive")
+
         a_list = self.database.get_or_create_list(self.key)
 
-        for v in self.values:
-            a_list.append(v)
-        return len(a_list)
+        if not a_list:
+            return None if (self.count is None) else ArrayNone
+        if self.count is not None:
+            return [a_list.pop(0) for _ in range(min(len(a_list), self.count))]
+        return a_list.pop(0)
 
 
 @valkey_command(b"lpos", [b"read", b"list", b"slow"])
@@ -147,22 +150,17 @@ class ListPosition(DatabaseCommand):
         return indexes
 
 
-@ServerCommandsRouter.command(b"lpop", [b"write", b"list", b"fast"])
-class ListPop(DatabaseCommand):
-    key: bytes = positional_parameter()
-    count: int | None = positional_parameter(default=None)
+@ServerCommandsRouter.command(b"lpush", [b"write", b"list", b"fast"])
+class ListPush(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"W")
+    values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        if self.count is not None and self.count < 0:
-            raise ServerError(b"ERR value is out of range, must be positive")
-
         a_list = self.database.get_or_create_list(self.key)
 
-        if not a_list:
-            return None if (self.count is None) else ArrayNone
-        if self.count is not None:
-            return [a_list.pop(0) for _ in range(min(len(a_list), self.count))]
-        return a_list.pop(0)
+        for v in self.values:
+            a_list.insert(0, v)
+        return len(a_list)
 
 
 @ServerCommandsRouter.command(b"rpop", [b"write", b"list", b"fast"])
@@ -181,17 +179,6 @@ class ListRightPop(DatabaseCommand):
         if self.count is not None:
             return [a_list.pop(-1) for _ in range(min(len(a_list), self.count))]
         return a_list.pop(-1)
-
-
-@ServerCommandsRouter.command(b"blpop", [b"write", b"list", b"fast"])
-class ListBlockingLeftPop(AsyncCommand):
-    database: Database = server_command_dependency()
-
-    keys: list[bytes] = positional_parameter()
-    timeout: int = positional_parameter()
-
-    def execute(self) -> ValueType:
-        return None
 
 
 @ServerCommandsRouter.command(b"lrem", [b"write", b"list", b"slow"])
@@ -220,3 +207,16 @@ class ListRemove(DatabaseCommand):
         if count < 0:
             a_list.reverse()
         return deleted
+
+
+@ServerCommandsRouter.command(b"rpush", [b"write", b"list", b"fast"])
+class ListPushAtTail(DatabaseCommand):
+    key: bytes = positional_parameter()
+    values: list[bytes] = positional_parameter()
+
+    def execute(self) -> ValueType:
+        a_list = self.database.get_or_create_list(self.key)
+
+        for v in self.values:
+            a_list.append(v)
+        return len(a_list)

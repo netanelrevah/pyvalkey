@@ -1,6 +1,6 @@
 from unittest.mock import Mock, call
 
-from pyvalkey.commands.sets import SetRandomMember
+from pyvalkey.commands.set_commands import SetRandomMember
 
 
 class TestSetRandomMember:

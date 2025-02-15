@@ -6,7 +6,7 @@ import operator
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 
 from sortedcontainers import SortedDict, SortedSet
 
@@ -38,7 +38,7 @@ class MaxBytes(bytes):
 MAX_BYTES = MaxBytes()
 
 
-@dataclass()
+@dataclass(slots=True)
 class StringType:
     value: bytes = b""
 
@@ -262,6 +262,12 @@ class KeyValue:
 
         return KeyValue(new_key, new_value, self.expiration)
 
+    @classmethod
+    def of_string(cls, key: bytes, value: bytes, expiration: int | None = None) -> Self:
+        if is_integer(value):
+            return cls(key, int(value), expiration)
+        return cls(key, StringType(value), expiration)
+
 
 MISSING = KeyValue(b"", {})
 
@@ -270,6 +276,40 @@ MISSING = KeyValue(b"", {})
 class Database:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
+
+    def size(self) -> int:
+        return len(self.data)
+
+    def number_of_keys_with_expiration(self) -> int:
+        return len(self.key_with_expiration)
+
+    def average_ttl(self) -> int:
+        return sum(key_value.expiration - int(time.time() * 1000) for key_value in self.key_with_expiration) // len(
+            self.key_with_expiration
+        )
+
+    def keys(self) -> Iterable[bytes]:
+        return self.data.keys()
+
+    def are_fully_volatile(self) -> bool:
+        return len(self.data) == len(self.key_with_expiration)
+
+    def empty(self) -> bool:
+        return not self.data
+
+    def has_key(self, key: bytes) -> bool:
+        key_value = self.data.get(key, None)
+
+        if not key_value:
+            return False
+
+        if key_value.expiration is not None:
+            if int(time.time() * 1000) > key_value.expiration:
+                self.data.pop(key)
+                self.key_with_expiration.discard(key_value)
+                return False
+
+        return True
 
     def rename_unsafely(self, key: bytes, new_key: bytes) -> None:
         key_value = self.data.pop(key)
@@ -303,10 +343,12 @@ class Database:
                 return None
         return key_value
 
-    def set_value(self, key: bytes, value: KeyValue, block_overwrite: bool = False) -> None:
-        if block_overwrite is True and key in self.data:
-            raise KeyError()
-        self.data[key] = value
+    def set_key_value(self, key_value: KeyValue, block_overwrite: bool = False) -> None:
+        if block_overwrite is True and key_value.key in self.data:
+            raise ValueError()
+        self.data[key_value.key] = key_value
+        if key_value.expiration is not None:
+            self.key_with_expiration.add(key_value)
 
     @classmethod
     def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
@@ -324,12 +366,9 @@ class Database:
         return self.check_type_ang_get(key_value, type_)
 
     def get(self, key: bytes) -> KeyValue | None:
-        key_value = self.data[key]
-        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
-            del self.data[key]
-            self.key_with_expiration.remove(key_value)
+        if not self.has_key(key):
             return None
-        return key_value
+        return self.data[key]
 
     def get_or_none(self, key: bytes) -> KeyValue | None:
         if key not in self.data:
@@ -387,6 +426,14 @@ class Database:
             raise KeyError()
         if key_value.expiration is None:
             return None
+        return key_value.expiration
+
+    def get_time_to_live(self, key: bytes) -> int | None:
+        key_value = self.get(key)
+        if key_value is None:
+            raise KeyError()
+        if key_value.expiration is None:
+            return None
         return key_value.expiration - int(time.time() * 1000)
 
     def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
@@ -417,6 +464,15 @@ class Database:
             return None
 
         return key_value.value
+
+    def set_int_value(self, key: bytes, value: int) -> None:
+        self.data[key].value = value
+
+    def set_string_value(self, key: bytes, value: bytes) -> None:
+        if is_integer(value):
+            self.data[key].value = int(value)
+        else:
+            self.data[key].value = StringType(value)
 
     def get_string(self, key: bytes) -> StringType:
         return self.get_by_type(key, StringType)

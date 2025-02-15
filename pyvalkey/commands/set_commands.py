@@ -128,7 +128,8 @@ def apply_set_store_operation(
     database: Database, operation: Callable[[set, set], set], keys: list[bytes], destination: bytes
 ) -> int:
     new_set: set = functools.reduce(operation, map(database.get_set, keys))
-    database.data[destination].value = new_set
+    database.pop(destination, None)
+    database.get_or_create_set(destination).update(new_set)
     return len(new_set)
 
 

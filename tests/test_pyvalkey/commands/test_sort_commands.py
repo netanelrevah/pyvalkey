@@ -1,4 +1,4 @@
-from pyvalkey.commands.sort_commands import Sort
+from pyvalkey.commands.generic_commands import Sort
 from pyvalkey.database_objects.databases import Database, KeyValue, StringType
 
 
