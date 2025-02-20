@@ -118,6 +118,8 @@ class Configurations(ConfigurationBase):
 
     sanitize_dump_payload: bytes = configuration(default=b"yes")
 
+    maxmemory_policy: bytes = configuration(default=b"noeviction")
+
     @classmethod
     def get_field_name(cls, name: bytes) -> str:
         return cls.FIELD_BY_NAME[name].field_name

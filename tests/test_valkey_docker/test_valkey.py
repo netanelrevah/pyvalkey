@@ -55,3 +55,7 @@ def test_type_incr(s: Valkey):
 
 def test_type_list(s: Valkey):
     run_tests(s, tags="list")
+
+
+def test_dump(s: Valkey):
+    run_tests(s, tags="dump")

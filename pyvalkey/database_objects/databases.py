@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import itertools
 import operator
+import random
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -10,9 +11,13 @@ from typing import Any, Self
 
 from sortedcontainers import SortedDict, SortedSet
 
+from pyvalkey.commands.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
 from pyvalkey.commands.parameters import positional_parameter
-from pyvalkey.commands.utils import is_floating_point, is_integer
-from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.commands.utils import (
+    convert_bytes_value_as_int,
+    is_integer,
+)
+from pyvalkey.database_objects.errors import ServerWrongTypeError
 from pyvalkey.database_objects.utils import flatten
 
 
@@ -36,91 +41,6 @@ class MaxBytes(bytes):
 
 
 MAX_BYTES = MaxBytes()
-
-
-@dataclass(slots=True)
-class StringType:
-    value: bytes = b""
-
-    @classmethod
-    def int_to_bytes(cls, value: int) -> bytes:
-        return value.to_bytes(length=(8 + (value + (value < 0)).bit_length()) // 8, byteorder="big", signed=True)
-
-    @classmethod
-    def int_from_bytes(cls, value: bytes) -> int:
-        return int.from_bytes(value, byteorder="big", signed=True)
-
-    @property
-    def float_value(self) -> float:
-        if not is_floating_point(self.value):
-            raise ServerError(b"ERR value is not a valid float")
-        return float(self.value)
-
-    @float_value.setter
-    def float_value(self, value: float) -> None:
-        self.value = str(value).rstrip("0").rstrip(".").encode()
-
-    @property
-    def int_value(self) -> int:
-        if not is_integer(self.value):
-            raise ServerError(b"ERR value is not an integer or out of range")
-        return int(self.value)
-
-    @int_value.setter
-    def int_value(self, value: int) -> None:
-        self.value = str(value).encode()
-
-    @property
-    def bytes_value(self) -> int:
-        return self.int_from_bytes(self.value)
-
-    @bytes_value.setter
-    def bytes_value(self, value: int) -> None:
-        self.value = self.int_to_bytes(value)
-
-    def get_bit(self, offset: int) -> int:
-        if offset >= 2**32 or offset < 0:
-            raise ServerError(b"ERR bit offset is not an integer or out of range")
-
-        bytes_offset = offset // 8
-        byte_offset = offset - (bytes_offset * 8)
-
-        adjusted_value = self.value
-        if len(self.value) <= bytes_offset:
-            adjusted_value = self.value.ljust(bytes_offset + 1, b"\0")
-
-        return (adjusted_value[bytes_offset] >> (7 - byte_offset)) & 1
-
-    def set_bit(self, offset: int, value: bool) -> None:
-        if offset >= 2**32 or offset < 0:
-            raise ServerError(b"ERR bit offset is not an integer or out of range")
-
-        bytes_offset = offset // 8
-        byte_offset = offset - (bytes_offset * 8)
-
-        new_value = self.value
-
-        if len(self.value) <= bytes_offset:
-            new_value = self.value.ljust(bytes_offset + 1, b"\0")
-
-        if value:
-            new_byte = new_value[bytes_offset] | (128 >> byte_offset)
-        else:
-            new_byte = new_value[bytes_offset] & ~(128 >> byte_offset)
-
-        self.value = new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
-
-    def count_bits_of_bytes(self, start: int | None = None, stop: int | None = None) -> int:
-        return sum(map(int.bit_count, self.value[slice(start, stop)]))
-
-    def count_bits_of_int(self, start: int, stop: int) -> int:
-        return ((self.bytes_value & ((2**stop) - 1)) >> start).bit_count()
-
-    def bit_length(self) -> int:
-        return self.bytes_value.bit_length()
-
-    def __len__(self) -> int:
-        return len(self.value)
 
 
 @dataclass(eq=True)
@@ -233,22 +153,44 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
-KeyValueType = ValkeySortedSet | dict[bytes, bytes] | StringType | set[bytes] | list[bytes] | int
+KeyValueType = ValkeySortedSet | dict[bytes, bytes] | set[bytes] | list[bytes] | bytes | int
 
 
 @dataclass(slots=True)
 class KeyValue:
     key: bytes
-    value: KeyValueType
+    _value: KeyValueType
     expiration: int | None = field(default=None)
+    last_accessed: int = field(default_factory=lambda: int(time.time() * 1000))
+    lfu_counter: int = LFU_INITIAL_VALUE
+
+    def increase_frequency(self, lfu_log_factor: int) -> None:
+        if self.lfu_counter == LFU_COUNTER_MAXIMUM:
+            return
+        r = random.random()
+        base_value = max(self.lfu_counter - LFU_INITIAL_VALUE, 0)
+        p = 1.0 / (base_value * lfu_log_factor + 1)
+        if r >= p:
+            return
+        self.lfu_counter += 1
+
+    @property
+    def value(self) -> KeyValueType:
+        self.last_accessed = int(time.time() * 1000)
+        return self._value
+
+    @value.setter
+    def value(self, value: KeyValueType) -> None:
+        self._value = value
+        self.last_accessed = int(time.time() * 1000)
 
     def __hash__(self) -> int:
         return hash(self.key)
 
     def copy(self, new_key: bytes) -> KeyValue:
         new_value: KeyValueType
-        if isinstance(self.value, StringType):
-            new_value = StringType(self.value.value)
+        if isinstance(self.value, bytes | int):
+            new_value = self.value
         elif isinstance(self.value, dict):
             new_value = dict(self.value)
         elif isinstance(self.value, ValkeySortedSet):
@@ -266,7 +208,7 @@ class KeyValue:
     def of_string(cls, key: bytes, value: bytes, expiration: int | None = None) -> Self:
         if is_integer(value):
             return cls(key, int(value), expiration)
-        return cls(key, StringType(value), expiration)
+        return cls(key, value, expiration)
 
 
 MISSING = KeyValue(b"", {})
@@ -353,10 +295,10 @@ class Database:
     @classmethod
     def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
         if key_value is not None and not isinstance(key_value.value, type_):
-            if type_ is int and isinstance(key_value.value, StringType):
-                key_value.value = key_value.value.int_value
-            elif type_ == StringType and isinstance(key_value.value, int):
-                key_value.value = StringType(str(key_value.value).encode())
+            if type_ is int and isinstance(key_value.value, bytes):
+                key_value.value = convert_bytes_value_as_int(key_value.value)
+            elif type_ is bytes and isinstance(key_value.value, int):
+                key_value.value = str(key_value.value).encode()
             else:
                 raise ServerWrongTypeError()
         return key_value
@@ -472,19 +414,19 @@ class Database:
         if is_integer(value):
             self.data[key].value = int(value)
         else:
-            self.data[key].value = StringType(value)
+            self.data[key].value = value
 
-    def get_string(self, key: bytes) -> StringType:
-        return self.get_by_type(key, StringType)
+    def get_string(self, key: bytes) -> bytes:
+        return self.get_by_type(key, bytes)
 
-    def get_string_or_none(self, key: bytes) -> StringType | None:
-        return self.get_or_none_by_type(key, StringType)
+    def get_string_or_none(self, key: bytes) -> bytes | None:
+        return self.get_or_none_by_type(key, bytes)
 
     def get_or_create_int(self, key: bytes) -> int:
         return self.typesafe_get_or_create(key, int)
 
-    def get_or_create_string(self, key: bytes) -> StringType:
-        return self.typesafe_get_or_create(key, StringType)
+    def get_or_create_string(self, key: bytes) -> bytes:
+        return self.typesafe_get_or_create(key, bytes)
 
     def get_hash_table(self, key: bytes) -> dict:
         return self.get_by_type(key, dict)
@@ -517,7 +459,7 @@ class Database:
         return self.typesafe_get_or_create(key, set)
 
     def pop_string(self, key: bytes) -> Any:  # noqa: ANN401
-        key_value = self.typesafe_pop(key, StringType)
+        key_value = self.typesafe_pop(key, bytes)
         if key_value is None:
             return None
         return key_value.value

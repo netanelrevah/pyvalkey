@@ -6,7 +6,14 @@ from typing import Any, ClassVar
 from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.database_objects.databases import StringType
+from pyvalkey.commands.utils import (
+    convert_bytes_value_to_int,
+    convert_int_value_to_bytes,
+    count_bits_by_bits_range,
+    count_bits_by_bytes_range,
+    get_bit_from_bytes,
+    set_bit_to_bytes,
+)
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
 
@@ -25,8 +32,8 @@ class BitCount(DatabaseCommand):
     bit_mode: bool = positional_parameter(default=False, values_mapping={b"BYTE": False, b"BIT": True})
 
     @classmethod
-    def handle_byte_mode(cls, s: StringType, start: int, end: int) -> int:
-        length = len(s.value)
+    def handle_byte_mode(cls, value: bytes, start: int, end: int) -> int:
+        length = len(value)
         server_start = start
         server_stop = end
 
@@ -40,11 +47,11 @@ class BitCount(DatabaseCommand):
         else:
             stop = max(length + int(server_stop), 0)
 
-        return s.count_bits_of_int(start, stop + 1)
+        return count_bits_by_bytes_range(value, start, stop + 1)
 
     @classmethod
-    def handle_bit_mode(cls, s: StringType, start: int, end: int) -> int:
-        length = s.bit_length()
+    def handle_bit_mode(cls, value: bytes, start: int, end: int) -> int:
+        length = convert_bytes_value_to_int(value).bit_length()
 
         if start < 0:
             start = length + start
@@ -52,18 +59,18 @@ class BitCount(DatabaseCommand):
         if end < 0:
             end = length + (end + 1)
 
-        return s.count_bits_of_int(start, end)
+        return count_bits_by_bits_range(value, start, end)
 
     def execute(self) -> ValueType:
-        s = self.database.get_string(self.key)
+        string_value = self.database.get_string(self.key)
         if not self.count_range:
-            return s.count_bits_of_bytes()
+            return count_bits_by_bytes_range(string_value)
 
         start, end = self.count_range
 
         if self.bit_mode:
-            return self.handle_bit_mode(s, start, end)
-        return self.handle_byte_mode(s, start, end)
+            return self.handle_bit_mode(string_value, start, end)
+        return self.handle_byte_mode(string_value, start, end)
 
 
 @ServerCommandsRouter.command(b"bitfield", [b"read", b"bitmap", b"slow"])
@@ -94,18 +101,17 @@ class BitOperation(DatabaseCommand):
         if self.operation in self.OPERATION_TO_OPERATOR:
             result = reduce(
                 self.OPERATION_TO_OPERATOR[self.operation],
-                (self.database.get_string(source_key).bytes_value for source_key in self.source_keys),
+                (convert_bytes_value_to_int(self.database.get_string(source_key)) for source_key in self.source_keys),
             )
-            s = self.database.get_or_create_string(self.destination_key)
-            s.bytes_value = result
-            return len(s)
+            string_value = convert_int_value_to_bytes(result)
+            self.database.set_string_value(self.destination_key, string_value)
+            return len(string_value)
 
         (source_key,) = self.source_keys
 
-        source_s = self.database.get_string(source_key)
-        destination_s = self.database.get_or_create_string(self.destination_key)
-        destination_s.bytes_value = ~source_s.bytes_value
-        return len(destination_s)
+        new_value = convert_int_value_to_bytes(~convert_bytes_value_to_int(self.database.get_string(source_key)))
+        self.database.set_string_value(self.destination_key, new_value)
+        return len(new_value)
 
 
 @ServerCommandsRouter.command(b"bitpos", [b"read", b"bitmap", b"slow"])
@@ -120,9 +126,7 @@ class GetBit(DatabaseCommand):
     offset: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
-
-        return s.get_bit(self.offset)
+        return get_bit_from_bytes(self.database.get_string(self.key), self.offset)
 
 
 @ServerCommandsRouter.command(b"setbit", [b"write", b"bitmap", b"slow"])
@@ -135,12 +139,12 @@ class SetBit(DatabaseCommand):
         if not (0 <= self.value <= 1):
             raise ServerError(b"ERR bit is not an integer or out of range")
 
-        value = bool(self.value)
+        bit_bool_value = bool(self.value)
 
-        s = self.database.get_or_create_string(self.key)
+        string_value = self.database.get_or_create_string(self.key)
 
-        previous_value = s.get_bit(self.offset)
+        previous_value = get_bit_from_bytes(string_value, self.offset)
 
-        s.set_bit(self.offset, value)
+        self.database.set_string_value(self.key, set_bit_to_bytes(string_value, self.offset, bit_bool_value))
 
         return previous_value

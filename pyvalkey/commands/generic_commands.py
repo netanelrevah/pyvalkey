@@ -10,7 +10,7 @@ from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, KeyValue, StringType, ValkeySortedSet
+from pyvalkey.database_objects.databases import Database, KeyValue, ValkeySortedSet
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -81,14 +81,14 @@ class Dump(DatabaseCommand):
                 "type": "sorted_set",
                 "value": key_value.value.members,
             }
-        elif isinstance(key_value.value, StringType):
+        elif isinstance(key_value.value, bytes):
             dump_value = {
                 "type": "string",
-                "value": key_value.value.value,
+                "value": key_value.value.decode(),
             }
         else:
             raise TypeError()
-        return json.dumps(dump_value)
+        return json.dumps(dump_value).encode()
 
 
 @ServerCommandsRouter.command(b"exists", [b"read", b"string", b"fast"])
@@ -246,6 +246,28 @@ class ObjectEncoding(DatabaseCommand):
         return b"raw"
 
 
+@ServerCommandsRouter.command(b"idletime", [b"read", b"keyspace", b"slow"], parent_command=b"object")
+class ObjectFrequency(DatabaseCommand):
+    key: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        key_value = self.database.get(self.key)
+        if key_value is None:
+            return None
+        return int(time.time() * 1000) - key_value.last_accessed
+
+
+@ServerCommandsRouter.command(b"idletime", [b"read", b"keyspace", b"slow"], parent_command=b"object")
+class ObjectIdleTime(DatabaseCommand):
+    key: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        key_value = self.database.get(self.key)
+        if key_value is None:
+            return None
+        return int(time.time() * 1000) - key_value.last_accessed
+
+
 @ServerCommandsRouter.command(b"persist", [b"keyspace", b"write", b"fast"])
 class Persist(DatabaseCommand):
     key: bytes = positional_parameter()
@@ -363,8 +385,8 @@ class Restore(DatabaseCommand):
     serialized_value: bytes = positional_parameter()
     replace: bool = keyword_parameter(flag=b"REPLACE")
     absolute_ttl: bool = keyword_parameter(flag=b"ABSTTL")
-    idle_time_seconds: bool = keyword_parameter(default=False, token=b"IDLETIME")
-    frequency: bool = keyword_parameter(default=False, token=b"FREQ")
+    idle_time_seconds: int | None = keyword_parameter(default=None, token=b"IDLETIME")
+    frequency: int | None = keyword_parameter(default=None, token=b"FREQ")
 
     def execute(self) -> ValueType:
         json_value: dict[str, Any] = json.loads(self.serialized_value)
@@ -378,7 +400,7 @@ class Restore(DatabaseCommand):
         elif json_value["type"] == "sorted_set":
             value = ValkeySortedSet([(score, member) for score, member in json_value["value"]])
         elif json_value["type"] == "string":
-            value = StringType(json_value["value"])
+            value = json_value["value"].encode()
         elif json_value["type"] == "int":
             value = json_value["value"]
         else:
@@ -387,9 +409,16 @@ class Restore(DatabaseCommand):
         if not self.replace and self.database.has_key(self.key):
             raise ServerError(b"BUSYKEY Target key name already exists.")
 
+        kwargs = {}
+        if self.idle_time_seconds:
+            kwargs["last_accessed"] = self.idle_time_seconds
+
         self.database.set_key_value(
             KeyValue(
-                self.key, value, (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.absolute_ttl
+                self.key,
+                value,
+                (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.absolute_ttl,
+                **kwargs,
             )
         )
 
@@ -463,9 +492,9 @@ class SortReadOnly(Command):
             return None
         if isinstance(key_value.value, int):
             return key_value.value
-        if not isinstance(key_value.value, StringType):
+        if not isinstance(key_value.value, bytes):
             return None
-        return key_value.value.value
+        return key_value.value
 
     def internal_execute(self) -> list[int | bytes | None] | None:
         key_value = self.database.get_or_none(self.key)
