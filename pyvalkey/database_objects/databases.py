@@ -219,6 +219,11 @@ class Database:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
 
+    string_database: StringDatabase = field(init=False)
+
+    def __post_init__(self):
+        self.string_database = StringDatabase(self)
+
     def size(self) -> int:
         return len(self.data)
 
@@ -310,7 +315,7 @@ class Database:
     def get(self, key: bytes) -> KeyValue | None:
         if not self.has_key(key):
             return None
-        return self.data[key]
+        return self.get_unsafely(key)
 
     def get_or_none(self, key: bytes) -> KeyValue | None:
         if key not in self.data:
@@ -322,14 +327,7 @@ class Database:
         return self.check_type_ang_get(key_value, type_)
 
     def get_unsafely(self, key: bytes) -> KeyValue:
-        if key not in self.data:
-            raise KeyError()
-        key_value = self.data[key]
-        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
-            del self.data[key]
-            self.key_with_expiration.remove(key_value)
-            raise KeyError()
-        return key_value
+        return self.data[key]
 
     def set_persist(self, key: bytes) -> bool:
         try:
@@ -385,6 +383,13 @@ class Database:
 
         return key_value.value if key_value else type_()
 
+    def upsert(self, key: bytes, value: KeyValueType) -> None:
+        if self.has_key(key):
+            key_value = self.get_unsafely(key)
+            key_value.value = value
+        else:
+            self.set_key_value(KeyValue(key, value))
+
     def typesafe_get_or_create(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
         key_value = None
         if key in self.data:
@@ -412,9 +417,9 @@ class Database:
 
     def set_string_value(self, key: bytes, value: bytes) -> None:
         if is_integer(value):
-            self.data[key].value = int(value)
+            self.upsert(key, int(value))
         else:
-            self.data[key].value = value
+            self.upsert(key, value)
 
     def get_string(self, key: bytes) -> bytes:
         return self.get_by_type(key, bytes)
@@ -458,8 +463,17 @@ class Database:
     def get_or_create_set(self, key: bytes) -> set:
         return self.typesafe_get_or_create(key, set)
 
-    def pop_string(self, key: bytes) -> Any:  # noqa: ANN401
+    def pop_string(self, key: bytes) -> bytes | None:
         key_value = self.typesafe_pop(key, bytes)
         if key_value is None:
             return None
         return key_value.value
+
+
+class DatabaseProxy:
+    pass
+
+
+@dataclass
+class StringDatabase(DatabaseProxy):
+    database: Database

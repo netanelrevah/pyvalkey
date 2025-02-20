@@ -66,9 +66,9 @@ class GetDelete(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        s = self.database.pop_string(self.key)
-        if s is not None:
-            return s.value
+        string_value = self.database.pop_string(self.key)
+        if string_value is not None:
+            return string_value
         return None
 
 
@@ -261,8 +261,8 @@ class SetIfNotExists(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        s = self.database.get_string_or_none(self.key)
-        if s is not None:
+        string_value = self.database.get_string_or_none(self.key)
+        if string_value is not None:
             return False
         self.database.set_string_value(self.key, self.value)
         return True
@@ -282,19 +282,19 @@ class SetRange(DatabaseCommand):
             raise ServerError(b"ERR string exceeds maximum allowed size (proto-max-bulk-len)")
 
         if not self.value:
-            s = self.database.get_string(self.key)
-            return len(s)
+            string_value = self.database.get_string(self.key)
+            return len(string_value)
 
-        s = self.database.get_or_create_string(self.key)
+        string_value = self.database.get_or_create_string(self.key)
 
-        if self.offset >= len(s):
-            new_value = s + b"\x00" * (self.offset - len(s)) + self.value
+        if self.offset >= len(string_value):
+            new_value = string_value + b"\x00" * (self.offset - len(string_value)) + self.value
         else:
-            new_value = s[: self.offset] + self.value + s[self.offset + len(self.value) :]
+            new_value = string_value[: self.offset] + self.value + string_value[self.offset + len(self.value) :]
 
         self.database.set_string_value(self.key, new_value)
 
-        return len(s)
+        return len(new_value)
 
 
 @ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])

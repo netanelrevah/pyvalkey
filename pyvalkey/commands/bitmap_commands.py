@@ -104,13 +104,13 @@ class BitOperation(DatabaseCommand):
                 (convert_bytes_value_to_int(self.database.get_string(source_key)) for source_key in self.source_keys),
             )
             string_value = convert_int_value_to_bytes(result)
-            self.database.set_string_value(self.destination_key, string_value)
+            self.database.upsert(self.destination_key, string_value)
             return len(string_value)
 
         (source_key,) = self.source_keys
 
         new_value = convert_int_value_to_bytes(~convert_bytes_value_to_int(self.database.get_string(source_key)))
-        self.database.set_string_value(self.destination_key, new_value)
+        self.database.upsert(self.destination_key, new_value)
         return len(new_value)
 
 
@@ -145,6 +145,9 @@ class SetBit(DatabaseCommand):
 
         previous_value = get_bit_from_bytes(string_value, self.offset)
 
-        self.database.set_string_value(self.key, set_bit_to_bytes(string_value, self.offset, bit_bool_value))
+        self.database.upsert(
+            self.key,
+            set_bit_to_bytes(string_value, self.offset, bit_bool_value),
+        )
 
         return previous_value
