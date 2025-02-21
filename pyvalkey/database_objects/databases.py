@@ -221,7 +221,7 @@ class Database:
 
     string_database: StringDatabase = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.string_database = StringDatabase(self)
 
     def size(self) -> int:
