@@ -13,7 +13,7 @@ from pyvalkey.resp import RESP_OK, RespProtocolVersion, ValueType
 
 
 def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, increment: int | float) -> dict:
-    hash_get = database.get_or_create_hash_table(key)
+    hash_get = database.hash_database.get_value_or_create(key)
 
     if field not in hash_get:
         hash_get[field] = 0
@@ -33,10 +33,11 @@ class HashMapDelete(DatabaseCommand):
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_or_none_hash_table(self.key)
+        key_value = self.database.hash_database.get_or_none(self.key)
 
-        if hash_map is None:
+        if key_value is None:
             return 0
+        hash_map = key_value.value
 
         result = sum([1 if hash_map.pop(f, None) is not None else 0 for f in self.fields])
 
@@ -52,7 +53,7 @@ class HashMapExists(DatabaseCommand):
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.field in self.database.get_hash_table(self.key)
+        return self.field in self.database.hash_database.get_value(self.key)
 
 
 @ServerCommandsRouter.command(b"hget", [b"read", b"hash", b"fast"])
@@ -61,7 +62,7 @@ class HashMapGet(DatabaseCommand):
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.get_hash_table(self.key).get(self.field)
+        return self.database.hash_database.get_value(self.key).get(self.field)
 
 
 @ServerCommandsRouter.command(b"hgetall", [b"read", b"hash", b"slow"])
@@ -69,7 +70,7 @@ class HashMapGetAll(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_set = self.database.get_hash_table(self.key)
+        hash_set = self.database.hash_database.get_value(self.key)
 
         response = []
         for k, v in hash_set.items():
@@ -102,7 +103,7 @@ class HashMapKeys(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return list(self.database.get_hash_table(self.key).keys())
+        return list(self.database.hash_database.get_value(self.key).keys())
 
 
 @ServerCommandsRouter.command(b"hlen", [b"read", b"hash", b"fast"])
@@ -110,7 +111,7 @@ class HashMapLength(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.get_hash_table(self.key))
+        return len(self.database.hash_database.get_value(self.key))
 
 
 @ServerCommandsRouter.command(b"hmget", [b"read", b"hash", b"fast"])
@@ -119,7 +120,7 @@ class HashMapGetMultiple(DatabaseCommand):
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_hash_table(self.key)
+        hash_map = self.database.hash_database.get_value(self.key)
         return [hash_map.get(f, None) for f in self.fields]
 
 
@@ -129,7 +130,7 @@ class HashMapSetMultiple(DatabaseCommand):
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_or_create_hash_table(self.key)
+        hash_map = self.database.hash_database.get_value_or_create(self.key)
 
         for field, value in self.fields_values:
             hash_map[field] = value
@@ -145,7 +146,7 @@ class HashRandomField(DatabaseCommand):
     with_values: bool = keyword_parameter(flag=b"WITHVALUES", default=False)
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_or_create_hash_table(self.key)
+        hash_map = self.database.hash_database.get_value_or_create(self.key)
 
         if self.count is None:
             if not hash_map:
@@ -179,7 +180,7 @@ class HashMapSet(DatabaseCommand):
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_or_create_hash_table(self.key)
+        hash_map = self.database.hash_database.get_value_or_create(self.key)
 
         added_fields = 0
         for field, value in self.fields_values:
@@ -196,7 +197,7 @@ class HashMapSetIfNotExists(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.get_or_create_hash_table(self.key)
+        hash_map = self.database.hash_database.get_value_or_create(self.key)
 
         if self.field in hash_map:
             return False
@@ -210,7 +211,7 @@ class HashMapStringLength(DatabaseCommand):
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.get_hash_table(self.key).get(self.field, b""))
+        return len(self.database.hash_database.get_value(self.key).get(self.field, b""))
 
 
 @ServerCommandsRouter.command(b"hvals", [b"read", b"hash", b"slow"])
@@ -218,4 +219,4 @@ class HashMapValues(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return list(self.database.get_hash_table(self.key).values())
+        return list(self.database.hash_database.get_value(self.key).values())

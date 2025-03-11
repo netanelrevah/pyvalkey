@@ -62,7 +62,7 @@ class BitCount(DatabaseCommand):
         return count_bits_by_bits_range(value, start, end)
 
     def execute(self) -> ValueType:
-        string_value = self.database.get_string(self.key)
+        string_value = self.database.bytes_database.get_value(self.key)
         if not self.count_range:
             return count_bits_by_bytes_range(string_value)
 
@@ -101,7 +101,10 @@ class BitOperation(DatabaseCommand):
         if self.operation in self.OPERATION_TO_OPERATOR:
             result = reduce(
                 self.OPERATION_TO_OPERATOR[self.operation],
-                (convert_bytes_value_to_int(self.database.get_string(source_key)) for source_key in self.source_keys),
+                (
+                    convert_bytes_value_to_int(self.database.bytes_database.get_value(source_key))
+                    for source_key in self.source_keys
+                ),
             )
             string_value = convert_int_value_to_bytes(result)
             self.database.upsert(self.destination_key, string_value)
@@ -109,7 +112,9 @@ class BitOperation(DatabaseCommand):
 
         (source_key,) = self.source_keys
 
-        new_value = convert_int_value_to_bytes(~convert_bytes_value_to_int(self.database.get_string(source_key)))
+        new_value = convert_int_value_to_bytes(
+            ~convert_bytes_value_to_int(self.database.bytes_database.get_value(source_key))
+        )
         self.database.upsert(self.destination_key, new_value)
         return len(new_value)
 
@@ -126,7 +131,7 @@ class GetBit(DatabaseCommand):
     offset: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return get_bit_from_bytes(self.database.get_string(self.key), self.offset)
+        return get_bit_from_bytes(self.database.bytes_database.get_value(self.key), self.offset)
 
 
 @ServerCommandsRouter.command(b"setbit", [b"write", b"bitmap", b"slow"])
@@ -141,13 +146,17 @@ class SetBit(DatabaseCommand):
 
         bit_bool_value = bool(self.value)
 
-        string_value = self.database.get_or_create_string(self.key)
+        key_value = self.database.bytes_database.get_or_none(self.key)
 
-        previous_value = get_bit_from_bytes(string_value, self.offset)
+        value = b""
+        previous_value = 0
+        if key_value is not None:
+            value = key_value.value
+            previous_value = get_bit_from_bytes(key_value.value, self.offset)
 
         self.database.upsert(
             self.key,
-            set_bit_to_bytes(string_value, self.offset, bit_bool_value),
+            set_bit_to_bytes(value, self.offset, bit_bool_value),
         )
 
         return previous_value

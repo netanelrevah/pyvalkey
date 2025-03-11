@@ -12,6 +12,7 @@ from pyvalkey.database_objects.databases import (
     MAX_BYTES,
     Database,
     RangeLimit,
+    ValkeySortedSet,
 )
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
@@ -60,7 +61,7 @@ def sorted_set_range(
     limit: RangeLimit | None = None,
     destination: bytes | None = None,
 ) -> int | list:
-    z = database.get_sorted_set(key)
+    z = database.sorted_set_database.get_value(key)
 
     if range_mode == RangeMode.BY_SCORE:
         min_score, min_inclusive, max_score, max_inclusive = parse_ordered_range_parameters(start, stop)
@@ -90,9 +91,14 @@ def sorted_set_range(
         )
 
     if destination:
-        dz = database.get_or_create_sorted_set(destination)
-        dz.update_with_iterator(result_iterator)
-        return len(dz)
+        key_value = database.sorted_set_database.get_or_none(destination)
+
+        if key_value is not None:
+            destination_sorted_set = key_value.value
+        else:
+            destination_sorted_set = ValkeySortedSet()
+        destination_sorted_set.update_with_iterator(result_iterator)
+        return len(destination_sorted_set)
     return list(result_iterator)
 
 
@@ -122,8 +128,8 @@ class SortedSetAdd(DatabaseCommand):
     scores_members: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
-        z = self.database.get_or_create_sorted_set(self.key)
-        length_before = len(z)
+        key_value = self.database.sorted_set_database.get_or_create(self.key)
+        length_before = len(key_value.value)
         for score_bytes, member in self.scores_members:
             if score_bytes == b"+inf":
                 score = math.inf
@@ -134,8 +140,8 @@ class SortedSetAdd(DatabaseCommand):
                     score = float(score_bytes)
                 except ValueError:
                     raise ServerError(b"ERR value is not valid float")
-            z.add(score, member)
-        return len(z) - length_before
+            key_value.value.add(score, member)
+        return len(key_value.value) - length_before
 
 
 @ServerCommandsRouter.command(b"zrange", [b"read", b"sortedset", b"slow"])
@@ -294,11 +300,11 @@ class SortedSetCount(DatabaseCommand):
     def execute(self) -> ValueType:
         min_score, min_inclusive, max_score, max_inclusive = parse_ordered_range_parameters(self.min, self.max)
 
-        z = self.database.get_or_create_sorted_set(self.key)
+        key_value = self.database.sorted_set_database.get_or_create(self.key)
 
         return sum(
             1
-            for _ in z.range_by_score(
+            for _ in key_value.value.range_by_score(
                 float(min_score), float(max_score), min_inclusive, max_inclusive, with_scores=False
             )
         )
@@ -309,4 +315,4 @@ class SortedSetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.get_or_create_sorted_set(self.key).members)
+        return len(self.database.sorted_set_database.get_or_create(self.key).value.members)

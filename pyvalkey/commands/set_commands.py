@@ -16,12 +16,12 @@ class SetMove(DatabaseCommand):
     member: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        source_set = self.database.get_set(self.source)
-        destination_set = self.database.get_or_create_set(self.destination)
-        if self.member not in source_set:
+        source_set = self.database.set_database.get(self.source)
+        destination_set = self.database.set_database.get_or_create(self.destination)
+        if self.member not in source_set.value:
             return False
-        source_set.remove(self.member)
-        destination_set.add(self.member)
+        source_set.value.remove(self.member)
+        destination_set.value.add(self.member)
         return True
 
 
@@ -31,8 +31,8 @@ class SetAreMembers(DatabaseCommand):
     members: set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_set = self.database.get_set(self.key)
-        return list(map(lambda m: m in a_set, self.members))
+        a_set = self.database.set_database.get(self.key)
+        return list(map(lambda m: m in a_set.value, self.members))
 
 
 @ServerCommandsRouter.command(b"sismember", [b"read", b"set", b"fast"])
@@ -41,7 +41,7 @@ class SetIsMember(DatabaseCommand):
     member: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.member in self.database.get_set(self.key)
+        return self.member in self.database.set_database.get(self.key).value
 
 
 @ServerCommandsRouter.command(b"smembers", [b"read", b"set", b"fast"])
@@ -49,7 +49,7 @@ class SetMembers(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return list(self.database.get_set(self.key))
+        return list(self.database.set_database.get(self.key).value)
 
 
 @ServerCommandsRouter.command(b"scard", [b"read", b"set", b"fast"])
@@ -57,7 +57,7 @@ class SetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.get_set(self.key))
+        return len(self.database.set_database.get(self.key).value)
 
 
 @ServerCommandsRouter.command(b"sadd", [b"write", b"set", b"fast"])
@@ -66,11 +66,11 @@ class SetAdd(DatabaseCommand):
     members: set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_set = self.database.get_or_create_set(self.key)
-        length_before = len(a_set)
+        a_set = self.database.set_database.get_or_create(self.key)
+        length_before = len(a_set.value)
         for member in self.members:
-            a_set.add(member)
-        return len(a_set) - length_before
+            a_set.value.add(member)
+        return len(a_set.value) - length_before
 
 
 @ServerCommandsRouter.command(b"spop", [b"write", b"set", b"fast"])
@@ -79,7 +79,7 @@ class SetPop(DatabaseCommand):
     count: int = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
-        a_set = self.database.get_set(self.key).pop()
+        a_set = self.database.set_database.get(self.key).value
         if self.count is None:
             return a_set.pop() if a_set else None
         return [a_set.pop() for _ in range(min(len(a_set), self.count))]
@@ -91,13 +91,13 @@ class SetRemove(DatabaseCommand):
     members: set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_set = self.database.get_set(self.key)
+        a_set = self.database.set_database.get(self.key).value
         a_set.difference_update(self.members)
         return len(a_set.intersection(self.members))
 
 
 def apply_set_operation(database: Database, operation: Callable[[set, set], set], keys: list[bytes]) -> list:
-    return list(functools.reduce(operation, map(database.get_set, keys)))  # type: ignore[arg-type]
+    return list(functools.reduce(operation, map(lambda x: database.set_database.get(x).value, keys)))  # type: ignore[arg-type]
 
 
 @ServerCommandsRouter.command(b"sunion", [b"read", b"set", b"slow"])
@@ -127,9 +127,9 @@ class SetDifference(DatabaseCommand):
 def apply_set_store_operation(
     database: Database, operation: Callable[[set, set], set], keys: list[bytes], destination: bytes
 ) -> int:
-    new_set: set = functools.reduce(operation, map(database.get_set, keys))
+    new_set: set = functools.reduce(operation, map(lambda x: database.set_database.get(x).value, keys))
     database.pop(destination, None)
-    database.get_or_create_set(destination).update(new_set)
+    database.set_database.get_or_create(destination).value.update(new_set)
     return len(new_set)
 
 
@@ -166,7 +166,10 @@ class SetRandomMember(DatabaseCommand):
     count: int | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
-        s = self.database.get_set_or_none(self.key)
+        key_value = self.database.get_or_none(self.key)
+        s = None
+        if key_value is not None:
+            s = key_value.value
 
         if self.count is None:
             if s is None:

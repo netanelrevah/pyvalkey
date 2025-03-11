@@ -34,7 +34,7 @@ class ListIndex(DatabaseCommand):
     index: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        server_list = self.database.get_list(self.key)
+        server_list = self.database.list_database.get_value(self.key)
 
         try:
             return server_list[self.index]
@@ -50,7 +50,7 @@ class ListInsert(DatabaseCommand):
     element: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_or_create(self.key).value
 
         if not a_list:
             return 0
@@ -67,7 +67,7 @@ class ListLength(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.get_list(self.key))
+        return len(self.database.list_database.get_value(self.key))
 
 
 @ServerCommandsRouter.command(b"lrange", [b"read", b"list", b"slow"])
@@ -77,7 +77,7 @@ class ListRange(DatabaseCommand):
     stop: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.get_list(self.key)[parse_range_parameters(self.start, self.stop)]
+        return self.database.list_database.get_value(self.key)[parse_range_parameters(self.start, self.stop)]
 
 
 @ServerCommandsRouter.command(b"lpop", [b"write", b"list", b"fast"])
@@ -89,7 +89,7 @@ class ListPop(DatabaseCommand):
         if self.count is not None and self.count < 0:
             raise ServerError(b"ERR value is out of range, must be positive")
 
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_or_create(self.key).value
 
         if not a_list:
             return None if (self.count is None) else ArrayNone
@@ -107,7 +107,7 @@ class ListPosition(DatabaseCommand):
     maximum_length: int | None = keyword_parameter(token=b"MAXLEN", default=None)
 
     def execute(self) -> ValueType:
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_or_create(self.key).value
 
         if self.rank is not None:
             if self.rank == 0:
@@ -156,7 +156,7 @@ class ListPush(DatabaseCommand):
     values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_or_create(self.key).value
 
         for v in self.values:
             a_list.insert(0, v)
@@ -172,7 +172,7 @@ class ListRightPop(DatabaseCommand):
         if self.count is not None and self.count < 0:
             raise ServerError(b"ERR value is out of range, must be positive")
 
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_value_or_create(self.key)
 
         if not a_list:
             return None if (self.count is None) else ArrayNone
@@ -188,7 +188,7 @@ class ListRemove(DatabaseCommand):
     element: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_value_or_create(self.key)
 
         if not a_list:
             return 0
@@ -215,7 +215,7 @@ class ListPushAtTail(DatabaseCommand):
     values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_list = self.database.get_or_create_list(self.key)
+        a_list = self.database.list_database.get_value_or_create(self.key)
 
         for v in self.values:
             a_list.append(v)
