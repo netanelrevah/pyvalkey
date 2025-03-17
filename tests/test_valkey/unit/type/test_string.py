@@ -69,7 +69,7 @@ def test_setnx_against_not_expired_volatile_key(s: valkey.Valkey):
     s.set("x", 10)
     s.expire("x", 10000)
     assert s.setnx("x", 20) is False
-    assert s.get("x") == b"10"
+    assert s.get("x") == 10
 
 
 def test_setnx_against_expired_volatile_key(s: valkey.Valkey):

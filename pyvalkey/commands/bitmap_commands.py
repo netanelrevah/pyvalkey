@@ -131,7 +131,7 @@ class GetBit(DatabaseCommand):
     offset: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return get_bit_from_bytes(self.database.bytes_database.get_value(self.key), self.offset)
+        return get_bit_from_bytes(self.database.bytes_database.get_value_or_empty(self.key), self.offset)
 
 
 @ServerCommandsRouter.command(b"setbit", [b"write", b"bitmap", b"slow"])

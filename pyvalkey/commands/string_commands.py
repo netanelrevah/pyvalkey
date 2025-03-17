@@ -66,7 +66,7 @@ class Get(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
-        return self.database.string_database.get_value(self.key)
+        return self.database.string_database.get_value_or_none(self.key)
 
 
 @ServerCommandsRouter.command(b"getdel", [b"read", b"string", b"fast"])
@@ -74,7 +74,7 @@ class GetDelete(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        key_value = self.database.string_database.pop(self.key)
+        key_value = self.database.string_database.pop(self.key, None)
         if key_value is not None:
             return key_value.value
         return None
@@ -134,7 +134,7 @@ class GetSet(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        old_value = self.database.string_database.get_value(self.key)
+        old_value = self.database.string_database.get_value_or_create(self.key)
         self.database.string_database.set_value(self.key, self.value)
         return old_value
 
@@ -201,7 +201,7 @@ class SetIfNotExistsMultiple(DatabaseCommand):
 
     def execute(self) -> ValueType:
         for key, _ in self.key_value:
-            if not self.database.string_database.has_key(key):
+            if self.database.string_database.has_key(key):
                 return False
         for key, value in self.key_value:
             self.database.upsert(key, value)
@@ -252,7 +252,7 @@ class SetExpire(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        self.database.string_database.set_value(self.key, self.value)
+        self.database.string_database.upsert(self.key, self.value)
         self.database.set_expiration(self.key, self.seconds)
         return RESP_OK
 
@@ -264,10 +264,9 @@ class SetIfNotExists(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        string_value = self.database.string_database.get_or_none(self.key)
-        if string_value is not None:
+        if self.database.string_database.has_key(self.key):
             return False
-        self.database.string_database.set_value(self.key, self.value)
+        self.database.string_database.upsert(self.key, self.value)
         return True
 
 
@@ -284,7 +283,7 @@ class SetRange(DatabaseCommand):
         if self.offset + len(self.value) > 512 * (1024**2):
             raise ServerError(b"ERR string exceeds maximum allowed size (proto-max-bulk-len)")
 
-        string_value = self.database.bytes_database.get_value(self.key)
+        string_value = self.database.bytes_database.get_value_or_empty(self.key)
         if not self.value:
             return len(string_value)
 
@@ -293,7 +292,7 @@ class SetRange(DatabaseCommand):
         else:
             new_value = string_value[: self.offset] + self.value + string_value[self.offset + len(self.value) :]
 
-        self.database.bytes_database.set_value(self.key, new_value)
+        self.database.bytes_database.upsert(self.key, new_value)
 
         return len(new_value)
 
@@ -303,4 +302,4 @@ class StringLength(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        return len(self.database.bytes_database.get_value(self.key))
+        return len(self.database.bytes_database.get_value_or_empty(self.key))

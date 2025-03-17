@@ -295,16 +295,10 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             raise KeyError()
         return self.data[key]
 
-    def convert_value_if_needed(self, value: KeyValueTypeVar) -> KeyValueTypeVar:
-        return value
-
-    def get_value(self, key: bytes) -> KeyValueTypeVar:
-        return self.convert_value_if_needed(self.get(key).value)
-
     def get_or_none(self, key: bytes) -> KeyValue | None:
         if not self.has_key(key):
             return None
-        return self.get(key)
+        return self.data[key]
 
     def create_empty(self) -> KeyValueTypeVar:
         raise NotImplementedError()
@@ -314,7 +308,23 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             key_value = KeyValue(key, self.create_empty())
             self.set_key_value(key_value)
             return key_value
-        return self.get(key)
+        return self.data[key]
+
+    def convert_value_if_needed(self, value: KeyValueTypeVar) -> KeyValueTypeVar:
+        return value
+
+    def get_value(self, key: bytes) -> KeyValueTypeVar:
+        return self.convert_value_if_needed(self.get(key).value)
+
+    def get_value_or_empty(self, key: bytes) -> KeyValueTypeVar:
+        if not self.has_key(key):
+            return self.create_empty()
+        return self.convert_value_if_needed(self.get(key).value)
+
+    def get_value_or_none(self, key: bytes) -> None | KeyValueTypeVar:
+        if not self.has_key(key):
+            return None
+        return self.convert_value_if_needed(self.get(key).value)
 
     def get_value_or_create(self, key: bytes) -> KeyValueTypeVar:
         return self.get_or_create(key).value
