@@ -1,32 +1,64 @@
-import operator
-from enum import Enum
-from functools import reduce
-from typing import Any, ClassVar
+import time
 
-from pyvalkey.commands.core import Command, DatabaseCommand
+from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.database_objects.databases import Database, StringType
+from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
+from pyvalkey.database_objects.databases import Database, KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError, ValkeySyntaxError
 from pyvalkey.resp import RESP_OK, ValueType
 
 
-@ServerCommandsRouter.command(b"echo", [b"fast", b"connection"])
-class Echo(Command):
-    message: bytes = positional_parameter()
+def increment_by(database: Database, key: bytes, increment: int | float = 1) -> bytes | int:
+    if isinstance(increment, int):
+        key_value = database.int_database.get_or_none(key)
+        if key_value is None:
+            key_value = KeyValue(key, 0)
+        previous_value = key_value.value
+        key_value.value = previous_value + increment
+        database.int_database.set_key_value(key_value)
+        return previous_value
+    elif isinstance(increment, float):
+        key_value = database.string_database.get_or_none(key)
+        if key_value is None:
+            key_value = KeyValue(key, b"0")
+        previous_value = key_value.value
+        key_value.value = increment_bytes_value_as_float(previous_value, increment)
+        database.string_database.set_key_value(key_value)
+        return previous_value
+    else:
+        raise ValueError()
+
+
+@ServerCommandsRouter.command(b"append", [b"write", b"string", b"fast"])
+class Append(DatabaseCommand):
+    key: bytes = positional_parameter()
+    value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.message
+        key_value = self.database.string_database.get_or_none(self.key)
+        if key_value is None:
+            key_value = KeyValue(self.key, b"")
+        key_value.value += self.value
+        self.database.set_key_value(key_value)
+        return len(key_value.value) - len(self.value)
 
 
-@ServerCommandsRouter.command(b"ping", [b"fast", b"connection"])
-class Ping(Command):
-    message: bytes | None = positional_parameter(default=None)
+@ServerCommandsRouter.command(b"decr", [b"write", b"string", b"fast"])
+class Decrement(DatabaseCommand):
+    key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        if self.message:
-            return self.message
-        return b"PONG"
+        return increment_by(self.database, self.key, -1)
+
+
+@ServerCommandsRouter.command(b"decrby", [b"write", b"string", b"fast"])
+class DecrementBy(DatabaseCommand):
+    key: bytes = positional_parameter()
+    decrement: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return increment_by(self.database, self.key, self.decrement * -1)
 
 
 @ServerCommandsRouter.command(b"get", [b"read", b"string", b"fast"])
@@ -34,30 +66,7 @@ class Get(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
-        s = self.database.get_string_or_none(self.key)
-        if s is not None:
-            return s.value
-        return None
-
-
-@ServerCommandsRouter.command(b"mget", [b"read", b"string", b"fast"])
-class MultipleGet(DatabaseCommand):
-    keys: list[bytes] = positional_parameter(key_mode=b"R")
-
-    def execute(self) -> ValueType:
-        result: list[bytes | None] = []
-        for key in self.keys:
-            s = None
-            try:
-                s = self.database.get_string_or_none(key)
-            except ServerWrongTypeError:
-                pass
-
-            if s is None:
-                result.append(None)
-            else:
-                result.append(s.value)
-        return result
+        return self.database.string_database.get_value_or_none(self.key)
 
 
 @ServerCommandsRouter.command(b"getdel", [b"read", b"string", b"fast"])
@@ -65,26 +74,10 @@ class GetDelete(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        s = self.database.pop_string(self.key)
-        if s is not None:
-            return s.value
+        key_value = self.database.string_database.pop(self.key, None)
+        if key_value is not None:
+            return key_value.value
         return None
-
-
-@ServerCommandsRouter.command(b"exists", [b"read", b"string", b"fast"])
-class Exists(DatabaseCommand):
-    keys: list[bytes] = positional_parameter(key_mode=b"RW")
-
-    def execute(self) -> ValueType:
-        return sum(1 for key in self.keys if self.database.get_or_none(key) is not None)
-
-
-@ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])
-class StringLength(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"RW")
-
-    def execute(self) -> ValueType:
-        return len(self.database.get_string(self.key))
 
 
 @ServerCommandsRouter.command(b"getex", [b"write", b"string", b"fast"])
@@ -97,8 +90,8 @@ class GetExpire(DatabaseCommand):
     persist: bool = keyword_parameter(flag=b"PERSIST")
 
     def execute(self) -> ValueType:
-        s = self.database.get_string_or_none(self.key)
-        if s is None:
+        key_value = self.database.string_database.get_or_none(self.key)
+        if key_value is None:
             return None
 
         fields_names = ["ex", "px", "exat", "pxat", "persist"]
@@ -118,105 +111,21 @@ class GetExpire(DatabaseCommand):
             if name == "persist":
                 self.database.set_persist(self.key)
 
-        return s.value
+        return key_value.value
 
 
-@ServerCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
-class Set(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"RW")
-    value: bytes = positional_parameter()
-    ex: int | None = keyword_parameter(flag=b"EX", default=None)
-    px: int | None = keyword_parameter(flag=b"PX", default=None)
-    exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
-    pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
-
-    def get_one_and_only_token(self) -> str | None:
-        fields_names = ["ex", "px", "exat", "pxat"]
-
-        filled = list(map(bool, [getattr(self, name) for name in fields_names]))
-        if filled.count(True) > 1:
-            raise ValkeySyntaxError()
-
-        if True in filled:
-            name = fields_names[filled.index(True)]
-
-            return name
-
-        return None
+@ServerCommandsRouter.command(b"getrange", [b"stream", b"write", b"fast"])
+class StringGetRange(DatabaseCommand):
+    key: bytes = positional_parameter()
+    start: int = positional_parameter()
+    end: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
+        key_value = self.database.string_database.get_or_none(self.key)
+        if key_value is None:
+            return b""
 
-        if token_name := self.get_one_and_only_token():
-            token_value = getattr(self, token_name)
-            if token_name in ["ex", "px"]:
-                self.database.set_expiration(self.key, token_value * (1000 if token_name == "ex" else 1))
-            if token_name in ["exat", "pxat"]:
-                self.database.set_expiration_at(self.key, token_value * (1000 if token_name == "exat" else 1))
-        else:
-            self.database.set_persist(self.key)
-
-        s.value = self.value
-        return RESP_OK
-
-
-@ServerCommandsRouter.command(b"setrange", [b"write", b"string", b"slow"])
-class SetRange(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"RW")
-    offset: int = positional_parameter()
-    value: bytes = positional_parameter()
-
-    def execute(self) -> ValueType:
-        if self.offset < 0:
-            raise ServerError(b"ERR value is not an integer or out of range")
-
-        if self.offset + len(self.value) > 512 * (1024**2):
-            raise ServerError(b"ERR string exceeds maximum allowed size (proto-max-bulk-len)")
-
-        if not self.value:
-            s = self.database.get_string(self.key)
-            return len(s)
-
-        s = self.database.get_or_create_string(self.key)
-
-        if self.offset >= len(s):
-            new_value = s.value + b"\x00" * (self.offset - len(s)) + self.value
-        else:
-            new_value = s.value[: self.offset] + self.value + s.value[self.offset + len(self.value) :]
-
-        s.value = new_value
-
-        return len(s)
-
-
-@ServerCommandsRouter.command(b"mset", [b"write", b"string", b"slow"])
-class SetMultiple(DatabaseCommand):
-    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
-
-    def execute(self) -> ValueType:
-        for key, value in self.key_value:  # Todo: should be atomic (use update in database)
-            s = self.database.get_or_create_string(key)
-            s.value = value
-        return RESP_OK
-
-
-@ServerCommandsRouter.command(b"msetnx", [b"write", b"string", b"slow"])
-class SetIfNotExistsMultiple(DatabaseCommand):
-    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
-
-    def execute(self) -> ValueType:
-        string_value_to_update = []
-        for key, value in self.key_value:
-            s = self.database.get_string_or_none(key)
-            if s is not None:
-                return False
-            string_value_to_update.append((s, value))
-        if None in string_value_to_update:
-            return False
-        for key, value in self.key_value:
-            s = self.database.get_or_create_string(key)
-            s.value = value
-        return True
+        return key_value.value[parse_range_parameters(self.start, self.end)]
 
 
 @ServerCommandsRouter.command(b"getset", [b"write", b"string", b"slow"])
@@ -225,186 +134,9 @@ class GetSet(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
-        old_value = s.value
-        s.value = self.value
+        old_value = self.database.string_database.get_value_or_create(self.key)
+        self.database.string_database.set_value(self.key, self.value)
         return old_value
-
-
-@ServerCommandsRouter.command(b"setex", [b"write", b"string", b"slow"])
-class SetExpire(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"RW")
-    seconds: int = positional_parameter()
-    value: bytes = positional_parameter()
-
-    def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
-        self.database.set_expiration(self.key, self.seconds)
-        s.value = self.value
-        return RESP_OK
-
-
-@ServerCommandsRouter.command(b"setnx", [b"write", b"string", b"fast"])
-class SetIfNotExists(DatabaseCommand):
-    key: bytes = positional_parameter(key_mode=b"RW")
-
-    value: bytes = positional_parameter()
-
-    def execute(self) -> ValueType:
-        s = self.database.get_string_or_none(self.key)
-        if s is not None:
-            return False
-        s = self.database.get_or_create_string(self.key)
-        s.value = self.value
-        return True
-
-
-@ServerCommandsRouter.command(b"del", [b"keyspace", b"write", b"slow"])
-class Delete(DatabaseCommand):
-    keys: list[bytes] = positional_parameter()
-
-    def execute(self) -> ValueType:
-        return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
-
-
-@ServerCommandsRouter.command(b"dbsize", [b"keyspace", b"read", b"fast"])
-class DatabaseSize(DatabaseCommand):
-    def execute(self) -> ValueType:
-        return len(self.database.data.keys())
-
-
-@ServerCommandsRouter.command(b"append", [b"write", b"string", b"fast"])
-class Append(DatabaseCommand):
-    key: bytes = positional_parameter()
-    value: bytes = positional_parameter()
-
-    def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
-        s.value = s.value + self.value
-        return len(s)
-
-
-@ServerCommandsRouter.command(b"getbit", [b"read", b"bitmap", b"fast"])
-class GetBit(DatabaseCommand):
-    key: bytes = positional_parameter()
-    offset: int = positional_parameter()
-
-    def execute(self) -> ValueType:
-        s = self.database.get_or_create_string(self.key)
-
-        return s.get_bit(self.offset)
-
-
-@ServerCommandsRouter.command(b"setbit", [b"write", b"bitmap", b"slow"])
-class SetBit(DatabaseCommand):
-    key: bytes = positional_parameter()
-    offset: int = positional_parameter()
-    value: int = positional_parameter()
-
-    def execute(self) -> ValueType:
-        if not (0 <= self.value <= 1):
-            raise ServerError(b"ERR bit is not an integer or out of range")
-
-        value = bool(self.value)
-
-        s = self.database.get_or_create_string(self.key)
-
-        previous_value = s.get_bit(self.offset)
-
-        s.set_bit(self.offset, value)
-
-        return previous_value
-
-
-class BitOperationMode(Enum):
-    AND = b"AND"
-    OR = b"OR"
-    XOR = b"XOR"
-    NOT = b"NOT"
-
-
-@ServerCommandsRouter.command(b"bitop", [b"write", b"bitmap", b"slow"])
-class BitOperation(DatabaseCommand):
-    OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
-        BitOperationMode.AND: operator.and_,
-        BitOperationMode.OR: operator.or_,
-        BitOperationMode.XOR: operator.xor,
-    }
-
-    operation: BitOperationMode = positional_parameter()
-    destination_key: bytes = positional_parameter()
-    source_keys: list[bytes] = positional_parameter()
-
-    def handle(self) -> int:
-        if self.operation in self.OPERATION_TO_OPERATOR:
-            result = reduce(
-                self.OPERATION_TO_OPERATOR[self.operation],
-                (self.database.get_string(source_key).int_value for source_key in self.source_keys),
-            )
-            s = self.database.get_or_create_string(self.destination_key)
-            s.int_value = result
-            return len(s)
-
-        (source_key,) = self.source_keys
-
-        source_s = self.database.get_string(source_key)
-        destination_s = self.database.get_or_create_string(self.destination_key)
-        destination_s.int_value = ~source_s.int_value
-        return len(destination_s)
-
-
-@ServerCommandsRouter.command(b"bitcount", [b"read", b"bitmap", b"slow"])
-class BitCount(DatabaseCommand):
-    key: bytes = positional_parameter()
-    count_range: tuple[int, int] | None = positional_parameter(default=None)
-    bit_mode: bool = positional_parameter(default=False, values_mapping={b"BYTE": False, b"BIT": True})
-
-    @classmethod
-    def handle_byte_mode(cls, s: StringType, start: int, end: int) -> int:
-        length = len(s.value)
-        server_start = start
-        server_stop = end
-
-        if server_start >= 0:
-            start = min(length, server_start)
-        else:
-            start = max(length + int(server_start), 0)
-
-        if server_stop >= 0:
-            stop = min(length, server_stop)
-        else:
-            stop = max(length + int(server_stop), 0)
-
-        return s.count_bits_of_int(start, stop + 1)
-
-    @classmethod
-    def handle_bit_mode(cls, s: StringType, start: int, end: int) -> int:
-        length = s.bit_length()
-
-        if start < 0:
-            start = length + start
-
-        if end < 0:
-            end = length + (end + 1)
-
-        return s.count_bits_of_int(start, end)
-
-    def execute(self) -> ValueType:
-        s = self.database.get_string(self.key)
-        if not self.count_range:
-            return s.count_bits_of_bytes()
-
-        start, end = self.count_range
-
-        if self.bit_mode:
-            return self.handle_bit_mode(s, start, end)
-        return self.handle_byte_mode(s, start, end)
-
-
-def increment_by(database: Database, key: bytes, increment: int | float = 1) -> bytes:
-    s = database.get_or_create_string(key)
-    s.numeric_value = s.numeric_value + increment
-    return s.value
 
 
 @ServerCommandsRouter.command(b"incr", [b"write", b"string", b"fast"])
@@ -433,28 +165,141 @@ class IncrementByFloat(DatabaseCommand):
         return increment_by(self.database, self.key, self.increment)
 
 
-@ServerCommandsRouter.command(b"decr", [b"write", b"string", b"fast"])
-class Decrement(DatabaseCommand):
-    key: bytes = positional_parameter()
+@ServerCommandsRouter.command(b"mget", [b"read", b"string", b"fast"])
+class MultipleGet(DatabaseCommand):
+    keys: list[bytes] = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
-        return increment_by(self.database, self.key, -1)
+        result: list[bytes | None] = []
+        for key in self.keys:
+            key_value = None
+            try:
+                key_value = self.database.string_database.get_or_none(key)
+            except ServerWrongTypeError:
+                pass
+
+            if key_value is None:
+                result.append(None)
+            else:
+                result.append(key_value.value)
+        return result
 
 
-@ServerCommandsRouter.command(b"decrby", [b"write", b"string", b"fast"])
-class DecrementBy(DatabaseCommand):
-    key: bytes = positional_parameter()
-    decrement: float = positional_parameter()
+@ServerCommandsRouter.command(b"mset", [b"write", b"string", b"slow"])
+class SetMultiple(DatabaseCommand):
+    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        return increment_by(self.database, self.key, self.decrement * -1)
+        for key, value in self.key_value:
+            self.database.upsert(key, value)
+        return RESP_OK
 
 
-@ServerCommandsRouter.command(b"getrange", [b"stream", b"write", b"fast"])
-class StringGetRange(Command):
-    key: bytes = positional_parameter()
-    start: int = positional_parameter()
-    end: int = positional_parameter()
+@ServerCommandsRouter.command(b"msetnx", [b"write", b"string", b"slow"])
+class SetIfNotExistsMultiple(DatabaseCommand):
+    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
-        return 1
+        for key, _ in self.key_value:
+            if self.database.string_database.has_key(key):
+                return False
+        for key, value in self.key_value:
+            self.database.upsert(key, value)
+        return True
+
+
+@ServerCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
+class Set(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+    value: bytes = positional_parameter()
+    ex: int | None = keyword_parameter(flag=b"EX", default=None)
+    px: int | None = keyword_parameter(flag=b"PX", default=None)
+    exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
+    pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
+
+    def get_one_and_only_token(self) -> str | None:
+        fields_names = ["ex", "px", "exat", "pxat"]
+
+        filled = list(map(bool, [getattr(self, name) for name in fields_names]))
+        if filled.count(True) > 1:
+            raise ValkeySyntaxError()
+
+        if True in filled:
+            name = fields_names[filled.index(True)]
+
+            return name
+
+        return None
+
+    def execute(self) -> ValueType:
+        expiration = None
+        if token_name := self.get_one_and_only_token():
+            token_value = getattr(self, token_name)
+            if token_name in ["ex", "px"]:
+                expiration = int(time.time() * 1000) + token_value * (1000 if token_name == "ex" else 1)
+            if token_name in ["exat", "pxat"]:
+                expiration = token_value * (1000 if token_name == "exat" else 1)
+
+        self.database.pop(self.key, None)
+        self.database.set_key_value(KeyValue.of_string(self.key, self.value, expiration))
+        return RESP_OK
+
+
+@ServerCommandsRouter.command(b"setex", [b"write", b"string", b"slow"])
+class SetExpire(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+    seconds: int = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        self.database.string_database.upsert(self.key, self.value)
+        self.database.set_expiration(self.key, self.seconds)
+        return RESP_OK
+
+
+@ServerCommandsRouter.command(b"setnx", [b"write", b"string", b"fast"])
+class SetIfNotExists(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        if self.database.string_database.has_key(self.key):
+            return False
+        self.database.string_database.upsert(self.key, self.value)
+        return True
+
+
+@ServerCommandsRouter.command(b"setrange", [b"write", b"string", b"slow"])
+class SetRange(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+    offset: int = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        if self.offset < 0:
+            raise ServerError(b"ERR value is not an integer or out of range")
+
+        if self.offset + len(self.value) > 512 * (1024**2):
+            raise ServerError(b"ERR string exceeds maximum allowed size (proto-max-bulk-len)")
+
+        string_value = self.database.bytes_database.get_value_or_empty(self.key)
+        if not self.value:
+            return len(string_value)
+
+        if self.offset >= len(string_value):
+            new_value = string_value + b"\x00" * (self.offset - len(string_value)) + self.value
+        else:
+            new_value = string_value[: self.offset] + self.value + string_value[self.offset + len(self.value) :]
+
+        self.database.bytes_database.upsert(self.key, new_value)
+
+        return len(new_value)
+
+
+@ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])
+class StringLength(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+
+    def execute(self) -> ValueType:
+        return len(self.database.bytes_database.get_value_or_empty(self.key))

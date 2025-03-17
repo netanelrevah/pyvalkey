@@ -7,7 +7,7 @@ from pyvalkey.database_objects.databases import MAX_BYTES
 
 def test_simple(s: valkey.Valkey, c: valkey.Valkey):
     c.set("b", 1)
-    assert c.get("b") == b"1"
+    assert c.get("b") == 1
     c.set("a", "bla")
     assert c.get("a") == b"bla"
     c.hset("c", "d", "2")

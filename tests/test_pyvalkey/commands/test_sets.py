@@ -1,6 +1,7 @@
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
-from pyvalkey.commands.sets import SetRandomMember
+from pyvalkey.commands.set_commands import SetRandomMember
+from pyvalkey.database_objects.databases import Database, KeyValue
 
 
 class TestSetRandomMember:
@@ -15,11 +16,9 @@ class TestSetRandomMember:
         assert command.count == 100
 
     def test_execute(self):
-        database = Mock(spec_set=["get_set_or_none"])
-        database.get_set_or_none.return_value = {"a"}
+        database = Database()
+        database.set_database.set_key_value(KeyValue(b"ss", {b"a"}))
 
         command = SetRandomMember(database=database, key=b"ss", count=100)
 
-        assert command.execute() == ["a"]
-
-        assert database.mock_calls == [call.get_set_or_none(b"ss")]
+        assert command.execute() == [b"a"]

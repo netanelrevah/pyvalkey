@@ -72,3 +72,6 @@ class ServerCommandsRouter:
             return command_cls
 
         return _command_wrapper
+
+
+valkey_command = ServerCommandsRouter.command

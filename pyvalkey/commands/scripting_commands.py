@@ -12,3 +12,9 @@ class Eval(Command):
 
     def execute(self) -> ValueType:
         return RESP_OK
+
+
+@ServerCommandsRouter.command(b"flush", parent_command=b"function", acl_categories=[b"fast", b"connection"])
+class FunctionFLush(Command):
+    def execute(self) -> ValueType:
+        return True

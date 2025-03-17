@@ -1,6 +1,7 @@
 import pytest
 
-from pyvalkey.commands.connection_commands import CommandGetKeys, Hello
+from pyvalkey.commands.connection_commands import Hello
+from pyvalkey.commands.server_commands import CommandGetKeys
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RespProtocolVersion
 

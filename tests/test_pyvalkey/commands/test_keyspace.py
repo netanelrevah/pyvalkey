@@ -1,4 +1,4 @@
-from pyvalkey.commands.keyspace_commands import Expire, Keys, TimeToLive
+from pyvalkey.commands.generic_commands import Expire, Keys, TimeToLive
 from pyvalkey.commands.string_commands import Set
 from pyvalkey.database_objects.databases import Database
 

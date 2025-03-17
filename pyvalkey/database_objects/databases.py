@@ -3,15 +3,20 @@ from __future__ import annotations
 import functools
 import itertools
 import operator
+import random
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Generic, TypeVar, cast
 
 from sortedcontainers import SortedDict, SortedSet
 
+from pyvalkey.commands.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
 from pyvalkey.commands.parameters import positional_parameter
-from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.commands.utils import (
+    is_integer,
+)
+from pyvalkey.database_objects.errors import ServerWrongTypeError
 from pyvalkey.database_objects.utils import flatten
 
 
@@ -37,89 +42,6 @@ class MaxBytes(bytes):
 MAX_BYTES = MaxBytes()
 
 
-@dataclass()
-class StringType:
-    value: bytes = b""
-
-    @classmethod
-    def is_float(cls, value: bytes) -> bool:
-        try:
-            float(value)
-            return True
-        except ValueError:
-            return False
-
-    @classmethod
-    def int_to_bytes(cls, value: int) -> bytes:
-        return value.to_bytes(length=(8 + (value + (value < 0)).bit_length()) // 8, byteorder="big", signed=True)
-
-    @classmethod
-    def int_from_bytes(cls, value: bytes) -> int:
-        return int.from_bytes(value, byteorder="big", signed=True)
-
-    @property
-    def numeric_value(self) -> float:
-        if not self.is_float(self.value):
-            raise ServerError(b"ERR value is not an integer or out of range")
-        return float(self.value)
-
-    @numeric_value.setter
-    def numeric_value(self, value: int | float) -> None:
-        self.value = f"{value:g}".encode()
-
-    @property
-    def int_value(self) -> int:
-        return self.int_from_bytes(self.value)
-
-    @int_value.setter
-    def int_value(self, value: int) -> None:
-        self.value = self.int_to_bytes(value)
-
-    def get_bit(self, offset: int) -> int:
-        if offset >= 2**32 or offset < 0:
-            raise ServerError(b"ERR bit offset is not an integer or out of range")
-
-        bytes_offset = offset // 8
-        byte_offset = offset - (bytes_offset * 8)
-
-        adjusted_value = self.value
-        if len(self.value) <= bytes_offset:
-            adjusted_value = self.value.ljust(bytes_offset + 1, b"\0")
-
-        return (adjusted_value[bytes_offset] >> (7 - byte_offset)) & 1
-
-    def set_bit(self, offset: int, value: bool) -> None:
-        if offset >= 2**32 or offset < 0:
-            raise ServerError(b"ERR bit offset is not an integer or out of range")
-
-        bytes_offset = offset // 8
-        byte_offset = offset - (bytes_offset * 8)
-
-        new_value = self.value
-
-        if len(self.value) <= bytes_offset:
-            new_value = self.value.ljust(bytes_offset + 1, b"\0")
-
-        if value:
-            new_byte = new_value[bytes_offset] | (128 >> byte_offset)
-        else:
-            new_byte = new_value[bytes_offset] & ~(128 >> byte_offset)
-
-        self.value = new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
-
-    def count_bits_of_bytes(self, start: int | None = None, stop: int | None = None) -> int:
-        return sum(map(int.bit_count, self.value[slice(start, stop)]))
-
-    def count_bits_of_int(self, start: int, stop: int) -> int:
-        return ((self.int_value & ((2**stop) - 1)) >> start).bit_count()
-
-    def bit_length(self) -> int:
-        return self.int_value.bit_length()
-
-    def __len__(self) -> int:
-        return len(self.value)
-
-
 @dataclass(eq=True)
 class RangeLimit:
     offset: int = positional_parameter()
@@ -137,13 +59,10 @@ class ValkeySortedSet:
             self.add(score, member)
 
     def update_with_iterator(self, iterator: Iterable[bytes | float]) -> None:
-        member = None
-        for item in iterator:
-            if member is None:
-                member = item
-            else:
-                self.add(item, member)
-                member = None
+        score: float
+        member: bytes
+        for score, member in zip(*([iter(iterator)] * 2), strict=True):
+            self.add(score, member)
 
     def add(self, score: float, member: bytes) -> None:
         if member in self.members_scores:
@@ -233,43 +152,115 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
-KeyValueType = ValkeySortedSet | dict[bytes, bytes] | StringType | set[bytes] | list[bytes]
+KeyValueType = ValkeySortedSet | dict[bytes, bytes] | set[bytes] | list[bytes] | bytes | int
+
+
+KeyValueTypeVar = TypeVar("KeyValueTypeVar", bound=KeyValueType)
 
 
 @dataclass(slots=True)
-class KeyValue:
+class KeyValue(Generic[KeyValueTypeVar]):
     key: bytes
-    value: KeyValueType
+    value: KeyValueTypeVar
     expiration: int | None = field(default=None)
+    last_accessed: int = field(default_factory=lambda: int(time.time() * 1000))
+    lfu_counter: int = LFU_INITIAL_VALUE
+
+    def increase_frequency(self, lfu_log_factor: int) -> None:
+        if self.lfu_counter == LFU_COUNTER_MAXIMUM:
+            return
+        r = random.random()
+        base_value = max(self.lfu_counter - LFU_INITIAL_VALUE, 0)
+        p = 1.0 / (base_value * lfu_log_factor + 1)
+        if r >= p:
+            return
+        self.lfu_counter += 1
 
     def __hash__(self) -> int:
         return hash(self.key)
 
     def copy(self, new_key: bytes) -> KeyValue:
-        new_value: KeyValueType
-        if isinstance(self.value, StringType):
-            new_value = StringType(self.value.value)
+        new_value: KeyValueTypeVar
+        if isinstance(self.value, bytes | int):
+            new_value = cast(KeyValueTypeVar, self.value)
         elif isinstance(self.value, dict):
-            new_value = dict(self.value)
+            new_value = cast(KeyValueTypeVar, dict(self.value))
         elif isinstance(self.value, ValkeySortedSet):
-            new_value = ValkeySortedSet(self.value.members_scores.items())
+            new_value = cast(KeyValueTypeVar, ValkeySortedSet(self.value.members_scores.items()))
         elif isinstance(self.value, list):
-            new_value = list(self.value)
+            new_value = cast(KeyValueTypeVar, list(self.value))
         elif isinstance(self.value, set):
-            new_value = set(self.value)
+            new_value = cast(KeyValueTypeVar, set(self.value))
         else:
             raise NotImplementedError(f"copy of {type(self.value)} not implemented")
 
         return KeyValue(new_key, new_value, self.expiration)
 
+    @classmethod
+    def of_string(cls, key: bytes, value: bytes, expiration: int | None = None) -> KeyValue[bytes] | KeyValue[int]:
+        if is_integer(value):
+            return KeyValue(key, int(value), expiration)
+        return KeyValue(key, value, expiration)
 
-MISSING = KeyValue(b"", {})
+
+MISSING: KeyValue = KeyValue(b"", {})
 
 
-@dataclass
-class Database:
-    data: dict[bytes, KeyValue] = field(default_factory=dict)
-    key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
+class DatabaseBase(Generic[KeyValueTypeVar]):
+    data: dict[bytes, KeyValue[KeyValueTypeVar]]
+    key_with_expiration: SortedSet
+
+    def has_key_with_type_check(self, key: bytes, type_: type | None = None) -> bool:
+        key_value = self.data.get(key, None)
+
+        if not key_value:
+            return False
+
+        if key_value.expiration is not None:
+            if int(time.time() * 1000) > key_value.expiration:
+                self.data.pop(key)
+                self.key_with_expiration.discard(key_value)
+                return False
+
+        if (
+            type_ is not None
+            and not isinstance(key_value.value, type_)
+            and (
+                (type_ is int and not isinstance(key_value.value, bytes))
+                or (type_ is bytes and not isinstance(key_value.value, int))
+            )
+        ):
+            raise ServerWrongTypeError()
+
+        key_value.last_accessed = int(time.time() * 1000)
+
+        return True
+
+    def has_key(self, key: bytes) -> bool:
+        raise NotImplementedError()
+
+    def size(self) -> int:
+        return len(self.data)
+
+    def number_of_keys_with_expiration(self) -> int:
+        return len(self.key_with_expiration)
+
+    def average_ttl(self) -> int:
+        if not self.key_with_expiration:
+            return 0
+
+        return sum(key_value.expiration - int(time.time() * 1000) for key_value in self.key_with_expiration) // len(
+            self.key_with_expiration
+        )
+
+    def keys(self) -> Iterable[bytes]:
+        return self.data.keys()
+
+    def are_fully_volatile(self) -> bool:
+        return len(self.data) == len(self.key_with_expiration)
+
+    def empty(self) -> bool:
+        return not self.data
 
     def rename_unsafely(self, key: bytes, new_key: bytes) -> None:
         key_value = self.data.pop(key)
@@ -291,63 +282,80 @@ class Database:
         if key_value.expiration:
             self.key_with_expiration.add(key_value)
 
-    def pop(self, key: bytes, default: KeyValue | None = MISSING) -> KeyValue | None:
-        key_value = self.data.pop(key, None)
-        if key_value is None:
+    def pop(self, key: bytes, default: KeyValue[KeyValueTypeVar] | None = MISSING) -> KeyValue[KeyValueTypeVar] | None:
+        if not self.has_key(key):
             if default is MISSING:
-                raise IndexError()
+                raise KeyError()
             return default
+
+        key_value = self.data.pop(key)
         if key_value.expiration is not None:
             self.key_with_expiration.discard(key_value)
-            if int(time.time() * 1000) > key_value.expiration:
-                return None
         return key_value
 
-    def set_value(self, key: bytes, value: KeyValue, block_overwrite: bool = False) -> None:
-        if block_overwrite is True and key in self.data:
+    def get(self, key: bytes) -> KeyValue[KeyValueTypeVar]:
+        if not self.has_key(key):
             raise KeyError()
-        self.data[key] = value
-
-    @classmethod
-    def check_type_ang_get(cls, key_value: KeyValue | None, type_: type) -> KeyValue | None:
-        if key_value is not None and not isinstance(key_value.value, type_):
-            raise ServerWrongTypeError()
-        return key_value
-
-    def typesafe_pop(self, key: bytes, type_: type) -> KeyValue | None:
-        key_value = self.pop(key, default=None)
-        return self.check_type_ang_get(key_value, type_)
-
-    def get(self, key: bytes) -> KeyValue | None:
-        key_value = self.data[key]
-        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
-            del self.data[key]
-            self.key_with_expiration.remove(key_value)
-            return None
-        return key_value
+        return self.data[key]
 
     def get_or_none(self, key: bytes) -> KeyValue | None:
-        if key not in self.data:
+        if not self.has_key(key):
             return None
-        return self.get(key)
+        return self.data[key]
 
-    def typesafe_get(self, key: bytes, type_: type) -> KeyValue | None:
-        key_value = self.get(key)
-        return self.check_type_ang_get(key_value, type_)
+    def create_empty(self) -> KeyValueTypeVar:
+        raise NotImplementedError()
 
-    def get_unsafely(self, key: bytes) -> KeyValue:
-        if key not in self.data:
+    def get_or_create(self, key: bytes) -> KeyValue:
+        if not self.has_key(key):
+            key_value = KeyValue(key, self.create_empty())
+            self.set_key_value(key_value)
+            return key_value
+        return self.data[key]
+
+    def convert_value_if_needed(self, value: KeyValueTypeVar) -> KeyValueTypeVar:
+        return value
+
+    def get_value(self, key: bytes) -> KeyValueTypeVar:
+        return self.convert_value_if_needed(self.get(key).value)
+
+    def get_value_or_empty(self, key: bytes) -> KeyValueTypeVar:
+        if not self.has_key(key):
+            return self.create_empty()
+        return self.convert_value_if_needed(self.get(key).value)
+
+    def get_value_or_none(self, key: bytes) -> None | KeyValueTypeVar:
+        if not self.has_key(key):
+            return None
+        return self.convert_value_if_needed(self.get(key).value)
+
+    def get_value_or_create(self, key: bytes) -> KeyValueTypeVar:
+        return self.get_or_create(key).value
+
+    def set_key_value(self, key_value: KeyValue, block_overwrite: bool = False) -> None:
+        if block_overwrite is True and key_value.key in self.data:
             raise KeyError()
-        key_value = self.data[key]
-        if key_value.expiration is not None and int(time.time() * 1000) > key_value.expiration:
-            del self.data[key]
-            self.key_with_expiration.remove(key_value)
+        self.data[key_value.key] = key_value
+        if key_value.expiration is not None:
+            self.key_with_expiration.add(key_value)
+
+    def set_value(self, key: bytes, value: KeyValueTypeVar) -> None:
+        if not self.has_key(key):
             raise KeyError()
-        return key_value
+        self.data[key].value = value
+
+    def upsert(self, key: bytes, value: KeyValueTypeVar) -> None:
+        key_value = self.get_or_none(key)
+        if key_value is None:
+            self.set_key_value(KeyValue(key, value))
+        else:
+            key_value.value = value
+
+    # volatile functions
 
     def set_persist(self, key: bytes) -> bool:
         try:
-            key_value = self.get_unsafely(key)
+            key_value = self.get(key)
         except KeyError:
             return False
 
@@ -358,7 +366,7 @@ class Database:
 
     def set_expiration(self, key: bytes, expiration_milliseconds: int) -> bool:
         try:
-            key_value = self.get_unsafely(key)
+            key_value = self.get(key)
         except KeyError:
             return False
 
@@ -368,7 +376,7 @@ class Database:
 
     def set_expiration_at(self, key: bytes, expiration_milliseconds_at: int) -> bool:
         try:
-            key_value = self.get_unsafely(key)
+            key_value = self.get(key)
         except KeyError:
             return False
 
@@ -382,78 +390,71 @@ class Database:
             raise KeyError()
         if key_value.expiration is None:
             return None
+        return key_value.expiration
+
+    def get_time_to_live(self, key: bytes) -> int | None:
+        key_value = self.get(key)
+        if key_value is None:
+            raise KeyError()
+        if key_value.expiration is None:
+            return None
         return key_value.expiration - int(time.time() * 1000)
 
-    def get_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
-        key_value = None
-        if key in self.data:
-            key_value = self.typesafe_get(key, type_)
 
-        return key_value.value if key_value else type_()
+@dataclass
+class TypedDatabase(Generic[KeyValueTypeVar], DatabaseBase[KeyValueTypeVar]):
+    data: dict[bytes, KeyValue[KeyValueTypeVar]]
+    key_with_expiration: SortedSet
+    type_: type[KeyValueTypeVar]
+    empty_factory: Callable[[], KeyValueTypeVar]
 
-    def typesafe_get_or_create(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
-        key_value = None
-        if key in self.data:
-            key_value = self.typesafe_get(key, type_)
+    def has_key(self, key: bytes) -> bool:
+        return super().has_key_with_type_check(key, self.type_)
 
-        if key_value is None:
-            key_value = KeyValue(key, type_())
-            self.data[key] = key_value
+    def create_empty(self) -> KeyValueTypeVar:
+        return self.empty_factory()
 
-        return key_value.value
 
-    def get_or_none_by_type(self, key: bytes, type_: type) -> Any:  # noqa: ANN401
-        if key not in self.data:
-            return None
+@dataclass
+class BytesDatabase(DatabaseBase[bytes]):
+    data: dict[bytes, KeyValue[bytes]]
+    key_with_expiration: SortedSet
 
-        key_value = self.typesafe_get(key, type_)
+    type_: type[bytes] = field(default=bytes, init=False)
 
-        if key_value is None:
-            return None
+    def create_empty(self) -> bytes:
+        return b""
 
-        return key_value.value
+    def convert_value_if_needed(self, value: int | bytes) -> bytes:
+        if isinstance(value, int):
+            return str(value).encode()
+        return value
 
-    def get_string(self, key: bytes) -> StringType:
-        return self.get_by_type(key, StringType)
+    def has_key(self, key: bytes) -> bool:
+        return self.has_key_with_type_check(key, bytes)
 
-    def get_string_or_none(self, key: bytes) -> StringType | None:
-        return self.get_or_none_by_type(key, StringType)
 
-    def get_or_create_string(self, key: bytes) -> StringType:
-        return self.typesafe_get_or_create(key, StringType)
+@dataclass
+class Database(DatabaseBase[KeyValueType]):
+    data: dict[bytes, KeyValue] = field(default_factory=dict)
+    key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
 
-    def get_hash_table(self, key: bytes) -> dict:
-        return self.get_by_type(key, dict)
+    string_database: TypedDatabase[bytes | int] = field(init=False)
+    bytes_database: BytesDatabase = field(init=False)
+    int_database: TypedDatabase[int] = field(init=False)
+    sorted_set_database: TypedDatabase[ValkeySortedSet] = field(init=False)
+    set_database: TypedDatabase[set] = field(init=False)
+    hash_database: TypedDatabase[dict] = field(init=False)
+    list_database: TypedDatabase[list] = field(init=False)
 
-    def get_or_create_hash_table(self, key: bytes) -> dict:
-        return self.typesafe_get_or_create(key, dict)
+    def has_key(self, key: bytes) -> bool:
+        return self.has_key_with_type_check(key)
 
-    def get_or_none_hash_table(self, key: bytes) -> dict:
-        return self.get_or_none_by_type(key, dict)
-
-    def get_list(self, key: bytes) -> list:
-        return self.get_by_type(key, list)
-
-    def get_or_create_list(self, key: bytes) -> list:
-        return self.typesafe_get_or_create(key, list)
-
-    def get_sorted_set(self, key: bytes) -> ValkeySortedSet:
-        return self.get_by_type(key, ValkeySortedSet)
-
-    def get_or_create_sorted_set(self, key: bytes) -> ValkeySortedSet:
-        return self.typesafe_get_or_create(key, ValkeySortedSet)
-
-    def get_set(self, key: bytes) -> set:
-        return self.get_by_type(key, set)
-
-    def get_set_or_none(self, key: bytes) -> set:
-        return self.get_or_none_by_type(key, set)
-
-    def get_or_create_set(self, key: bytes) -> set:
-        return self.typesafe_get_or_create(key, set)
-
-    def pop_string(self, key: bytes) -> Any:  # noqa: ANN401
-        key_value = self.typesafe_pop(key, StringType)
-        if key_value is None:
-            return None
-        return key_value.value
+    def __post_init__(self) -> None:
+        self.string_database = TypedDatabase(self.data, self.key_with_expiration, bytes, lambda: b"")
+        self.bytes_database = BytesDatabase(self.data, self.key_with_expiration)
+        self.int_database = TypedDatabase(self.data, self.key_with_expiration, int, lambda: 0)
+        self.sorted_set_database = TypedDatabase(self.data, self.key_with_expiration, ValkeySortedSet, ValkeySortedSet)
+        self.set_database = TypedDatabase(self.data, self.key_with_expiration, set, set)
+        self.hash_database = TypedDatabase(self.data, self.key_with_expiration, dict, dict)
+        self.list_database = TypedDatabase(self.data, self.key_with_expiration, list, list)

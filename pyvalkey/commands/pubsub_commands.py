@@ -4,9 +4,9 @@ from pyvalkey.commands.router import ServerCommandsRouter
 from pyvalkey.resp import ValueType
 
 
-@ServerCommandsRouter.command(b"usage", [b"read", b"slow"], b"memory")
-class MemoryUsage(Command):
-    key: bytes = positional_parameter()
+@ServerCommandsRouter.command(b"subscribe", [b"slow", b"connection"])
+class Subscribe(Command):
+    channels: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return 1
+        return ["genpass"]

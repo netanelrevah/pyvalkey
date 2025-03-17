@@ -16,14 +16,12 @@ jobs:
         with:
           repository: valkey-io/valkey
           path: valkey
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.13"
-      - uses: snok/install-poetry@v1
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install
       - working-directory: ./pyvalkey
-        run: poetry install --no-interaction --no-root
+        run: uv sync --all-extras --dev
       - working-directory: ./pyvalkey
-        run: poetry run python -m pyvalkey &
+        run: uv run python -m pyvalkey &
       - working-directory: ./valkey
         run: sudo apt-get install tcl8.6 tclx
       - working-directory: ./valkey
@@ -40,41 +38,35 @@ jobs:
         with:
           repository: valkey-io/valkey-py
           path: valkey-py
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.13"
-      - uses: snok/install-poetry@v1
+          enable-cache: true
+      - run: uv python install
       - working-directory: ./pyvalkey
-        run: poetry install --no-interaction --no-root
+        run: uv sync --all-extras --dev
       - working-directory: ./pyvalkey
-        run: poetry run python -m pyvalkey &
+        run: uv run python -m pyvalkey &
+      - uses: actions/setup-python@v4
       - working-directory: ./valkey-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./valkey-py
-        run: pytest -q  --no-summary --disable-warnings --show-capture=no --tb=no tests/test_commands.py
+        run: pytest -q --uvloop --no-summary --disable-warnings --show-capture=no --tb=no tests/test_commands.py
 
   lint-outside-of-matrix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.13"
-      - uses: snok/install-poetry@v1
-      - id: cached-poetry-dependencies
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-      - if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --with dev --no-interaction --no-root
-      - run: poetry check
-      - run: poetry run mypy pyvalkey
+          enable-cache: true
+      - run: uv python install
+      - run: uv sync --all-extras --dev
+      - run: uv lock --check
+      - run: uv run mypy pyvalkey
         if: '!cancelled()'
-      - run: poetry run ruff check --output-format=github .
+      - run: uv run ruff check --output-format=github .
         if: '!cancelled()'
-      - run: poetry run ruff format --check .
+      - run: uv run ruff format --check .
         if: '!cancelled()'
 
   lint:
@@ -95,23 +87,14 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v3
-
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - uses: snok/install-poetry@v1
-
-      - id: cached-poetry-dependencies
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-      - if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --with dev --no-interaction --no-root
-
+          enable-cache: true
+      - run: uv python install
+      - run: uv sync --all-extras --dev
       - name: Run pytest
-        run: poetry run python -m pytest -v tests/test_pyvalkey tests/test_valkey
+        run: uv run python -m pytest -v tests/test_pyvalkey tests/test_valkey

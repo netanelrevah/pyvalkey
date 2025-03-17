@@ -3,14 +3,13 @@ from typing import Any
 import pytest
 from parametrization import Parametrization
 
-from pyvalkey.commands.clients import ClientKill
+from pyvalkey.commands.connection_commands import ClientKill, Ping
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.debug import Debug
-from pyvalkey.commands.keyspace_commands import Copy
+from pyvalkey.commands.generic_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.parsers import server_command
-from pyvalkey.commands.sorted_sets import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from pyvalkey.commands.string_commands import Ping
+from pyvalkey.commands.server_commands import Debug
+from pyvalkey.commands.sorted_set_commands import AddMode, RangeMode, SortedSetAdd, SortedSetRange
 from pyvalkey.database_objects.errors import ServerWrongNumberOfArgumentsError, ValkeySyntaxError
 
 

@@ -47,8 +47,13 @@ class Information:
         keyspace = [b"# Keyspace"]
         for database_index in sorted(self.server_context.databases.keys()):
             database = self.server_context.databases[database_index]
-            if not database.data:
+            if database.empty():
                 continue
-            keyspace.append(f"db{database_index}:keys={len(database.data)}:expires=0,avg_ttl=0".encode())
+            keyspace.append(
+                f"db{database_index}:"
+                f"keys={database.size()}:"
+                f"expires={database.number_of_keys_with_expiration()},"
+                f"avg_ttl={database.average_ttl()}".encode()
+            )
 
         return b"\r\n".join(info + keyspace)

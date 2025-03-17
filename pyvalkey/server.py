@@ -15,8 +15,9 @@ from types import FrameType
 from typing import cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
+from pyvalkey.commands.core import AsyncCommand
 from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.commands.transactions import TransactionExecute
+from pyvalkey.commands.transactions_commands import TransactionExecute
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
@@ -110,7 +111,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
     async def parse(self) -> None:
         try:
             async for query in self._resp_query_parser:
-                self.handle(query)
+                await self.handle(query)
         except RespSyntaxError as e:
             if e.args:
                 self.dump(RespError(e.args[0]))
@@ -129,7 +130,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         except RespFatalError:
             self.cancel()
 
-    def handle(self, command: list[bytes]) -> None:
+    async def handle(self, command: list[bytes]) -> None:
         if not command:
             return
         if command[0] == b"QUIT":
@@ -154,7 +155,11 @@ class ValkeyClientProtocol(asyncio.Protocol):
             if self.current_user:
                 self.current_user.check_permissions(routed_command)
 
-            self.dump(routed_command.execute())
+            if isinstance(routed_command, AsyncCommand):
+                result = await routed_command.execute_async()
+            else:
+                result = routed_command.execute()
+            self.dump(result)
             if self.server_context.pause_timeout:
                 while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                     time.sleep(0.1)

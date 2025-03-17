@@ -1,6 +1,7 @@
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
-from pyvalkey.commands.lists import ListLength
+from pyvalkey.commands.list_commands import ListLength
+from pyvalkey.database_objects.databases import Database, KeyValue
 
 
 class TestListLength:
@@ -15,11 +16,9 @@ class TestListLength:
         assert command.database == client_context.database
 
     def test_execute(self):
-        database = Mock(spec_set=["get_list"])
-        database.get_list.return_value = [1, 2, 3]
+        database = Database()
+        database.list_database.set_key_value(KeyValue(b"abc", [1, 2, 3]))
 
         command = ListLength(database=database, key=b"abc")
 
         assert command.execute() == 3
-
-        assert database.mock_calls == [call.get_list(b"abc")]

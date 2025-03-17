@@ -1,5 +1,5 @@
-from pyvalkey.commands.sort_commands import Sort
-from pyvalkey.database_objects.databases import Database, KeyValue, StringType
+from pyvalkey.commands.generic_commands import Sort
+from pyvalkey.database_objects.databases import Database, KeyValue
 
 
 class TestSetRandomMember:
@@ -21,9 +21,9 @@ class TestSetRandomMember:
             data={
                 kv.key: kv
                 for kv in [
-                    KeyValue(b"a_1", StringType(b"a")),
-                    KeyValue(b"a_2", StringType(b"b")),
-                    KeyValue(b"a_3", StringType(b"c")),
+                    KeyValue(b"a_1", b"a"),
+                    KeyValue(b"a_2", b"b"),
+                    KeyValue(b"a_3", b"c"),
                     KeyValue(b"to_sort", [b"3", b"2", b"1"]),
                 ]
             }
@@ -38,9 +38,9 @@ class TestSetRandomMember:
             data={
                 kv.key: kv
                 for kv in [
-                    KeyValue(b"a", StringType(b"aa")),
-                    KeyValue(b"b", StringType(b"bb")),
-                    KeyValue(b"c", StringType(b"cc")),
+                    KeyValue(b"a", b"aa"),
+                    KeyValue(b"b", b"bb"),
+                    KeyValue(b"c", b"cc"),
                     KeyValue(b"to_sort", [b"a", b"b", b"c"]),
                 ]
             }
@@ -69,9 +69,9 @@ class TestSetRandomMember:
             data={
                 kv.key: kv
                 for kv in [
-                    KeyValue(b"a", StringType(b"aa")),
-                    KeyValue(b"b", StringType(b"bb")),
-                    KeyValue(b"c", StringType(b"cc")),
+                    KeyValue(b"a", b"aa"),
+                    KeyValue(b"b", b"bb"),
+                    KeyValue(b"c", b"cc"),
                     KeyValue(b"to_sort", [b"a", b"b", b"c"]),
                 ]
             }
