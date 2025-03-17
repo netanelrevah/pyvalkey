@@ -46,6 +46,7 @@ jobs:
         run: uv sync --all-extras --dev
       - working-directory: ./pyvalkey
         run: uv run python -m pyvalkey &
+      - uses: actions/setup-python@v4
       - working-directory: ./valkey-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./valkey-py
