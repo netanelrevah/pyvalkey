@@ -50,7 +50,7 @@ jobs:
       - working-directory: ./valkey-py
         run: pip install -r requirements.txt -r dev_requirements.txt
       - working-directory: ./valkey-py
-        run: pytest -q  --no-summary --disable-warnings --show-capture=no --tb=no tests/test_commands.py
+        run: pytest -q --uvloop --no-summary --disable-warnings --show-capture=no --tb=no tests/test_commands.py
 
   lint-outside-of-matrix:
     runs-on: ubuntu-latest
