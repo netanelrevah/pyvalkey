@@ -67,7 +67,7 @@ class ListLength(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.list_database.get_value(self.key))
+        return len(self.database.list_database.get_value_or_empty(self.key))
 
 
 @ServerCommandsRouter.command(b"lrange", [b"read", b"list", b"slow"])

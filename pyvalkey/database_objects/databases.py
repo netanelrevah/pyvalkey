@@ -246,6 +246,9 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         return len(self.key_with_expiration)
 
     def average_ttl(self) -> int:
+        if not self.key_with_expiration:
+            return 0
+
         return sum(key_value.expiration - int(time.time() * 1000) for key_value in self.key_with_expiration) // len(
             self.key_with_expiration
         )

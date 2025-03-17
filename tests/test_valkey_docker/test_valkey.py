@@ -59,3 +59,11 @@ def test_type_list(s: Valkey):
 
 def test_dump(s: Valkey):
     run_tests(s, tags="dump")
+
+
+def test_acl(s: Valkey):
+    run_tests(s, tags="acl")
+
+
+def test_tracking(s: Valkey):
+    run_tests(s, tags="tracking")
