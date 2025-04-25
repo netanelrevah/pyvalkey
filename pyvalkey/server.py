@@ -7,7 +7,6 @@ import signal
 import sys
 import threading
 import time
-from collections import defaultdict
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -57,7 +56,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         return self.server_context.configurations
 
     @property
-    def databases(self) -> defaultdict[int, Database]:
+    def databases(self) -> dict[int, Database]:
         return self.server_context.databases
 
     @property
