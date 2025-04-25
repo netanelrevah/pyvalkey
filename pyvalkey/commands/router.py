@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pyvalkey.commands.parsers import server_command
+from pyvalkey.commands.parsers import transform_command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class ServerCommandsRouter:
+class CommandsRouter:
     ROUTES: ClassVar[defaultdict[bytes, Any]] = defaultdict(dict)
 
     def internal_route(
@@ -23,17 +23,12 @@ class ServerCommandsRouter:
         parameters: list[bytes],
         routes: dict[bytes, type[Command]] | dict[bytes, type[Command] | dict[bytes, type[Command]]],
     ) -> type[Command]:
-        first_parameter = parameters.pop(0)
+        command_name = parameters.pop(0).lower()
 
-        if isinstance(first_parameter, int):
+        if command_name not in routes:
             raise RouterKeyError()
 
-        command = first_parameter.lower()
-
-        if command not in routes:
-            raise RouterKeyError()
-
-        routed_command = routes[command]
+        routed_command = routes[command_name]
 
         if isinstance(routed_command, dict):
             return self.internal_route(parameters, routed_command)
@@ -41,37 +36,50 @@ class ServerCommandsRouter:
         return routed_command
 
     def route(self, parameters: list[bytes], client_context: ClientContext) -> Command:
+        parameters = parameters[:]
         routed_command: type[Command] = self.internal_route(parameters, self.ROUTES)
-
         return routed_command.create(parameters, client_context)
 
     @classmethod
     def command(
-        cls, command: bytes, acl_categories: list[bytes], parent_command: bytes | None = None
+        cls,
+        command_name: bytes,
+        acl_categories: set[bytes],
+        parent_command: bytes | None = None,
+        flags: set[bytes] | None = None,
     ) -> Callable[[type[Command]], type[Command]]:
         def _command_wrapper(command_cls: type[Command]) -> type[Command]:
-            command_cls = server_command(command_cls)
+            command_cls = transform_command(command_cls)
 
             if not acl_categories:
                 raise TypeError("command must have at least one acl_categories")
 
-            command_name = parent_command + b"|" + command if parent_command else command
+            for flag in flags or []:
+                if flag in [b"write"]:
+                    acl_categories.add(b"write")
 
-            ACL.COMMAND_CATEGORIES[command_name] = set(acl_categories)
+            setattr(command_cls, "flags", set(flags or []))
+
+            full_command_name = parent_command + b"|" + command_name if parent_command else command_name
+
+            if full_command_name in ACL.COMMANDS_NAMES:
+                raise ValueError("redecalration of command")
+
+            ACL.COMMAND_CATEGORIES[full_command_name] = acl_categories
             for acl_category in acl_categories:
-                ACL.CATEGORIES[acl_category].add(command)
+                ACL.CATEGORIES[acl_category].add(command_name)
 
-            ACL.COMMANDS_NAMES[command_cls] = command_name
+            ACL.COMMANDS_NAMES[command_cls] = full_command_name
 
             if parent_command is not None:
                 sub_route = cls.ROUTES[parent_command]
-                sub_route[command] = command_cls
+                sub_route[command_name] = command_cls
             else:
-                cls.ROUTES[command] = command_cls
+                cls.ROUTES[command_name] = command_cls
 
             return command_cls
 
         return _command_wrapper
 
 
-valkey_command = ServerCommandsRouter.command
+command = CommandsRouter.command

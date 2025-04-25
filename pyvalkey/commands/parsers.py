@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
 from enum import Enum, IntEnum
 from types import UnionType
-from typing import TYPE_CHECKING, Any, ClassVar, Self, Union, get_args, get_origin, get_type_hints, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Self,
+    TypeVar,
+    Union,
+    dataclass_transform,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.creators import CommandCreator
@@ -12,11 +22,12 @@ from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import (
     ServerError,
     ServerWrongNumberOfArgumentsError,
-    ValkeySyntaxError,
 )
 
 if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
+
+    CommandType = TypeVar("CommandType", bound=Command)
 
 
 class ParameterParser:
@@ -41,7 +52,7 @@ class ParameterParser:
         return parameter_type
 
     @classmethod
-    def create(cls, parameter_field: Field, parameter_type: Any, is_multi: bool = False) -> ParameterParser:  # noqa: ANN401
+    def create(cls, parameter_field: Field, parameter_type: Any) -> ParameterParser:  # noqa: ANN401
         parameter_type = cls._extract_optional_type(parameter_type)
 
         parse_error = parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR)
@@ -68,9 +79,10 @@ class ParameterParser:
             case float():
                 return FloatParameterParser()
             case list():
-                if is_multi:
+                if parameter_field.metadata.get(ParameterMetadata.MULTI_TOKEN, False):
                     return ParameterParser.create(parameter_field, get_args(parameter_type)[0])
-                return ListParameterParser.create_from_list_type(get_args(parameter_type)[0])
+                length_field_name = parameter_field.metadata.get(ParameterMetadata.LENGTH_FIELD_NAME)
+                return ListParameterParser.create_from_list_type(get_args(parameter_type)[0], length_field_name)
             case set():
                 return SetParameterParser.create_from_type(get_args(parameter_type)[0])
             case tuple():
@@ -106,6 +118,7 @@ class OptionalNamedParameterParser(NamedParameterParser):
 @dataclass
 class ListParameterParser(ParameterParser):
     parameter_parser: ParameterParser
+    length_field_name: str | None = None
 
     def parse(self, parameters: list[bytes]) -> list:
         list_parameter = []
@@ -114,16 +127,17 @@ class ListParameterParser(ParameterParser):
         return list_parameter
 
     @classmethod
-    def create_from_list_type(cls, list_type: Any) -> Self:  # noqa: ANN401
+    def create_from_list_type(cls, list_type: Any, length_field_name: str | None = None) -> Self:  # noqa: ANN401
         match list_type():
             case bytes():
-                return cls(ParameterParser())
+                parameter_parser = ParameterParser()
             case int():
-                return cls(IntParameterParser())
+                parameter_parser = IntParameterParser()
             case tuple():
-                return cls(TupleParameterParser.create_from_tuple_types(get_args(list_type)))
+                parameter_parser = TupleParameterParser.create_from_tuple_types(get_args(list_type))
             case default:
                 raise TypeError(default)
+        return cls(parameter_parser, length_field_name)
 
 
 @dataclass
@@ -209,8 +223,8 @@ class EnumParameterParser(ParameterParser):
             return self.enum_cls(enum_value)
         except ValueError as e:
             if self.parse_error is not None:
-                raise ServerError(self.parse_error)
-            raise ValkeySyntaxError(enum_value) from e
+                raise ServerError(self.parse_error) from e
+            raise ServerError(b"ERR syntax error") from e
 
 
 @dataclass
@@ -222,7 +236,7 @@ class BoolParameterParser(ParameterParser):
     def parse(self, parameters: list[bytes]) -> bool:
         bytes_value = self.next_parameter(parameters).upper()
         if bytes_value not in self.values_mapping:
-            raise ValkeySyntaxError(bytes_value)
+            raise ServerError(b"ERR syntax error")
         return self.values_mapping[bytes_value]
 
 
@@ -260,7 +274,7 @@ class OptionalKeywordParametersGroup(ParametersGroup):
                     )
             else:
                 if not keyword_parameter.skip_first and keyword_parameter.parameter.name in parsed_kw_parameters:
-                    raise ValkeySyntaxError()
+                    raise ServerError(b"ERR syntax error")
                 parsed_kw_parameters.update(keyword_parameter.parameter.parse(parameters))
 
         return parsed_kw_parameters
@@ -292,11 +306,27 @@ class ObjectParametersParser(ParametersGroup):
                     ):
                         continue
 
+            if (
+                isinstance(parameter_parser, NamedParameterParser)
+                and isinstance(parameter_parser.parameter_parser, ListParameterParser)
+                and index + 1 < len(self.parameters_parsers)
+            ):
+                if parameter_parser.parameter_parser.length_field_name is not None:
+                    length = parsed_parameters[parameter_parser.parameter_parser.length_field_name]
+                    parsed_parameters.update(parameter_parser.parse(parameters[:length]))
+                    parameters = parameters[length:]
+                else:
+                    left_parameters = 0
+                    for _ in self.parameters_parsers[index + 1 :]:
+                        left_parameters += 1
+                    parsed_parameters.update(parameter_parser.parse(parameters[:-left_parameters]))
+                    parameters = parameters[-left_parameters:]
+                continue
             parsed_parameters.update(parameter_parser.parse(parameters))
 
         if parameters:
             if isinstance(self.parameters_parsers[-1], OptionalKeywordParametersGroup):
-                raise ValkeySyntaxError()
+                raise ServerError(b"ERR syntax error")
 
             raise ServerWrongNumberOfArgumentsError()
 
@@ -329,7 +359,7 @@ class ObjectParametersParser(ParametersGroup):
             if flag:
                 named_parameter_parser = NamedParameterParser(
                     parameter_field_name,
-                    ParameterParser.create(parameter_field, resolved_hints[parameter_field.name], is_multi),
+                    ParameterParser.create(parameter_field, resolved_hints[parameter_field.name]),
                 )
                 if isinstance(flag, dict):
                     for flag_key in flag.keys():
@@ -379,11 +409,11 @@ class ObjectParser(ParametersGroup):
         return cls(object_cls, ObjectParametersParser.create_from_object(object_cls))
 
 
-def _server_command_wrapper(command_cls: type[Command]) -> type[Command]:
+@dataclass_transform()
+def move_mandatory_field_to_start(command_cls: type[CommandType]) -> list[str]:
+    cls_annotations = getattr(command_cls, "__annotations__", {})
+
     original_order = []
-
-    annotations = getattr(command_cls, "__annotations__", {})
-
     for name in list(command_cls.__dict__.keys()):
         value = getattr(command_cls, name)
 
@@ -398,32 +428,24 @@ def _server_command_wrapper(command_cls: type[Command]) -> type[Command]:
         if not value.kw_only and value.default == MISSING:
             continue
 
-        if name in annotations:
-            annotation = annotations[name]
-            del annotations[name]
-            annotations[name] = annotation
+        if name in cls_annotations:
+            annotation = cls_annotations[name]
+            del cls_annotations[name]
+            cls_annotations[name] = annotation
 
         delattr(command_cls, name)
         setattr(command_cls, name, value)
 
-    command_cls = dataclass(command_cls)
+    return original_order
 
+
+@dataclass_transform()
+def transform_command(command_cls: type[CommandType]) -> type[CommandType]:
+    original_order = move_mandatory_field_to_start(command_cls)
+
+    command_cls = dataclass(command_cls)
     setattr(command_cls, "__original_order__", original_order)
     setattr(command_cls, "parse", ObjectParametersParser.create_from_object(command_cls))
     setattr(command_cls, "create", CommandCreator.create(command_cls))
 
     return command_cls
-
-
-@overload
-def server_command(command_cls: Callable[[type[Command]], type[Command]], /) -> type[Command]: ...
-
-
-@overload
-def server_command(*args: type[Command]) -> type[Command]: ...
-
-
-def server_command(*args: Any) -> Any:
-    if len(args) == 0:
-        return _server_command_wrapper
-    return _server_command_wrapper(args[0])

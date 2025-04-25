@@ -4,10 +4,15 @@ from hashlib import sha256
 from typing import Any, ClassVar, Literal, TypeVar, dataclass_transform
 
 
+class ConfigurationError(Exception):
+    pass
+
+
 @dataclass
 class ConfigurationFieldData:
     type_: Literal["string", "password", "integer"] = "string"
     alias: bytes | None = None
+    flags: set[bytes] = field(default_factory=set)
     _name: bytes | None = None
     _field_name: str | None = None
 
@@ -36,11 +41,12 @@ def configuration(
     default: int | bytes,
     type_: Literal["string", "password", "integer"] = "string",
     alias: bytes | None = None,
+    flags: set[bytes] | None = None,
 ) -> Any:  # noqa:ANN401
     return field(
         default=default,
         metadata={
-            "configuration": ConfigurationFieldData(type_, alias),
+            "configuration": ConfigurationFieldData(type_, alias, flags=flags or set()),
         },
     )
 
@@ -118,7 +124,12 @@ class Configurations(ConfigurationBase):
 
     sanitize_dump_payload: bytes = configuration(default=b"yes")
 
+    maxmemory: int = configuration(default=0, type_="integer", flags={b"memory"})
     maxmemory_policy: bytes = configuration(default=b"noeviction")
+
+    repl_ping_replica_period: int = configuration(default=10, type_="integer")
+
+    lua_time_limit: int = configuration(default=5000, type_="integer")
 
     @classmethod
     def get_field_name(cls, name: bytes) -> str:
@@ -137,7 +148,12 @@ class Configurations(ConfigurationBase):
         if field_type == "password":
             setattr(self, field_name, sha256(value).hexdigest().encode())
         elif field_type == "integer":
-            setattr(self, field_name, int(value.decode()))
+            try:
+                setattr(self, field_name, int(value.decode()))
+            except ValueError:
+                if b"memory" in self.FIELD_BY_NAME[name].flags:
+                    raise ConfigurationError("argument must be a memory value")
+                raise
         else:
             setattr(self, field_name, value)
 

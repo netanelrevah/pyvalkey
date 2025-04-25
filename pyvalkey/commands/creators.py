@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Self, get_type_hints
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database
+from pyvalkey.database_objects.databases import BlockingManager, Database
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RespProtocolVersion
 
@@ -45,6 +45,8 @@ class CommandCreator:
                 command_kwargs[command_dependency.name] = client_context.server_context.configurations
             elif command_dependency_type == RespProtocolVersion:
                 command_kwargs[command_dependency.name] = client_context.protocol
+            elif command_dependency_type == BlockingManager:
+                command_kwargs[command_dependency.name] = client_context.server_context.notification_manager
             else:
                 raise TypeError()
 

@@ -5,7 +5,9 @@ import itertools
 import operator
 import random
 import time
-from collections.abc import Callable, Iterable
+from asyncio import Queue, wait_for
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
@@ -18,6 +20,7 @@ from pyvalkey.commands.utils import (
 )
 from pyvalkey.database_objects.errors import ServerWrongTypeError
 from pyvalkey.database_objects.utils import flatten
+from pyvalkey.utils.collections import SetMapping
 
 
 @functools.total_ordering
@@ -207,10 +210,15 @@ MISSING: KeyValue = KeyValue(b"", {})
 
 
 class DatabaseBase(Generic[KeyValueTypeVar]):
+    index: int
     data: dict[bytes, KeyValue[KeyValueTypeVar]]
     key_with_expiration: SortedSet
+    watchlist: dict[bytes, set[ClientWatchlist]]
 
-    def has_key_with_type_check(self, key: bytes, type_: type | None = None) -> bool:
+    def is_empty(self, value: KeyValueTypeVar) -> bool:
+        raise NotImplementedError()
+
+    def has_typed_key(self, key: bytes, type_: type | None = None) -> bool:
         key_value = self.data.get(key, None)
 
         if not key_value:
@@ -226,7 +234,8 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             type_ is not None
             and not isinstance(key_value.value, type_)
             and (
-                (type_ is int and not isinstance(key_value.value, bytes))
+                (type_ is not int and type is not bytes)
+                or (type_ is int and not isinstance(key_value.value, bytes))
                 or (type_ is bytes and not isinstance(key_value.value, int))
             )
         ):
@@ -273,14 +282,29 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
                 self.key_with_expiration.discard(new_key_value)
 
         key_value.key = new_key
-        self.data[new_key] = key_value
-        if key_value.expiration is not None:
-            self.key_with_expiration.add(key_value)
+
+        self.set_key_value(key_value)
 
     def copy_from(self, key_value: KeyValue, new_key: bytes) -> None:
-        self.data[new_key] = key_value.copy(new_key)
-        if key_value.expiration:
-            self.key_with_expiration.add(key_value)
+        self.set_key_value(key_value.copy(new_key))
+
+    def touch_watched_key(self, key: bytes) -> None:
+        for client_watchlist in self.watchlist.get(key, []):
+            print(f"key '{key.decode()}' in database {self.index} has been touched")
+            client_watchlist.watchlist[(self.index, key)] = True
+
+    def add_key_to_watchlist(self, key: bytes, client_watchlist: ClientWatchlist) -> None:
+        if key not in self.watchlist:
+            self.watchlist[key] = set()
+        self.watchlist[key].add(client_watchlist)
+        client_watchlist.watchlist[(self.index, key)] = False
+
+    def pop_unsafely(self, key: bytes) -> KeyValue[KeyValueTypeVar]:
+        key_value = self.data.pop(key)
+        if key_value.expiration is not None:
+            self.key_with_expiration.discard(key_value)
+        self.touch_watched_key(key)
+        return key_value
 
     def pop(self, key: bytes, default: KeyValue[KeyValueTypeVar] | None = MISSING) -> KeyValue[KeyValueTypeVar] | None:
         if not self.has_key(key):
@@ -288,17 +312,21 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
                 raise KeyError()
             return default
 
-        key_value = self.data.pop(key)
-        if key_value.expiration is not None:
-            self.key_with_expiration.discard(key_value)
-        return key_value
+        return self.pop_unsafely(key)
 
     def get(self, key: bytes) -> KeyValue[KeyValueTypeVar]:
         if not self.has_key(key):
             raise KeyError()
         return self.data[key]
 
-    def get_or_none(self, key: bytes) -> KeyValue | None:
+    @contextmanager
+    def get_with_context(self, key: bytes) -> Iterator[KeyValue[KeyValueTypeVar]]:
+        key_value = self.get(key)
+        yield key_value
+        if self.is_empty(key_value.value):
+            self.pop_unsafely(key)
+
+    def get_or_none(self, key: bytes) -> KeyValue[KeyValueTypeVar] | None:
         if not self.has_key(key):
             return None
         return self.data[key]
@@ -306,12 +334,19 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
     def create_empty(self) -> KeyValueTypeVar:
         raise NotImplementedError()
 
-    def get_or_create(self, key: bytes) -> KeyValue:
+    def get_or_create(self, key: bytes) -> KeyValue[KeyValueTypeVar]:
         if not self.has_key(key):
             key_value = KeyValue(key, self.create_empty())
             self.set_key_value(key_value)
             return key_value
         return self.data[key]
+
+    @contextmanager
+    def get_or_create_with_context(self, key: bytes) -> Iterator[KeyValue[KeyValueTypeVar]]:
+        key_value = self.get_or_create(key)
+        yield key_value
+        if self.is_empty(key_value.value):
+            self.pop_unsafely(key)
 
     def convert_value_if_needed(self, value: KeyValueTypeVar) -> KeyValueTypeVar:
         return value
@@ -319,12 +354,19 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
     def get_value(self, key: bytes) -> KeyValueTypeVar:
         return self.convert_value_if_needed(self.get(key).value)
 
+    @contextmanager
+    def get_value_with_context(self, key: bytes) -> Iterator[KeyValueTypeVar]:
+        value = self.get_value(key)
+        yield value
+        if self.is_empty(value):
+            self.pop_unsafely(key)
+
     def get_value_or_empty(self, key: bytes) -> KeyValueTypeVar:
         if not self.has_key(key):
             return self.create_empty()
         return self.convert_value_if_needed(self.get(key).value)
 
-    def get_value_or_none(self, key: bytes) -> None | KeyValueTypeVar:
+    def get_value_or_none(self, key: bytes) -> KeyValueTypeVar | None:
         if not self.has_key(key):
             return None
         return self.convert_value_if_needed(self.get(key).value)
@@ -338,6 +380,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         self.data[key_value.key] = key_value
         if key_value.expiration is not None:
             self.key_with_expiration.add(key_value)
+        self.touch_watched_key(key_value.key)
 
     def set_value(self, key: bytes, value: KeyValueTypeVar) -> None:
         if not self.has_key(key):
@@ -403,24 +446,51 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
 
 @dataclass
 class TypedDatabase(Generic[KeyValueTypeVar], DatabaseBase[KeyValueTypeVar]):
+    index: int
     data: dict[bytes, KeyValue[KeyValueTypeVar]]
     key_with_expiration: SortedSet
+    watchlist: dict[bytes, set[ClientWatchlist]]
+
     type_: type[KeyValueTypeVar]
     empty_factory: Callable[[], KeyValueTypeVar]
+    emptiness_predicate: Callable[[KeyValueTypeVar], bool]
+
+    def is_empty(self, value: KeyValueTypeVar) -> bool:
+        return self.emptiness_predicate(value)
 
     def has_key(self, key: bytes) -> bool:
-        return super().has_key_with_type_check(key, self.type_)
+        return super().has_typed_key(key, self.type_)
 
     def create_empty(self) -> KeyValueTypeVar:
         return self.empty_factory()
 
 
 @dataclass
+class ListDatabase(DatabaseBase[list]):
+    index: int
+    data: dict[bytes, KeyValue[list]]
+    key_with_expiration: SortedSet
+    watchlist: dict[bytes, set[ClientWatchlist]]
+
+    def is_empty(self, value: list) -> bool:
+        return not value
+
+    def create_empty(self) -> list:
+        return []
+
+    def has_key(self, key: bytes) -> bool:
+        return self.has_typed_key(key, list)
+
+
+@dataclass
 class BytesDatabase(DatabaseBase[bytes]):
+    index: int
     data: dict[bytes, KeyValue[bytes]]
     key_with_expiration: SortedSet
+    watchlist: dict[bytes, set[ClientWatchlist]]
 
-    type_: type[bytes] = field(default=bytes, init=False)
+    def is_empty(self, value: int | bytes) -> bool:
+        return value in (b"", 0)
 
     def create_empty(self) -> bytes:
         return b""
@@ -431,13 +501,15 @@ class BytesDatabase(DatabaseBase[bytes]):
         return value
 
     def has_key(self, key: bytes) -> bool:
-        return self.has_key_with_type_check(key, bytes)
+        return self.has_typed_key(key, bytes)
 
 
 @dataclass
 class Database(DatabaseBase[KeyValueType]):
+    index: int
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
+    watchlist: dict[bytes, set[ClientWatchlist]] = field(default_factory=dict)
 
     string_database: TypedDatabase[bytes | int] = field(init=False)
     bytes_database: BytesDatabase = field(init=False)
@@ -445,16 +517,96 @@ class Database(DatabaseBase[KeyValueType]):
     sorted_set_database: TypedDatabase[ValkeySortedSet] = field(init=False)
     set_database: TypedDatabase[set] = field(init=False)
     hash_database: TypedDatabase[dict] = field(init=False)
-    list_database: TypedDatabase[list] = field(init=False)
+    list_database: ListDatabase = field(init=False)
 
     def has_key(self, key: bytes) -> bool:
-        return self.has_key_with_type_check(key)
+        return self.has_typed_key(key)
 
     def __post_init__(self) -> None:
-        self.string_database = TypedDatabase(self.data, self.key_with_expiration, bytes, lambda: b"")
-        self.bytes_database = BytesDatabase(self.data, self.key_with_expiration)
-        self.int_database = TypedDatabase(self.data, self.key_with_expiration, int, lambda: 0)
-        self.sorted_set_database = TypedDatabase(self.data, self.key_with_expiration, ValkeySortedSet, ValkeySortedSet)
-        self.set_database = TypedDatabase(self.data, self.key_with_expiration, set, set)
-        self.hash_database = TypedDatabase(self.data, self.key_with_expiration, dict, dict)
-        self.list_database = TypedDatabase(self.data, self.key_with_expiration, list, list)
+        self.string_database = TypedDatabase(
+            self.index,
+            self.data,
+            self.key_with_expiration,
+            self.watchlist,
+            bytes,
+            lambda: b"",
+            lambda value: value == b"",
+        )
+        self.bytes_database = BytesDatabase(self.index, self.data, self.key_with_expiration, self.watchlist)
+        self.int_database = TypedDatabase(
+            self.index, self.data, self.key_with_expiration, self.watchlist, int, lambda: 0, lambda value: value == 0
+        )
+        self.sorted_set_database = TypedDatabase(
+            self.index,
+            self.data,
+            self.key_with_expiration,
+            self.watchlist,
+            ValkeySortedSet,
+            ValkeySortedSet,
+            lambda value: len(value) == 0,
+        )
+        self.set_database = TypedDatabase(
+            self.index, self.data, self.key_with_expiration, self.watchlist, set, set, lambda value: not value
+        )
+        self.hash_database = TypedDatabase(
+            self.index, self.data, self.key_with_expiration, self.watchlist, dict, dict, lambda value: not value
+        )
+        self.list_database = ListDatabase(self.index, self.data, self.key_with_expiration, self.watchlist)
+
+
+@dataclass
+class BlockingManager:
+    list_notifications: SetMapping[bytes, Queue] = field(default_factory=SetMapping)
+
+    lazy_notification_keys: list[bytes] = field(default_factory=list)
+
+    async def wait_for_lists(
+        self, database: Database, keys: list[bytes], timeout: int | None = None, in_multi: bool = False
+    ) -> bytes | None:
+        for key in keys:
+            if not database.list_database.has_key(key):
+                continue
+            return key
+
+        if in_multi:
+            return None
+
+        queue: Queue[bytes] = Queue()
+        self.list_notifications.add_multiple(keys, queue)
+
+        try:
+            while True:
+                print(f"waiting queue for keys {keys}")
+                key = await wait_for(queue.get(), timeout=timeout or None)
+                print(f"got '{key.decode()}' from queue")
+                if database.list_database.has_key(key):
+                    return key
+                print(f"key '{key.decode()}' not in database, continue...")
+        except TimeoutError:
+            return None
+        finally:
+            self.list_notifications.remove_all(queue)
+
+    async def notify_list(self, key: bytes, in_multi: bool = False) -> None:
+        if in_multi:
+            print(f"adding '{key.decode()}' to lazy notification keys")
+            self.lazy_notification_keys.append(key)
+            return
+        for queue in self.list_notifications.iter_values(key):
+            print(f"putting '{key.decode()}' into queue")
+            await queue.put(key)
+
+    async def notify_list_lazy(self, database: Database) -> None:
+        while self.lazy_notification_keys:
+            key = self.lazy_notification_keys.pop(0)
+            if key not in database.data or not isinstance(database.data[key].value, list):
+                print(f"lazy key '{key.decode()}' not found, continue...")
+                continue
+            for queue in self.list_notifications.iter_values(key):
+                print(f"putting '{key.decode()}' into queue")
+                await queue.put(key)
+
+
+@dataclass(unsafe_hash=True)
+class ClientWatchlist:
+    watchlist: dict[tuple[int, bytes], bool] = field(default_factory=dict, hash=False)

@@ -18,7 +18,7 @@ class TestTimeToLive:
     #     assert command.protocol_version == b"ss"
     #
     def test_ttl_with_expire(self):
-        database = Database()
+        database = Database(0)
         Set(database, b"mykey{t}", b"foo").execute()
         Expire(database, b"mykey{t}", 100).execute()
 

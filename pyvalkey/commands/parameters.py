@@ -13,6 +13,7 @@ class ParameterMetadata(Enum):
     KEY_MODE = auto()
     PARSE_ERROR = auto()
     SKIP_FIRST = auto()
+    LENGTH_FIELD_NAME = auto()
 
 
 def server_parameter(
@@ -24,11 +25,14 @@ def server_parameter(
     parse_error: bytes | None = None,
     multi_token: bool = False,
     skip_first: bool = False,
+    length_field_name: str | None = None,
 ) -> Any:  # noqa: ANN401
     metadata: dict[ParameterMetadata, Any] = {
         ParameterMetadata.SERVER_PARAMETER: True,
         ParameterMetadata.PARSE_ERROR: parse_error,
     }
+    if length_field_name is not None:
+        metadata[ParameterMetadata.LENGTH_FIELD_NAME] = length_field_name
     if values_mapping:
         metadata[ParameterMetadata.VALUES_MAPPING] = values_mapping
     if flag:
@@ -59,8 +63,15 @@ def positional_parameter(
     default: Any = MISSING,  # noqa: ANN401
     key_mode: bytes | None = None,
     parse_error: bytes | None = None,
+    length_field_name: str | None = None,
 ) -> Any:  # noqa: ANN401
-    return server_parameter(values_mapping=values_mapping, default=default, key_mode=key_mode, parse_error=parse_error)
+    return server_parameter(
+        values_mapping=values_mapping,
+        default=default,
+        key_mode=key_mode,
+        parse_error=parse_error,
+        length_field_name=length_field_name,
+    )
 
 
 def keyword_parameter(

@@ -9,14 +9,14 @@ from pyvalkey.commands.parameters import (
     keyword_parameter,
     positional_parameter,
 )
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
 
-@ServerCommandsRouter.command(b"auth", [b"fast", b"connection"])
+@command(b"auth", [b"fast", b"connection"])
 class Authorize(Command):
     acl: ACL = server_command_dependency()
     configurations: Configurations = server_command_dependency()
@@ -47,7 +47,7 @@ class Authorize(Command):
         )
 
 
-@ServerCommandsRouter.command(b"list", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"list", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
 class ClientList(Command):
     client_context: ClientContext = server_command_dependency()
     client_type: bytes | None = keyword_parameter(flag=b"TYPE", default=None)
@@ -58,7 +58,7 @@ class ClientList(Command):
         return self.client_context.server_context.clients.info
 
 
-@ServerCommandsRouter.command(b"id", [b"slow", b"connection"], b"client")
+@command(b"id", [b"slow", b"connection"], b"client")
 class ClientId(Command):
     client_context: ClientContext = server_command_dependency()
 
@@ -66,7 +66,7 @@ class ClientId(Command):
         return self.client_context.current_client.client_id
 
 
-@ServerCommandsRouter.command(b"setname", [b"slow", b"connection"], b"client")
+@command(b"setname", [b"slow", b"connection"], b"client")
 class ClientSetName(Command):
     client_context: ClientContext = server_command_dependency()
     name: bytes = positional_parameter()
@@ -76,7 +76,7 @@ class ClientSetName(Command):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"getname", [b"slow", b"connection"], b"client")
+@command(b"getname", [b"slow", b"connection"], b"client")
 class ClientGetName(Command):
     client_context: ClientContext = server_command_dependency()
 
@@ -84,7 +84,7 @@ class ClientGetName(Command):
         return self.client_context.current_client.name or None
 
 
-@ServerCommandsRouter.command(b"kill", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"kill", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
 class ClientKill(Command):
     client_context: ClientContext = server_command_dependency()
     old_format_address: bytes | None = positional_parameter(default=None)
@@ -108,7 +108,7 @@ class ClientKill(Command):
         return len(clients)
 
 
-@ServerCommandsRouter.command(b"pause", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"pause", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
 class ClientPause(Command):
     client_context: ClientContext = server_command_dependency()
     timeout_seconds: int = positional_parameter()
@@ -119,7 +119,7 @@ class ClientPause(Command):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"unpause", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"unpause", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
 class ClientUnpause(Command):
     client_context: ClientContext = server_command_dependency()
     timeout_seconds: int = positional_parameter()
@@ -135,7 +135,7 @@ class ReplyMode(Enum):
     SKIP = b"SKIP"
 
 
-@ServerCommandsRouter.command(b"reply", [b"slow", b"connection"], b"client")
+@command(b"reply", [b"slow", b"connection"], b"client")
 class ClientReply(Command):
     client_context: ClientContext = server_command_dependency()
     mode: ReplyMode = positional_parameter()
@@ -146,7 +146,7 @@ class ClientReply(Command):
         return None
 
 
-@ServerCommandsRouter.command(b"setinfo", [b"slow", b"connection"], b"client")
+@command(b"setinfo", [b"slow", b"connection"], b"client")
 class ClientSetInformation(Command):
     client_context: ClientContext = server_command_dependency()
     library_name: bytes | None = keyword_parameter(flag=b"LIB-NAME", default=None)
@@ -160,7 +160,7 @@ class ClientSetInformation(Command):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"echo", [b"fast", b"connection"])
+@command(b"echo", [b"fast", b"connection"])
 class Echo(Command):
     message: bytes = positional_parameter()
 
@@ -168,7 +168,7 @@ class Echo(Command):
         return self.message
 
 
-@ServerCommandsRouter.command(b"hello", [b"connection", b"fast"])
+@command(b"hello", [b"connection", b"fast"])
 class Hello(Command):
     client_context: ClientContext = server_command_dependency()
     protocol_version: RespProtocolVersion | None = positional_parameter(
@@ -195,7 +195,7 @@ class Hello(Command):
         return response
 
 
-@ServerCommandsRouter.command(b"ping", [b"fast", b"connection"])
+@command(b"ping", [b"fast", b"connection"])
 class Ping(Command):
     message: bytes | None = positional_parameter(default=None)
 
@@ -205,7 +205,7 @@ class Ping(Command):
         return b"PONG"
 
 
-@ServerCommandsRouter.command(b"select", [b"connection", b"fast"])
+@command(b"select", [b"connection", b"fast"])
 class SelectDatabase(Command):
     client_context: ClientContext = server_command_dependency()
     index: int = positional_parameter()

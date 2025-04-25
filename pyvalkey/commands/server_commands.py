@@ -7,21 +7,22 @@ from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import ParameterMetadata, keyword_parameter, positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import CommandsRouter, command
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
-from pyvalkey.database_objects.configurations import Configurations
+from pyvalkey.database_objects.configurations import ConfigurationError, Configurations
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
-@ServerCommandsRouter.command(b"help", [b"slow", b"connection"], b"acl")
+@command(b"help", {b"slow", b"connection"}, b"acl")
 class AclHelp(Command):
     def execute(self) -> ValueType:
         return ["genpass"]
 
 
-@ServerCommandsRouter.command(b"genpass", [b"slow"], b"acl")
+@command(b"genpass", {b"slow"}, b"acl")
 class AclGeneratePassword(Command):
     length: int = positional_parameter(default=64)
 
@@ -29,7 +30,7 @@ class AclGeneratePassword(Command):
         return urandom(self.length)
 
 
-@ServerCommandsRouter.command(b"cat", [b"slow"], b"acl")
+@command(b"cat", {b"slow"}, b"acl")
 class AclCategory(Command):
     category: bytes | None = positional_parameter(default=None)
 
@@ -39,7 +40,7 @@ class AclCategory(Command):
         return ACL.get_categories()
 
 
-@ServerCommandsRouter.command(b"deluser", [b"admin", b"slow", b"dangerous"], b"acl")
+@command(b"deluser", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclDeleteUser(Command):
     acl: ACL = server_command_dependency()
 
@@ -54,7 +55,7 @@ class AclDeleteUser(Command):
         return user_deleted
 
 
-@ServerCommandsRouter.command(b"getuser", [b"admin", b"slow", b"dangerous"], b"acl")
+@command(b"getuser", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclGetUser(Command):
     acl: ACL = server_command_dependency()
     user_name: bytes = positional_parameter()
@@ -65,7 +66,7 @@ class AclGetUser(Command):
         return self.acl[self.user_name].info
 
 
-@ServerCommandsRouter.command(b"dryrun", [b"admin", b"slow", b"dangerous"], b"acl")
+@command(b"dryrun", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclDryRun(Command):
     acl: ACL = server_command_dependency()
 
@@ -77,7 +78,7 @@ class AclDryRun(Command):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"setuser", [b"admin", b"slow", b"dangerous"], b"acl")
+@command(b"setuser", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclSetUser(Command):
     acl: ACL = server_command_dependency()
     user_name: bytes = positional_parameter()
@@ -179,15 +180,15 @@ class AclSetUser(Command):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"getkeys", [b"connection", b"fast"], b"command")
+@command(b"getkeys", {b"connection", b"fast"}, b"command")
 class CommandGetKeys(Command):
     command: bytes = positional_parameter()
     args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         parameters = [self.command, *self.args]
-        command_cls: type[Command] = ServerCommandsRouter().internal_route(
-            parameters=parameters, routes=ServerCommandsRouter.ROUTES
+        command_cls: type[Command] = CommandsRouter().internal_route(
+            parameters=parameters, routes=CommandsRouter.ROUTES
         )
         parsed_command = command_cls.parse(parameters)
 
@@ -205,7 +206,7 @@ class CommandGetKeys(Command):
         return keys
 
 
-@ServerCommandsRouter.command(b"get", [b"admin", b"slow", b"dangerous"], b"config")
+@command(b"get", {b"admin", b"slow", b"dangerous"}, b"config")
 class ConfigGet(Command):
     configurations: Configurations = server_command_dependency()
     parameters: list[bytes] = positional_parameter()
@@ -215,24 +216,30 @@ class ConfigGet(Command):
         return self.configurations.info(names)
 
 
-@ServerCommandsRouter.command(b"set", [b"admin", b"slow", b"dangerous"], b"config")
+@command(b"set", {b"admin", b"slow", b"dangerous"}, b"config")
 class ConfigSet(Command):
     configurations: Configurations = server_command_dependency()
     parameters_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
         for name, value in self.parameters_values:
-            self.configurations.set_value(name, value)
+            try:
+                self.configurations.set_value(name, value)
+            except ConfigurationError as e:
+                return RespError(
+                    (f"ERR CONFIG SET failed (possibly related to argument '{name.decode()}') - " + e.args[0]).encode()
+                )
+
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"dbsize", [b"keyspace", b"read", b"fast"])
+@command(b"dbsize", {b"keyspace", b"read", b"fast"})
 class DatabaseSize(DatabaseCommand):
     def execute(self) -> ValueType:
         return self.database.size()
 
 
-@ServerCommandsRouter.command(b"debug", acl_categories=[b"fast", b"connection"])
+@command(b"debug", acl_categories={b"fast", b"connection"})
 class Debug(Command):
     set_active_expire: int = keyword_parameter(flag=b"set-active-expire", default=b"0")
     object: bytes | None = keyword_parameter(token=b"object", default=None)
@@ -241,26 +248,39 @@ class Debug(Command):
         return True
 
 
-@ServerCommandsRouter.command(b"flushall", [b"keyspace", b"write", b"slow", b"dangerous"])
+def touch_all_database_watched_keys(database: Database) -> None:
+    for key in database.data.keys():
+        database.touch_watched_key(key)
+
+
+def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
+    for database in databases.values():
+        touch_all_database_watched_keys(database)
+
+
+@command(b"flushall", {b"keyspace", b"write", b"slow", b"dangerous"})
 class FlushAllDatabases(Command):
     server_context: ServerContext = server_command_dependency()
 
     def execute(self) -> ValueType:
+        touch_all_databases_watched_keys(self.server_context.databases)
         self.server_context.databases.clear()
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"flushdb", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"flushdb", {b"keyspace", b"write", b"slow", b"dangerous"})
 class FlushDatabase(Command):
     client_context: ClientContext = server_command_dependency()
 
     def execute(self) -> ValueType:
         if self.client_context.current_database in self.client_context.server_context.databases:
+            for key in self.client_context.database.data.keys():
+                self.client_context.database.touch_watched_key(key)
             self.client_context.server_context.databases.pop(self.client_context.current_database)
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"info", [b"slow", b"dangerous"])
+@command(b"info", {b"slow", b"dangerous"})
 class GetInformation(Command):
     information: Information = server_command_dependency()
 
@@ -270,7 +290,7 @@ class GetInformation(Command):
         return self.information.all()
 
 
-@ServerCommandsRouter.command(b"usage", [b"read", b"slow"], b"memory")
+@command(b"usage", {b"read", b"slow"}, b"memory")
 class MemoryUsage(Command):
     key: bytes = positional_parameter()
 
@@ -278,7 +298,7 @@ class MemoryUsage(Command):
         return 1
 
 
-@ServerCommandsRouter.command(b"swapdb", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"swapdb", {b"keyspace", b"write", b"slow", b"dangerous"})
 class SwapDb(Command):
     server_context: ServerContext = server_command_dependency()
 
@@ -292,12 +312,33 @@ class SwapDb(Command):
         if self.index1 not in self.server_context.databases:
             raise ServerError(b"ERR DB index is out of range")
 
+        touch_all_database_watched_keys(self.server_context.databases[self.index1])
         if self.index2 not in self.server_context.databases:
             self.server_context.databases[self.index2] = self.server_context.databases.pop(self.index1)
+            self.server_context.databases[self.index2].index = self.index2
+            self.server_context.databases[self.index2].watchlist = {}
             return RESP_OK
 
-        self.server_context.databases[self.index1], self.server_context.databases[self.index2] = (
+        touch_all_database_watched_keys(self.server_context.databases[self.index2])
+
+        (self.server_context.databases[self.index1], self.server_context.databases[self.index2]) = (
             self.server_context.databases[self.index2],
             self.server_context.databases[self.index1],
         )
+
+        self.server_context.databases[self.index1].index = self.index1
+        self.server_context.databases[self.index2].index = self.index2
+        self.server_context.databases[self.index1].watchlist, self.server_context.databases[self.index2].watchlist = (
+            self.server_context.databases[self.index2].watchlist,
+            self.server_context.databases[self.index1].watchlist,
+        )
+        touch_all_database_watched_keys(self.server_context.databases[self.index1])
+        touch_all_database_watched_keys(self.server_context.databases[self.index2])
+
+        return RESP_OK
+
+
+@command(b"sync", {b"keyspace", b"write", b"slow", b"dangerous"})
+class Sync(Command):
+    def execute(self) -> ValueType:
         return RESP_OK
