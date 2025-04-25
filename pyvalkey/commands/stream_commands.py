@@ -1,4 +1,3 @@
-
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
@@ -65,7 +64,6 @@ class StreamInfoStream(Command):
 
     def execute(self) -> ValueType:
         return 1
-
 
 
 @command(b"xread", {b"stream"})
