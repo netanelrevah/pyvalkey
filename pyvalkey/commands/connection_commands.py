@@ -108,7 +108,7 @@ class ClientKill(Command):
         return len(clients)
 
 
-@command(b"pause", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"pause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientPause(Command):
     client_context: ClientContext = server_command_dependency()
     timeout_seconds: int = positional_parameter()
@@ -119,7 +119,7 @@ class ClientPause(Command):
         return RESP_OK
 
 
-@command(b"unpause", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"unpause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientUnpause(Command):
     client_context: ClientContext = server_command_dependency()
     timeout_seconds: int = positional_parameter()
@@ -135,7 +135,7 @@ class ReplyMode(Enum):
     SKIP = b"SKIP"
 
 
-@command(b"reply", [b"slow", b"connection"], b"client")
+@command(b"reply", {b"slow", b"connection"}, b"client")
 class ClientReply(Command):
     client_context: ClientContext = server_command_dependency()
     mode: ReplyMode = positional_parameter()
@@ -146,7 +146,7 @@ class ClientReply(Command):
         return None
 
 
-@command(b"setinfo", [b"slow", b"connection"], b"client")
+@command(b"setinfo", {b"slow", b"connection"}, b"client")
 class ClientSetInformation(Command):
     client_context: ClientContext = server_command_dependency()
     library_name: bytes | None = keyword_parameter(flag=b"LIB-NAME", default=None)
@@ -160,7 +160,7 @@ class ClientSetInformation(Command):
         return RESP_OK
 
 
-@command(b"echo", [b"fast", b"connection"])
+@command(b"echo", {b"fast", b"connection"})
 class Echo(Command):
     message: bytes = positional_parameter()
 
@@ -168,7 +168,7 @@ class Echo(Command):
         return self.message
 
 
-@command(b"hello", [b"connection", b"fast"])
+@command(b"hello", {b"connection", b"fast"})
 class Hello(Command):
     client_context: ClientContext = server_command_dependency()
     protocol_version: RespProtocolVersion | None = positional_parameter(
@@ -195,7 +195,7 @@ class Hello(Command):
         return response
 
 
-@command(b"ping", [b"fast", b"connection"])
+@command(b"ping", {b"fast", b"connection"})
 class Ping(Command):
     message: bytes | None = positional_parameter(default=None)
 
@@ -205,7 +205,7 @@ class Ping(Command):
         return b"PONG"
 
 
-@command(b"select", [b"connection", b"fast"])
+@command(b"select", {b"connection", b"fast"})
 class SelectDatabase(Command):
     client_context: ClientContext = server_command_dependency()
     index: int = positional_parameter()
