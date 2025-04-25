@@ -25,7 +25,7 @@ class BitOperationMode(Enum):
     NOT = b"NOT"
 
 
-@command(b"bitcount", [b"read", b"bitmap", b"slow"])
+@command(b"bitcount", {b"read", b"bitmap", b"slow"})
 class BitCount(DatabaseCommand):
     key: bytes = positional_parameter()
     count_range: tuple[int, int] | None = positional_parameter(default=None)
@@ -73,19 +73,19 @@ class BitCount(DatabaseCommand):
         return self.handle_byte_mode(string_value, start, end)
 
 
-@command(b"bitfield", [b"read", b"bitmap", b"slow"])
+@command(b"bitfield", {b"read", b"bitmap", b"slow"})
 class BitField(DatabaseCommand):
     def execute(self) -> ValueType:
         return None
 
 
-@command(b"bitfield_ro", [b"read", b"bitmap", b"slow"])
+@command(b"bitfield_ro", {b"read", b"bitmap", b"slow"})
 class BitFieldReadOnly(DatabaseCommand):
     def execute(self) -> ValueType:
         return None
 
 
-@command(b"bitop", [b"write", b"bitmap", b"slow"])
+@command(b"bitop", {b"write", b"bitmap", b"slow"})
 class BitOperation(DatabaseCommand):
     OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
         BitOperationMode.AND: operator.and_,
@@ -119,13 +119,13 @@ class BitOperation(DatabaseCommand):
         return len(new_value)
 
 
-@command(b"bitpos", [b"read", b"bitmap", b"slow"])
+@command(b"bitpos", {b"read", b"bitmap", b"slow"})
 class BitPosition(DatabaseCommand):
     def execute(self) -> ValueType:
         return None
 
 
-@command(b"getbit", [b"read", b"bitmap", b"fast"])
+@command(b"getbit", {b"read", b"bitmap", b"fast"})
 class GetBit(DatabaseCommand):
     key: bytes = positional_parameter()
     offset: int = positional_parameter()
@@ -134,7 +134,7 @@ class GetBit(DatabaseCommand):
         return get_bit_from_bytes(self.database.bytes_database.get_value_or_empty(self.key), self.offset)
 
 
-@command(b"setbit", [b"write", b"bitmap", b"slow"])
+@command(b"setbit", {b"write", b"bitmap", b"slow"})
 class SetBit(DatabaseCommand):
     key: bytes = positional_parameter()
     offset: int = positional_parameter()

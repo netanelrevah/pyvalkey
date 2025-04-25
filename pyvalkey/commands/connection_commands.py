@@ -16,7 +16,7 @@ from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
 
-@command(b"auth", [b"fast", b"connection"])
+@command(b"auth", {b"fast", b"connection"})
 class Authorize(Command):
     acl: ACL = server_command_dependency()
     configurations: Configurations = server_command_dependency()
@@ -47,7 +47,7 @@ class Authorize(Command):
         )
 
 
-@command(b"list", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"list", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientList(Command):
     client_context: ClientContext = server_command_dependency()
     client_type: bytes | None = keyword_parameter(flag=b"TYPE", default=None)
@@ -58,7 +58,7 @@ class ClientList(Command):
         return self.client_context.server_context.clients.info
 
 
-@command(b"id", [b"slow", b"connection"], b"client")
+@command(b"id", {b"slow", b"connection"}, b"client")
 class ClientId(Command):
     client_context: ClientContext = server_command_dependency()
 
@@ -66,7 +66,7 @@ class ClientId(Command):
         return self.client_context.current_client.client_id
 
 
-@command(b"setname", [b"slow", b"connection"], b"client")
+@command(b"setname", {b"slow", b"connection"}, b"client")
 class ClientSetName(Command):
     client_context: ClientContext = server_command_dependency()
     name: bytes = positional_parameter()
@@ -76,7 +76,7 @@ class ClientSetName(Command):
         return RESP_OK
 
 
-@command(b"getname", [b"slow", b"connection"], b"client")
+@command(b"getname", {b"slow", b"connection"}, b"client")
 class ClientGetName(Command):
     client_context: ClientContext = server_command_dependency()
 
@@ -84,7 +84,7 @@ class ClientGetName(Command):
         return self.client_context.current_client.name or None
 
 
-@command(b"kill", [b"admin", b"slow", b"dangerous", b"connection"], b"client")
+@command(b"kill", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientKill(Command):
     client_context: ClientContext = server_command_dependency()
     old_format_address: bytes | None = positional_parameter(default=None)

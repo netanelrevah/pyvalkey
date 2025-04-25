@@ -3,7 +3,7 @@ from pyvalkey.commands.router import command
 from pyvalkey.resp import ValueType
 
 
-@command(b"geoadd", [b"geo", b"write", b"slow"])
+@command(b"geoadd", {b"geo", b"write", b"slow"})
 class GeoAdd(Command):
     def execute(self) -> ValueType:
         pass
