@@ -1,4 +1,4 @@
-from pyvalkey.commands.stream_commands import StreamReadGroup, Streams
+from pyvalkey.commands.stream_commands import StreamReadGroup
 
 
 class TestStreamReadGroup:
@@ -7,7 +7,7 @@ class TestStreamReadGroup:
             "group": b"g1",
             "consumer": b"Alice",
             "count": 1,
-            "streams": Streams(key=b"x{t}", stream_id=b">"),
+            "keys_and_ids": [b"x{t}", b">"],
         }
 
     # def test_create(self):
