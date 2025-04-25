@@ -9,7 +9,7 @@ from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import ValueType
 
 
-@command(b"smove", [b"write", b"set", b"fast"])
+@command(b"smove", {b"write", b"set", b"fast"})
 class SetMove(DatabaseCommand):
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -27,7 +27,7 @@ class SetMove(DatabaseCommand):
             return True
 
 
-@command(b"smismember", [b"read", b"set", b"slow"])
+@command(b"smismember", {b"read", b"set", b"slow"})
 class SetAreMembers(DatabaseCommand):
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
@@ -37,7 +37,7 @@ class SetAreMembers(DatabaseCommand):
         return list(map(lambda m: m in a_set.value, self.members))
 
 
-@command(b"sismember", [b"read", b"set", b"fast"])
+@command(b"sismember", {b"read", b"set", b"fast"})
 class SetIsMember(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
@@ -46,7 +46,7 @@ class SetIsMember(DatabaseCommand):
         return self.member in self.database.set_database.get(self.key).value
 
 
-@command(b"smembers", [b"read", b"set", b"fast"])
+@command(b"smembers", {b"read", b"set", b"fast"})
 class SetMembers(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -54,7 +54,7 @@ class SetMembers(DatabaseCommand):
         return list(self.database.set_database.get(self.key).value)
 
 
-@command(b"scard", [b"read", b"set", b"fast"])
+@command(b"scard", {b"read", b"set", b"fast"})
 class SetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -62,7 +62,7 @@ class SetCardinality(DatabaseCommand):
         return len(self.database.set_database.get(self.key).value)
 
 
-@command(b"sadd", [b"write", b"set", b"fast"])
+@command(b"sadd", {b"write", b"set", b"fast"})
 class SetAdd(DatabaseCommand):
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
@@ -75,7 +75,7 @@ class SetAdd(DatabaseCommand):
         return len(key_value.value) - length_before
 
 
-@command(b"spop", [b"write", b"set", b"fast"])
+@command(b"spop", {b"write", b"set", b"fast"})
 class SetPop(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int = positional_parameter(default=None)
@@ -87,7 +87,7 @@ class SetPop(DatabaseCommand):
             return [value.pop() for _ in range(min(len(value), self.count))]
 
 
-@command(b"srem", [b"write", b"set", b"fast"])
+@command(b"srem", {b"write", b"set", b"fast"})
 class SetRemove(DatabaseCommand):
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
@@ -102,7 +102,7 @@ def apply_set_operation(database: Database, operation: Callable[[set, set], set]
     return list(functools.reduce(operation, map(lambda x: database.set_database.get(x).value, keys)))  # type: ignore[arg-type]
 
 
-@command(b"sunion", [b"read", b"set", b"slow"])
+@command(b"sunion", {b"read", b"set", b"slow"})
 class SetUnion(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
@@ -110,7 +110,7 @@ class SetUnion(DatabaseCommand):
         return apply_set_operation(self.database, set.union, self.keys)
 
 
-@command(b"sinter", [b"read", b"set", b"slow"])
+@command(b"sinter", {b"read", b"set", b"slow"})
 class SetIntersection(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
@@ -118,7 +118,7 @@ class SetIntersection(DatabaseCommand):
         return apply_set_operation(self.database, set.intersection, self.keys)
 
 
-@command(b"sdiff", [b"read", b"set", b"slow"])
+@command(b"sdiff", {b"read", b"set", b"slow"})
 class SetDifference(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
@@ -135,7 +135,7 @@ def apply_set_store_operation(
     return len(new_set)
 
 
-@command(b"sunionstore", [b"write", b"set", b"slow"])
+@command(b"sunionstore", {b"write", b"set", b"slow"})
 class SetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
@@ -144,7 +144,7 @@ class SetUnionStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.union, self.keys, self.destination)
 
 
-@command(b"sinterstore", [b"write", b"set", b"slow"])
+@command(b"sinterstore", {b"write", b"set", b"slow"})
 class SetIntersectionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
@@ -153,7 +153,7 @@ class SetIntersectionStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.intersection, self.keys, self.destination)
 
 
-@command(b"sdiffstore", [b"write", b"set", b"slow"])
+@command(b"sdiffstore", {b"write", b"set", b"slow"})
 class SetDifferenceStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
@@ -162,7 +162,7 @@ class SetDifferenceStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.difference, self.keys, self.destination)
 
 
-@command(b"srandmember", [b"write", b"string", b"slow"])
+@command(b"srandmember", {b"write", b"string", b"slow"})
 class SetRandomMember(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
