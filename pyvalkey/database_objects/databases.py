@@ -218,7 +218,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
     def is_empty(self, value: KeyValueTypeVar) -> bool:
         raise NotImplementedError()
 
-    def has_typed_key(self, key: bytes, type_: type | None = None) -> bool:
+    def has_typed_key(self, key: bytes, type_check: Callable[[KeyValueTypeVar], bool] | None = None) -> bool:
         key_value = self.data.get(key, None)
 
         if not key_value:
@@ -230,15 +230,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
                 self.key_with_expiration.discard(key_value)
                 return False
 
-        if (
-            type_ is not None
-            and not isinstance(key_value.value, type_)
-            and (
-                (type_ is not int and type is not bytes)
-                or (type_ is int and not isinstance(key_value.value, bytes))
-                or (type_ is bytes and not isinstance(key_value.value, int))
-            )
-        ):
+        if type_check is not None and not type_check(key_value.value):
             raise ServerWrongTypeError()
 
         key_value.last_accessed = int(time.time() * 1000)
@@ -459,7 +451,7 @@ class TypedDatabase(Generic[KeyValueTypeVar], DatabaseBase[KeyValueTypeVar]):
         return self.emptiness_predicate(value)
 
     def has_key(self, key: bytes) -> bool:
-        return super().has_typed_key(key, self.type_)
+        return super().has_typed_key(key, lambda value: isinstance(value, self.type_))
 
     def create_empty(self) -> KeyValueTypeVar:
         return self.empty_factory()
@@ -479,7 +471,7 @@ class ListDatabase(DatabaseBase[list]):
         return []
 
     def has_key(self, key: bytes) -> bool:
-        return self.has_typed_key(key, list)
+        return self.has_typed_key(key, lambda value: isinstance(value, list))
 
 
 @dataclass
@@ -501,7 +493,48 @@ class BytesDatabase(DatabaseBase[bytes]):
         return value
 
     def has_key(self, key: bytes) -> bool:
-        return self.has_typed_key(key, bytes)
+        return self.has_typed_key(key, lambda value: isinstance(value, bytes | int))
+
+
+@dataclass
+class IntDatabase(DatabaseBase[int]):
+    index: int
+    data: dict[bytes, KeyValue[int]]
+    key_with_expiration: SortedSet
+    watchlist: dict[bytes, set[ClientWatchlist]]
+
+    def is_empty(self, value: int | bytes) -> bool:
+        return value in (b"", 0)
+
+    def create_empty(self) -> int:
+        return 0
+
+    def convert_value_if_needed(self, value: int | bytes) -> int:
+        if isinstance(value, int):
+            return value
+        return int(value)
+
+    def has_key(self, key: bytes) -> bool:
+        return self.has_typed_key(
+            key, lambda value: isinstance(value, int) or (isinstance(value, bytes) and is_integer(value))
+        )
+
+
+@dataclass
+class StringDatabase(DatabaseBase[bytes | int]):
+    index: int
+    data: dict[bytes, KeyValue[bytes | int]]
+    key_with_expiration: SortedSet
+    watchlist: dict[bytes, set[ClientWatchlist]]
+
+    def is_empty(self, value: int | bytes) -> bool:
+        return value in (b"", 0)
+
+    def create_empty(self) -> bytes:
+        return b""
+
+    def has_key(self, key: bytes) -> bool:
+        return self.has_typed_key(key, lambda value: isinstance(value, bytes | int))
 
 
 @dataclass
@@ -511,9 +544,9 @@ class Database(DatabaseBase[KeyValueType]):
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
     watchlist: dict[bytes, set[ClientWatchlist]] = field(default_factory=dict)
 
-    string_database: TypedDatabase[bytes | int] = field(init=False)
+    string_database: StringDatabase = field(init=False)
     bytes_database: BytesDatabase = field(init=False)
-    int_database: TypedDatabase[int] = field(init=False)
+    int_database: IntDatabase = field(init=False)
     sorted_set_database: TypedDatabase[ValkeySortedSet] = field(init=False)
     set_database: TypedDatabase[set] = field(init=False)
     hash_database: TypedDatabase[dict] = field(init=False)
@@ -523,18 +556,18 @@ class Database(DatabaseBase[KeyValueType]):
         return self.has_typed_key(key)
 
     def __post_init__(self) -> None:
-        self.string_database = TypedDatabase(
+        self.string_database = StringDatabase(
             self.index,
             self.data,
             self.key_with_expiration,
             self.watchlist,
-            bytes,
-            lambda: b"",
-            lambda value: value == b"",
         )
         self.bytes_database = BytesDatabase(self.index, self.data, self.key_with_expiration, self.watchlist)
-        self.int_database = TypedDatabase(
-            self.index, self.data, self.key_with_expiration, self.watchlist, int, lambda: 0, lambda value: value == 0
+        self.int_database = IntDatabase(
+            self.index,
+            self.data,
+            self.key_with_expiration,
+            self.watchlist,
         )
         self.sorted_set_database = TypedDatabase(
             self.index,
