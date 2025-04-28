@@ -7,26 +7,26 @@ from pyvalkey.commands.connection_commands import ClientKill, Ping
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.generic_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
-from pyvalkey.commands.parsers import server_command
+from pyvalkey.commands.router import command
 from pyvalkey.commands.server_commands import Debug
 from pyvalkey.commands.sorted_set_commands import AddMode, RangeMode, SortedSetAdd, SortedSetRange
-from pyvalkey.database_objects.errors import ServerWrongNumberOfArgumentsError, ValkeySyntaxError
+from pyvalkey.database_objects.errors import ServerError, ServerWrongNumberOfArgumentsError
 
 
-@server_command()
+@command(b"test1", {b"test"})
 class BytesCommand(Command):
     a: bytes = positional_parameter()
     b: bytes = positional_parameter()
 
 
-@server_command()
+@command(b"test2", {b"test"})
 class ByteIntCommand(Command):
     a: bytes = positional_parameter()
     c: bool = positional_parameter()
     b: int = positional_parameter()
 
 
-@server_command()
+@command(b"test3", {b"test"})
 class ListCommand(Command):
     a: bytes = positional_parameter()
     d: list[int] = positional_parameter()
@@ -112,7 +112,7 @@ def test_parser__successful(parameters, command_cls: Command, expected_kwargs: d
 @Parametrization.case(
     name="",
     parameters=[b"a", b"a", b"2"],
-    expected_exception=ValkeySyntaxError,
+    expected_exception=ServerError,
     command_cls=ByteIntCommand,
 )
 @Parametrization.case(
@@ -124,7 +124,7 @@ def test_parser__successful(parameters, command_cls: Command, expected_kwargs: d
 @Parametrization.case(
     name="",
     parameters=b"myzset NX XX 2 two 3 three".split(),
-    expected_exception=ValkeySyntaxError,
+    expected_exception=ServerError,
     command_cls=SortedSetAdd,
 )
 def test_parser__failure(parameters, expected_exception, command_cls: Command):

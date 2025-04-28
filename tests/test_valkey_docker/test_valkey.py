@@ -7,7 +7,7 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
     image, logs = client.images.build(path=".", rm=True)
 
-    tags = (tags + " -needs:debug").strip()
+    tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory").strip()
     command = (
         f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
     )
@@ -67,3 +67,7 @@ def test_acl(s: Valkey):
 
 def test_tracking(s: Valkey):
     run_tests(s, tags="tracking")
+
+
+def test_multi(s: Valkey):
+    run_tests(s, tags="multi")

@@ -26,9 +26,5 @@ class ServerWrongTypeError(ServerError):
     pass
 
 
-class ValkeySyntaxError(ServerError):
-    pass
-
-
 class ServerWrongNumberOfArgumentsError(ServerError):
     pass

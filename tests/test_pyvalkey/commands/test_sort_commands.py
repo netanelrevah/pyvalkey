@@ -18,6 +18,7 @@ class TestSetRandomMember:
 
     def test_execute_get(self):
         database = Database(
+            0,
             data={
                 kv.key: kv
                 for kv in [
@@ -26,7 +27,7 @@ class TestSetRandomMember:
                     KeyValue(b"a_3", b"c"),
                     KeyValue(b"to_sort", [b"3", b"2", b"1"]),
                 ]
-            }
+            },
         )
 
         command = Sort(database=database, key=b"to_sort", get_values=[b"a_*"])
@@ -35,6 +36,7 @@ class TestSetRandomMember:
 
     def test_execute_get_hash(self):
         database = Database(
+            0,
             data={
                 kv.key: kv
                 for kv in [
@@ -43,7 +45,7 @@ class TestSetRandomMember:
                     KeyValue(b"c", b"cc"),
                     KeyValue(b"to_sort", [b"a", b"b", b"c"]),
                 ]
-            }
+            },
         )
 
         command = Sort(database=database, key=b"to_sort", get_values=[b"#"], alpha=True)
@@ -52,12 +54,13 @@ class TestSetRandomMember:
 
     def test_execute_get_hash_with_numbers(self):
         database = Database(
+            0,
             data={
                 kv.key: kv
                 for kv in [
                     KeyValue(b"to_sort", [b"5", b"0", b"1", b"2", b"3", b"4"]),
                 ]
-            }
+            },
         )
 
         command = Sort(database=database, key=b"to_sort", get_values=[b"#"])
@@ -66,6 +69,7 @@ class TestSetRandomMember:
 
     def test_execute_get_foo(self):
         database = Database(
+            0,
             data={
                 kv.key: kv
                 for kv in [
@@ -74,7 +78,7 @@ class TestSetRandomMember:
                     KeyValue(b"c", b"cc"),
                     KeyValue(b"to_sort", [b"a", b"b", b"c"]),
                 ]
-            }
+            },
         )
 
         command = Sort(database=database, key=b"to_sort", get_values=[b"foo"], alpha=True)

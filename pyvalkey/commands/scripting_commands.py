@@ -1,10 +1,10 @@
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.resp import RESP_OK, ValueType
 
 
-@ServerCommandsRouter.command(b"eval", [b"connection", b"fast"])
+@command(b"eval", {b"connection", b"fast"})
 class Eval(Command):
     script: bytes = positional_parameter()
     num_keys: int = positional_parameter()
@@ -14,7 +14,13 @@ class Eval(Command):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"flush", parent_command=b"function", acl_categories=[b"fast", b"connection"])
+@command(b"flush", {b"fast", b"connection"}, parent_command=b"function")
 class FunctionFLush(Command):
     def execute(self) -> ValueType:
         return True
+
+
+@command(b"kill", {b"connection", b"fast"}, parent_command=b"script")
+class ScriptKill(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK

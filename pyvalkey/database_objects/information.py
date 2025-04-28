@@ -35,6 +35,8 @@ class Information:
             b"valkey_version:" + self.server_version,
             b"arch_bits:" + self.arch_bits,
             b"",
+            b"# Clients",
+            b"blocked_clients:" + to_bytes(self.server_context.notification_manager.list_notifications.values_count),
             b"# Cluster",
             b"cluster_enabled:" + (b"1" if self.cluster_enabled else b"0"),
             b"",

@@ -7,17 +7,21 @@ import signal
 import sys
 import threading
 import time
-from collections import defaultdict
 from collections.abc import Generator
 from dataclasses import dataclass, field
 from io import BytesIO
+from traceback import print_exc
 from types import FrameType
 from typing import cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
-from pyvalkey.commands.core import AsyncCommand
-from pyvalkey.commands.router import ServerCommandsRouter
-from pyvalkey.commands.transactions_commands import TransactionExecute
+from pyvalkey.commands.router import CommandsRouter
+from pyvalkey.commands.transactions_commands import (
+    TransactionDiscard,
+    TransactionExecute,
+    TransactionStart,
+    TransactionWatch,
+)
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
@@ -28,7 +32,6 @@ from pyvalkey.database_objects.errors import (
     ServerError,
     ServerWrongNumberOfArgumentsError,
     ServerWrongTypeError,
-    ValkeySyntaxError,
 )
 from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 
@@ -38,7 +41,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ValkeyClientProtocol(asyncio.Protocol):
     server_context: ServerContext
-    router: ServerCommandsRouter
+    router: CommandsRouter
 
     _transport: asyncio.BaseTransport | None = None
     _client_context: ClientContext | None = None
@@ -53,7 +56,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         return self.server_context.configurations
 
     @property
-    def databases(self) -> defaultdict[int, Database]:
+    def databases(self) -> dict[int, Database]:
         return self.server_context.databases
 
     @property
@@ -113,6 +116,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
             async for query in self._resp_query_parser:
                 await self.handle(query)
         except RespSyntaxError as e:
+            if self.client_context.transaction_context is not None:
+                self.client_context.transaction_context.is_aborted = True
             if e.args:
                 self.dump(RespError(e.args[0]))
             self.cancel()
@@ -143,28 +148,37 @@ class ValkeyClientProtocol(asyncio.Protocol):
         print(self.current_client.client_id, [i[:100] if i and not isinstance(i, int) else i for i in command])
 
         try:
-            routed_command = self.router.route(list(command), self.client_context)
+            routed_command = self.router.route(command, self.client_context)
 
-            if self.client_context.transaction_commands is not None and not isinstance(
-                routed_command, TransactionExecute
-            ):
-                self.client_context.transaction_commands.append(routed_command)
-                self.dump("QUEUED")
-                return
+            if self.configurations.maxmemory > 0:
+                if b"denyoom" in routed_command.flags:
+                    raise ServerError(b"ERR OOM command not allowed when used memory > 'maxmemory'.")
+
+            if self.client_context.transaction_context is not None:
+                if b"nomulti" in routed_command.flags:
+                    raise ServerError(b"ERR Command not allowed inside a transaction")
+                if not isinstance(
+                    routed_command, (TransactionExecute | TransactionDiscard | TransactionStart | TransactionWatch)
+                ):
+                    self.client_context.transaction_context.commands.append(routed_command)
+                    self.dump("QUEUED")
+                    return
 
             if self.current_user:
                 self.current_user.check_permissions(routed_command)
 
-            if isinstance(routed_command, AsyncCommand):
-                result = await routed_command.execute_async()
-            else:
-                result = routed_command.execute()
+            await routed_command.before()
+            result = routed_command.execute()
+            if not isinstance(result, RespError):
+                await routed_command.after()
             self.dump(result)
             if self.server_context.pause_timeout:
                 while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                     time.sleep(0.1)
                 self.server_context.pause_timeout = 0
         except RouterKeyError:
+            if self.client_context.transaction_context is not None:
+                self.client_context.transaction_context.is_aborted = True
             self.dump(
                 RespError(
                     f"ERR unknown command '{command[0].decode()}', "
@@ -175,8 +189,6 @@ class ValkeyClientProtocol(asyncio.Protocol):
             self.dump(RespError(b"ERR wrong number of arguments for '" + command[0].lower() + b"' command"))
         except ServerWrongTypeError:
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
-        except ValkeySyntaxError:
-            self.dump(RespError(b"ERR syntax error"))
         except CommandPermissionError as e:
             if not self.current_user:
                 raise e
@@ -190,8 +202,11 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 )
             )
         except ServerError as e:
+            if self.client_context.transaction_context is not None:
+                self.client_context.transaction_context.is_aborted = True
             self.dump(RespError(e.message))
         except Exception as e:
+            print_exc()
             self.dump(RespError(b"ERR internal"))
             raise e
 
@@ -210,7 +225,7 @@ class ValkeyServer:
     port: int
 
     context: ServerContext = field(default_factory=ServerContext)
-    router: ServerCommandsRouter = field(default_factory=ServerCommandsRouter)
+    router: CommandsRouter = field(default_factory=CommandsRouter)
 
     _captured_signals: list[int] = field(default_factory=list)
     should_exit: bool = False

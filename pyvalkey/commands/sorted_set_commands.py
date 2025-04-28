@@ -5,7 +5,7 @@ from pyvalkey.commands.parameters import (
     keyword_parameter,
     positional_parameter,
 )
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import (
@@ -114,7 +114,25 @@ class ScoreUpdateMode(Enum):
     GREATER_THAN = b"GT"
 
 
-@ServerCommandsRouter.command(b"zadd", [b"write", b"sortedset", b"fast"])
+@command(b"bzpopmax", {b"sortedset"})
+class SortedSetBlockingPopMaximum(DatabaseCommand):
+    keys: list[bytes] = positional_parameter()
+    timeout: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        pass
+
+
+@command(b"bzpopmin", {b"sortedset"})
+class SortedSetBlockingPopMinimum(DatabaseCommand):
+    keys: list[bytes] = positional_parameter()
+    timeout: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        pass
+
+
+@command(b"zadd", {b"write", b"sortedset", b"fast"})
 class SortedSetAdd(DatabaseCommand):
     key: bytes = positional_parameter()
     add_mode: AddMode = keyword_parameter(
@@ -144,7 +162,7 @@ class SortedSetAdd(DatabaseCommand):
         return len(key_value.value) - length_before
 
 
-@ServerCommandsRouter.command(b"zrange", [b"read", b"sortedset", b"slow"])
+@command(b"zrange", {b"read", b"sortedset", b"slow"})
 class SortedSetRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
@@ -169,7 +187,7 @@ class SortedSetRange(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zrangestore", [b"write", b"sortedset", b"slow"])
+@command(b"zrangestore", {b"write", b"sortedset", b"slow"})
 class SortedSetRangeStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     key: bytes = positional_parameter()
@@ -196,7 +214,7 @@ class SortedSetRangeStore(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zrevrange", [b"read", b"sortedset", b"slow"])
+@command(b"zrevrange", {b"read", b"sortedset", b"slow"})
 class SortedSetReversedRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
@@ -213,7 +231,7 @@ class SortedSetReversedRange(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zrangebyscore", [b"read", b"sortedset", b"slow"])
+@command(b"zrangebyscore", {b"read", b"sortedset", b"slow"})
 class SortedSetRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -233,7 +251,7 @@ class SortedSetRangeByScore(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zrevrangebyscore", [b"read", b"sortedset", b"slow"])
+@command(b"zrevrangebyscore", {b"read", b"sortedset", b"slow"})
 class SortedSetReversedRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
@@ -254,7 +272,7 @@ class SortedSetReversedRangeByScore(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zrangebylex", [b"read", b"sortedset", b"slow"])
+@command(b"zrangebylex", {b"read", b"sortedset", b"slow"})
 class SortedSetRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -272,7 +290,7 @@ class SortedSetRangeByLexical(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zrevrangebylex", [b"read", b"sortedset", b"slow"])
+@command(b"zrevrangebylex", {b"read", b"sortedset", b"slow"})
 class SortedSetReversedRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
@@ -291,7 +309,7 @@ class SortedSetReversedRangeByLexical(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zcount", [b"read", b"sortedset", b"fast"])
+@command(b"zcount", {b"read", b"sortedset", b"fast"})
 class SortedSetCount(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -310,7 +328,7 @@ class SortedSetCount(DatabaseCommand):
         )
 
 
-@ServerCommandsRouter.command(b"zcard", [b"read", b"sortedset", b"fast"])
+@command(b"zcard", {b"read", b"sortedset", b"fast"})
 class SortedSetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 

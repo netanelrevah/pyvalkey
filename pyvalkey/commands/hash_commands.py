@@ -3,7 +3,7 @@ import random
 from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN, LONG_MAX
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import is_numeric
 from pyvalkey.database_objects.databases import Database
@@ -27,7 +27,7 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
     return hash_get[field]
 
 
-@ServerCommandsRouter.command(b"hdel", [b"write", b"hash", b"fast"])
+@command(b"hdel", {b"write", b"hash", b"fast"})
 class HashMapDelete(DatabaseCommand):
     key: bytes = positional_parameter()
     fields: list[bytes] = positional_parameter()
@@ -47,7 +47,7 @@ class HashMapDelete(DatabaseCommand):
         return result
 
 
-@ServerCommandsRouter.command(b"hexists", [b"read", b"hash", b"fast"])
+@command(b"hexists", {b"read", b"hash", b"fast"})
 class HashMapExists(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
@@ -56,7 +56,7 @@ class HashMapExists(DatabaseCommand):
         return self.field in self.database.hash_database.get_value(self.key)
 
 
-@ServerCommandsRouter.command(b"hget", [b"read", b"hash", b"fast"])
+@command(b"hget", {b"read", b"hash", b"fast"})
 class HashMapGet(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
@@ -65,7 +65,7 @@ class HashMapGet(DatabaseCommand):
         return self.database.hash_database.get_value(self.key).get(self.field)
 
 
-@ServerCommandsRouter.command(b"hgetall", [b"read", b"hash", b"slow"])
+@command(b"hgetall", {b"read", b"hash", b"slow"})
 class HashMapGetAll(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -78,7 +78,7 @@ class HashMapGetAll(DatabaseCommand):
         return response
 
 
-@ServerCommandsRouter.command(b"hincrby", [b"write", b"hash", b"fast"])
+@command(b"hincrby", {b"write", b"hash", b"fast"})
 class HashMapIncreaseBy(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
@@ -88,7 +88,7 @@ class HashMapIncreaseBy(DatabaseCommand):
         return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
 
 
-@ServerCommandsRouter.command(b"hincrbyfloat", [b"write", b"hash", b"fast"])
+@command(b"hincrbyfloat", {b"write", b"hash", b"fast"})
 class HashMapIncreaseByFloat(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
@@ -98,7 +98,7 @@ class HashMapIncreaseByFloat(DatabaseCommand):
         return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
 
 
-@ServerCommandsRouter.command(b"hkeys", [b"read", b"hash", b"slow"])
+@command(b"hkeys", {b"read", b"hash", b"slow"})
 class HashMapKeys(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -106,7 +106,7 @@ class HashMapKeys(DatabaseCommand):
         return list(self.database.hash_database.get_value(self.key).keys())
 
 
-@ServerCommandsRouter.command(b"hlen", [b"read", b"hash", b"fast"])
+@command(b"hlen", {b"read", b"hash", b"fast"})
 class HashMapLength(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -114,7 +114,7 @@ class HashMapLength(DatabaseCommand):
         return len(self.database.hash_database.get_value(self.key))
 
 
-@ServerCommandsRouter.command(b"hmget", [b"read", b"hash", b"fast"])
+@command(b"hmget", {b"read", b"hash", b"fast"})
 class HashMapGetMultiple(DatabaseCommand):
     key: bytes = positional_parameter()
     fields: list[bytes] = positional_parameter()
@@ -124,7 +124,7 @@ class HashMapGetMultiple(DatabaseCommand):
         return [hash_map.get(f, None) for f in self.fields]
 
 
-@ServerCommandsRouter.command(b"hmset", [b"write", b"hash", b"fast"])
+@command(b"hmset", {b"write", b"hash", b"fast"})
 class HashMapSetMultiple(DatabaseCommand):
     key: bytes = positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
@@ -137,7 +137,7 @@ class HashMapSetMultiple(DatabaseCommand):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"hrandfield", [b"write", b"hash", b"fast"])
+@command(b"hrandfield", {b"write", b"hash", b"fast"})
 class HashRandomField(DatabaseCommand):
     protocol: RespProtocolVersion = server_command_dependency()
 
@@ -174,7 +174,7 @@ class HashRandomField(DatabaseCommand):
         return list(flatten([[key, hash_map[key]] for key in keys]))
 
 
-@ServerCommandsRouter.command(b"hset", [b"write", b"hash", b"fast"])
+@command(b"hset", {b"write", b"hash", b"fast"})
 class HashMapSet(DatabaseCommand):
     key: bytes = positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
@@ -190,7 +190,7 @@ class HashMapSet(DatabaseCommand):
         return added_fields
 
 
-@ServerCommandsRouter.command(b"hsetnx", [b"write", b"hash", b"fast"])
+@command(b"hsetnx", {b"write", b"hash", b"fast"})
 class HashMapSetIfNotExists(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
@@ -205,7 +205,7 @@ class HashMapSetIfNotExists(DatabaseCommand):
         return True
 
 
-@ServerCommandsRouter.command(b"hstrlen", [b"read", b"hash", b"fast"])
+@command(b"hstrlen", {b"read", b"hash", b"fast"})
 class HashMapStringLength(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
@@ -214,7 +214,7 @@ class HashMapStringLength(DatabaseCommand):
         return len(self.database.hash_database.get_value(self.key).get(self.field, b""))
 
 
-@ServerCommandsRouter.command(b"hvals", [b"read", b"hash", b"slow"])
+@command(b"hvals", {b"read", b"hash", b"slow"})
 class HashMapValues(DatabaseCommand):
     key: bytes = positional_parameter()
 

@@ -8,14 +8,14 @@ from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, KeyValue, ValkeySortedSet
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
 
 
-@ServerCommandsRouter.command(b"copy", [b"keyspace", b"write", b"slow"])
+@command(b"copy", {b"keyspace", b"write", b"slow"})
 class Copy(Command):
     client_context: ClientContext = server_command_dependency()
 
@@ -30,9 +30,9 @@ class Copy(Command):
         if source_key_value is None:
             return False
 
-        database = self.client_context.server_context.databases[
+        database = self.client_context.server_context.get_or_create_database(
             self.client_context.current_database if self.db is None else self.db
-        ]
+        )
 
         destination_key_value = database.get_or_none(self.destination)
 
@@ -48,7 +48,7 @@ class Copy(Command):
         return True
 
 
-@ServerCommandsRouter.command(b"del", [b"keyspace", b"write", b"slow"])
+@command(b"del", {b"keyspace", b"write", b"slow"})
 class Delete(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
@@ -56,7 +56,7 @@ class Delete(DatabaseCommand):
         return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
 
 
-@ServerCommandsRouter.command(b"dump", [b"keyspace", b"read", b"slow"])
+@command(b"dump", {b"keyspace", b"read", b"slow"})
 class Dump(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -91,7 +91,7 @@ class Dump(DatabaseCommand):
         return json.dumps(dump_value).encode()
 
 
-@ServerCommandsRouter.command(b"exists", [b"read", b"string", b"fast"])
+@command(b"exists", {b"read", b"string", b"fast"})
 class Exists(DatabaseCommand):
     keys: list[bytes] = positional_parameter(key_mode=b"RW")
 
@@ -99,7 +99,7 @@ class Exists(DatabaseCommand):
         return sum(1 for key in self.keys if self.database.get_or_none(key) is not None)
 
 
-@ServerCommandsRouter.command(b"expire", [b"keyspace", b"write", b"fast"])
+@command(b"expire", {b"keyspace", b"write", b"fast"})
 class Expire(DatabaseCommand):
     key: bytes = positional_parameter()
     seconds: int = positional_parameter()
@@ -108,7 +108,7 @@ class Expire(DatabaseCommand):
         return self.database.set_expiration(self.key, self.seconds * 1000)
 
 
-@ServerCommandsRouter.command(b"expireat", [b"keyspace", b"write", b"fast"])
+@command(b"expireat", {b"keyspace", b"write", b"fast"})
 class ExpireAt(DatabaseCommand):
     key: bytes = positional_parameter()
     timestamp: int = positional_parameter()
@@ -117,7 +117,7 @@ class ExpireAt(DatabaseCommand):
         return self.database.set_expiration_at(self.key, self.timestamp * 1000)
 
 
-@ServerCommandsRouter.command(b"expiretime", [b"keyspace", b"write", b"fast"])
+@command(b"expiretime", {b"keyspace", b"write", b"fast"})
 class Expiration(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -128,7 +128,7 @@ class Expiration(DatabaseCommand):
         return expiration // 1000 if expiration is not None else None
 
 
-@ServerCommandsRouter.command(b"keys", [b"keyspace", b"read", b"slow", b"dangerous"])
+@command(b"keys", {b"keyspace", b"read", b"slow", b"dangerous"})
 class Keys(DatabaseCommand):
     MAXIMUM_NESTING = 1000
 
@@ -144,13 +144,13 @@ class Keys(DatabaseCommand):
         return list(fnmatch.filter(self.database.keys(), self.pattern))
 
 
-@ServerCommandsRouter.command(b"migrate", [b"keyspace", b"read", b"slow", b"dangerous"])
+@command(b"migrate", {b"keyspace", b"read", b"slow", b"dangerous"})
 class Migrate(DatabaseCommand):
     def execute(self) -> ValueType:
         return None
 
 
-@ServerCommandsRouter.command(b"move", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"move", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Move(Command):
     database: Database = server_command_dependency()
     server_context: ServerContext = server_command_dependency()
@@ -164,7 +164,7 @@ class Move(Command):
         if key_value is None:
             return True
 
-        database = self.server_context.databases[self.db]
+        database = self.server_context.get_or_create_database(self.db)
 
         if database.has_key(self.key):
             return False
@@ -173,7 +173,7 @@ class Move(Command):
         return True
 
 
-@ServerCommandsRouter.command(b"encoding", [b"read", b"keyspace", b"slow"], parent_command=b"object")
+@command(b"encoding", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
 class ObjectEncoding(DatabaseCommand):
     configuration: Configurations = server_command_dependency()
 
@@ -246,7 +246,7 @@ class ObjectEncoding(DatabaseCommand):
         return b"raw"
 
 
-@ServerCommandsRouter.command(b"idletime", [b"read", b"keyspace", b"slow"], parent_command=b"object")
+@command(b"idletime", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
 class ObjectFrequency(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -257,7 +257,7 @@ class ObjectFrequency(DatabaseCommand):
         return int(time.time() * 1000) - key_value.last_accessed
 
 
-@ServerCommandsRouter.command(b"idletime", [b"read", b"keyspace", b"slow"], parent_command=b"object")
+@command(b"idletime", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
 class ObjectIdleTime(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -268,7 +268,7 @@ class ObjectIdleTime(DatabaseCommand):
         return int(time.time() * 1000) - key_value.last_accessed
 
 
-@ServerCommandsRouter.command(b"persist", [b"keyspace", b"write", b"fast"])
+@command(b"persist", {b"keyspace", b"write", b"fast"})
 class Persist(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -278,7 +278,7 @@ class Persist(DatabaseCommand):
         return self.database.set_persist(self.key)
 
 
-@ServerCommandsRouter.command(b"pexpire", [b"keyspace", b"write", b"fast"])
+@command(b"pexpire", {b"keyspace", b"write", b"fast"})
 class ExpireMilliseconds(DatabaseCommand):
     key: bytes = positional_parameter()
     seconds: int = positional_parameter()
@@ -287,7 +287,7 @@ class ExpireMilliseconds(DatabaseCommand):
         return self.database.set_expiration(self.key, self.seconds)
 
 
-@ServerCommandsRouter.command(b"pexpireat", [b"keyspace", b"write", b"fast"])
+@command(b"pexpireat", {b"keyspace", b"write", b"fast"})
 class ExpireAtMilliseconds(DatabaseCommand):
     key: bytes = positional_parameter()
     timestamp: int = positional_parameter()
@@ -296,7 +296,7 @@ class ExpireAtMilliseconds(DatabaseCommand):
         return self.database.set_expiration_at(self.key, self.timestamp)
 
 
-@ServerCommandsRouter.command(b"pexpiretime", [b"keyspace", b"write", b"fast"])
+@command(b"pexpiretime", {b"keyspace", b"write", b"fast"})
 class ExpirationMilliseconds(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -306,7 +306,7 @@ class ExpirationMilliseconds(DatabaseCommand):
         return self.database.get_expiration(self.key)
 
 
-@ServerCommandsRouter.command(b"pttl", [b"read", b"keyspace", b"fast"])
+@command(b"pttl", {b"read", b"keyspace", b"fast"})
 class TimeToLiveMilliseconds(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
@@ -320,7 +320,7 @@ class TimeToLiveMilliseconds(DatabaseCommand):
             return -2
 
 
-@ServerCommandsRouter.command(b"randomkey", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"randomkey", {b"keyspace", b"write", b"slow", b"dangerous"})
 class RandomKey(Command):
     database: Database = server_command_dependency()
 
@@ -348,7 +348,7 @@ class RandomKey(Command):
         return random_key
 
 
-@ServerCommandsRouter.command(b"rename", [b"keyspace", b"write", b"slow"])
+@command(b"rename", {b"keyspace", b"write", b"slow"})
 class Rename(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
     new_key: bytes = positional_parameter(key_mode=b"W")
@@ -362,7 +362,7 @@ class Rename(DatabaseCommand):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"renamenx", [b"keyspace", b"write", b"slow"])
+@command(b"renamenx", {b"keyspace", b"write", b"slow"})
 class RenameIfNotExists(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
     new_key: bytes = positional_parameter(key_mode=b"W")
@@ -378,7 +378,7 @@ class RenameIfNotExists(DatabaseCommand):
         return 1
 
 
-@ServerCommandsRouter.command(b"restore", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"restore", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Restore(DatabaseCommand):
     key: bytes = positional_parameter()
     ttl: int = positional_parameter()
@@ -425,13 +425,13 @@ class Restore(DatabaseCommand):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"scan", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"scan", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Scan(DatabaseCommand):
     def execute(self) -> ValueType:
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"sort", [b"read", b"set", b"sortedset", b"list", b"slow", b"dangerous"])
+@command(b"sort", {b"read", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class Sort(Command):
     database: Database = server_command_dependency()
 
@@ -467,7 +467,7 @@ class Sort(Command):
         return len(result_values)
 
 
-@ServerCommandsRouter.command(b"sort_ro", [b"write", b"set", b"sortedset", b"list", b"slow", b"dangerous"])
+@command(b"sort_ro", {b"write", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class SortReadOnly(Command):
     database: Database = server_command_dependency()
 
@@ -503,7 +503,7 @@ class SortReadOnly(Command):
             return None
 
         if not isinstance(key_value.value, list | set | ValkeySortedSet):
-            raise ServerWrongTypeError(b"Operation against a key holding the wrong kind of value")
+            raise ServerWrongTypeError()
 
         values: list[bytes]
         if isinstance(key_value.value, ValkeySortedSet):
@@ -557,13 +557,13 @@ class SortReadOnly(Command):
         return self.internal_execute()
 
 
-@ServerCommandsRouter.command(b"touch", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"touch", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Touch(DatabaseCommand):
     def execute(self) -> ValueType:
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"ttl", [b"read", b"keyspace", b"fast"])
+@command(b"ttl", {b"read", b"keyspace", b"fast"})
 class TimeToLive(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
@@ -577,25 +577,25 @@ class TimeToLive(DatabaseCommand):
             return -2
 
 
-@ServerCommandsRouter.command(b"type", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"type", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Type(DatabaseCommand):
     def execute(self) -> ValueType:
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"unlink", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"unlink", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Unlink(DatabaseCommand):
     def execute(self) -> ValueType:
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"wait", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"wait", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Wait(DatabaseCommand):
     def execute(self) -> ValueType:
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"waitaof", [b"keyspace", b"write", b"slow", b"dangerous"])
+@command(b"waitaof", {b"keyspace", b"write", b"slow", b"dangerous"})
 class WaitAOF(DatabaseCommand):
     def execute(self) -> ValueType:
         return RESP_OK

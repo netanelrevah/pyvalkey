@@ -2,41 +2,49 @@ import time
 
 from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
 from pyvalkey.database_objects.databases import Database, KeyValue
-from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError, ValkeySyntaxError
+from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
+
+
+def increment_by_int(database: Database, key: bytes, increment: int = 1) -> int:
+    key_value: KeyValue[int] | None = database.int_database.get_or_none(key)
+    if key_value is None:
+        key_value = KeyValue(key, 0)
+    previous_value = key_value.value
+    key_value.value = previous_value + increment
+    database.int_database.set_key_value(key_value)
+    return previous_value
+
+
+def increment_by_float(database: Database, key: bytes, increment: float = 1) -> bytes:
+    key_value: KeyValue[bytes] | None = database.bytes_database.get_or_none(key)
+    if key_value is None:
+        key_value = KeyValue(key, b"0")
+    previous_value = key_value.value
+    key_value.value = increment_bytes_value_as_float(previous_value, increment)
+    database.string_database.set_key_value(key_value)
+    return previous_value
 
 
 def increment_by(database: Database, key: bytes, increment: int | float = 1) -> bytes | int:
     if isinstance(increment, int):
-        key_value = database.int_database.get_or_none(key)
-        if key_value is None:
-            key_value = KeyValue(key, 0)
-        previous_value = key_value.value
-        key_value.value = previous_value + increment
-        database.int_database.set_key_value(key_value)
-        return previous_value
+        return increment_by_int(database, key, increment)
     elif isinstance(increment, float):
-        key_value = database.string_database.get_or_none(key)
-        if key_value is None:
-            key_value = KeyValue(key, b"0")
-        previous_value = key_value.value
-        key_value.value = increment_bytes_value_as_float(previous_value, increment)
-        database.string_database.set_key_value(key_value)
-        return previous_value
+        return increment_by_float(database, key, increment)
     else:
         raise ValueError()
 
 
-@ServerCommandsRouter.command(b"append", [b"write", b"string", b"fast"])
+@command(b"append", {b"write", b"string", b"fast"})
 class Append(DatabaseCommand):
     key: bytes = positional_parameter()
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        key_value = self.database.string_database.get_or_none(self.key)
+        key_value = self.database.bytes_database.get_or_none(self.key)
         if key_value is None:
             key_value = KeyValue(self.key, b"")
         key_value.value += self.value
@@ -44,7 +52,7 @@ class Append(DatabaseCommand):
         return len(key_value.value) - len(self.value)
 
 
-@ServerCommandsRouter.command(b"decr", [b"write", b"string", b"fast"])
+@command(b"decr", {b"write", b"string", b"fast"})
 class Decrement(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -52,7 +60,7 @@ class Decrement(DatabaseCommand):
         return increment_by(self.database, self.key, -1)
 
 
-@ServerCommandsRouter.command(b"decrby", [b"write", b"string", b"fast"])
+@command(b"decrby", {b"write", b"string", b"fast"})
 class DecrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     decrement: int = positional_parameter()
@@ -61,7 +69,7 @@ class DecrementBy(DatabaseCommand):
         return increment_by(self.database, self.key, self.decrement * -1)
 
 
-@ServerCommandsRouter.command(b"get", [b"read", b"string", b"fast"])
+@command(b"get", {b"read", b"string", b"fast"})
 class Get(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
@@ -69,7 +77,7 @@ class Get(DatabaseCommand):
         return self.database.string_database.get_value_or_none(self.key)
 
 
-@ServerCommandsRouter.command(b"getdel", [b"read", b"string", b"fast"])
+@command(b"getdel", {b"read", b"string", b"fast"})
 class GetDelete(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
@@ -80,7 +88,7 @@ class GetDelete(DatabaseCommand):
         return None
 
 
-@ServerCommandsRouter.command(b"getex", [b"write", b"string", b"fast"])
+@command(b"getex", {b"write", b"string", b"fast"})
 class GetExpire(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
     ex: int | None = keyword_parameter(flag=b"EX", default=None)
@@ -98,7 +106,7 @@ class GetExpire(DatabaseCommand):
 
         filled = list(map(bool, [getattr(self, name) for name in fields_names]))
         if filled.count(True) > 1:
-            raise ValkeySyntaxError()
+            raise ServerError(b"ERR syntax error")
 
         if True in filled:
             name = fields_names[filled.index(True)]
@@ -114,21 +122,21 @@ class GetExpire(DatabaseCommand):
         return key_value.value
 
 
-@ServerCommandsRouter.command(b"getrange", [b"stream", b"write", b"fast"])
+@command(b"getrange", {b"stream", b"write", b"fast"})
 class StringGetRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: int = positional_parameter()
     end: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        key_value = self.database.string_database.get_or_none(self.key)
+        key_value = self.database.bytes_database.get_or_none(self.key)
         if key_value is None:
             return b""
 
         return key_value.value[parse_range_parameters(self.start, self.end)]
 
 
-@ServerCommandsRouter.command(b"getset", [b"write", b"string", b"slow"])
+@command(b"getset", {b"write", b"string", b"slow"})
 class GetSet(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
@@ -139,7 +147,7 @@ class GetSet(DatabaseCommand):
         return old_value
 
 
-@ServerCommandsRouter.command(b"incr", [b"write", b"string", b"fast"])
+@command(b"incr", {b"write", b"string", b"fast"})
 class Increment(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -147,7 +155,7 @@ class Increment(DatabaseCommand):
         return increment_by(self.database, self.key)
 
 
-@ServerCommandsRouter.command(b"incrby", [b"write", b"string", b"fast"])
+@command(b"incrby", {b"write", b"string", b"fast"})
 class IncrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: int = positional_parameter()
@@ -156,7 +164,7 @@ class IncrementBy(DatabaseCommand):
         return increment_by(self.database, self.key, self.increment)
 
 
-@ServerCommandsRouter.command(b"incrbyfloat", [b"write", b"string", b"fast"])
+@command(b"incrbyfloat", {b"write", b"string", b"fast"})
 class IncrementByFloat(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: float = positional_parameter()
@@ -165,7 +173,7 @@ class IncrementByFloat(DatabaseCommand):
         return increment_by(self.database, self.key, self.increment)
 
 
-@ServerCommandsRouter.command(b"mget", [b"read", b"string", b"fast"])
+@command(b"mget", {b"read", b"string", b"fast"})
 class MultipleGet(DatabaseCommand):
     keys: list[bytes] = positional_parameter(key_mode=b"R")
 
@@ -174,7 +182,7 @@ class MultipleGet(DatabaseCommand):
         for key in self.keys:
             key_value = None
             try:
-                key_value = self.database.string_database.get_or_none(key)
+                key_value = self.database.bytes_database.get_or_none(key)
             except ServerWrongTypeError:
                 pass
 
@@ -185,7 +193,7 @@ class MultipleGet(DatabaseCommand):
         return result
 
 
-@ServerCommandsRouter.command(b"mset", [b"write", b"string", b"slow"])
+@command(b"mset", {b"write", b"string", b"slow"})
 class SetMultiple(DatabaseCommand):
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
@@ -195,7 +203,7 @@ class SetMultiple(DatabaseCommand):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"msetnx", [b"write", b"string", b"slow"])
+@command(b"msetnx", {b"write", b"string", b"slow"})
 class SetIfNotExistsMultiple(DatabaseCommand):
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
@@ -208,7 +216,7 @@ class SetIfNotExistsMultiple(DatabaseCommand):
         return True
 
 
-@ServerCommandsRouter.command(b"set", [b"write", b"string", b"slow"])
+@command(b"set", {b"write", b"string", b"slow"})
 class Set(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
@@ -222,7 +230,7 @@ class Set(DatabaseCommand):
 
         filled = list(map(bool, [getattr(self, name) for name in fields_names]))
         if filled.count(True) > 1:
-            raise ValkeySyntaxError()
+            raise ServerError(b"ERR syntax error")
 
         if True in filled:
             name = fields_names[filled.index(True)]
@@ -245,7 +253,7 @@ class Set(DatabaseCommand):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"setex", [b"write", b"string", b"slow"])
+@command(b"setex", {b"write", b"string", b"slow"})
 class SetExpire(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     seconds: int = positional_parameter()
@@ -257,7 +265,7 @@ class SetExpire(DatabaseCommand):
         return RESP_OK
 
 
-@ServerCommandsRouter.command(b"setnx", [b"write", b"string", b"fast"])
+@command(b"setnx", {b"write", b"string", b"fast"})
 class SetIfNotExists(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
@@ -270,7 +278,7 @@ class SetIfNotExists(DatabaseCommand):
         return True
 
 
-@ServerCommandsRouter.command(b"setrange", [b"write", b"string", b"slow"])
+@command(b"setrange", {b"write", b"string", b"slow"})
 class SetRange(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     offset: int = positional_parameter()
@@ -297,7 +305,7 @@ class SetRange(DatabaseCommand):
         return len(new_value)
 
 
-@ServerCommandsRouter.command(b"strlen", [b"read", b"string", b"fast"])
+@command(b"strlen", {b"read", b"string", b"fast"})
 class StringLength(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 

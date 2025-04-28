@@ -1,12 +1,10 @@
-from dataclasses import dataclass
-
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
-from pyvalkey.commands.router import ServerCommandsRouter
+from pyvalkey.commands.router import command
 from pyvalkey.resp import ValueType
 
 
-@ServerCommandsRouter.command(b"xadd", [b"stream", b"write", b"fast"])
+@command(b"xadd", {b"stream", b"write", b"fast"})
 class StreamAdd(Command):
     key: bytes = positional_parameter()
 
@@ -18,7 +16,7 @@ class StreamAdd(Command):
         return 1
 
 
-@ServerCommandsRouter.command(b"xdel", [b"stream", b"write", b"fast"])
+@command(b"xdel", {b"stream", b"write", b"fast"})
 class StreamDel(Command):
     key: bytes = positional_parameter()
     ids: list[bytes] = positional_parameter()
@@ -27,35 +25,19 @@ class StreamDel(Command):
         return 1
 
 
-@ServerCommandsRouter.command(b"groups", [b"stream", b"write", b"fast"], b"xinfo")
-class StreamInfoGroups(Command):
-    key: bytes = positional_parameter()
-
-    def execute(self) -> ValueType:
-        return 1
-
-
-@ServerCommandsRouter.command(b"stream", [b"stream", b"write", b"fast"], b"xinfo")
-class StreamInfoStream(Command):
-    key: bytes = positional_parameter()
-    full: bool = keyword_parameter(flag=b"FULL", default=False)
-
-    def execute(self) -> ValueType:
-        return 1
-
-
-@ServerCommandsRouter.command(b"create", [b"write", b"stream", b"slow"], b"xgroup")
+@command(b"create", {b"write", b"stream", b"slow"}, b"xgroup")
 class StreamGroupCreate(Command):
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
 
     stream_id: bytes = positional_parameter()
+    make_stream: bool = keyword_parameter(flag=b"MKSTREAM", default=False)
 
     def execute(self) -> ValueType:
         return None
 
 
-@ServerCommandsRouter.command(b"setid", [b"write", b"stream", b"slow"], b"xgroup")
+@command(b"setid", {b"write", b"stream", b"slow"}, b"xgroup")
 class StreamGroupSetId(Command):
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
@@ -67,13 +49,34 @@ class StreamGroupSetId(Command):
         return None
 
 
-@dataclass
-class Streams:
+@command(b"groups", {b"stream", b"write", b"fast"}, b"xinfo")
+class StreamInfoGroups(Command):
     key: bytes = positional_parameter()
-    stream_id: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return 1
 
 
-@ServerCommandsRouter.command(b"group", [b"write", b"stream", b"slow", b"blocking"], b"xreadgroup")
+@command(b"stream", {b"stream", b"write", b"fast"}, b"xinfo")
+class StreamInfoStream(Command):
+    key: bytes = positional_parameter()
+    full: bool = keyword_parameter(flag=b"FULL", default=False)
+
+    def execute(self) -> ValueType:
+        return 1
+
+
+@command(b"xread", {b"stream"})
+class StreamRead(Command):
+    count: int | None = keyword_parameter(flag=b"COUNT", default=None)
+    block: int | None = keyword_parameter(flag=b"BLOCK", default=None)
+    keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
+
+    def execute(self) -> ValueType:
+        return None
+
+
+@command(b"group", {b"write", b"stream", b"slow", b"blocking"}, b"xreadgroup")
 class StreamReadGroup(Command):
     group: bytes = positional_parameter()
     consumer: bytes = positional_parameter()
@@ -81,7 +84,7 @@ class StreamReadGroup(Command):
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
     block: int | None = keyword_parameter(flag=b"BLOCK", default=None)
     no_ack: bool = keyword_parameter(flag=b"NOACK", default=False)
-    streams: Streams = keyword_parameter(token=b"STREAMS")
+    keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
 
     def execute(self) -> ValueType:
         return None
