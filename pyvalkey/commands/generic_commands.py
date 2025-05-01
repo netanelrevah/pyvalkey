@@ -10,7 +10,7 @@ from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, KeyValue, ValkeySortedSet
+from pyvalkey.database_objects.databases import BlockingManager, Database, KeyValue, ValkeySortedSet
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -350,6 +350,8 @@ class RandomKey(Command):
 
 @command(b"rename", {b"keyspace", b"write", b"slow"})
 class Rename(DatabaseCommand):
+    blocking_manager: BlockingManager = server_command_dependency()
+
     key: bytes = positional_parameter(key_mode=b"R")
     new_key: bytes = positional_parameter(key_mode=b"W")
 
@@ -360,6 +362,13 @@ class Rename(DatabaseCommand):
         self.database.rename_unsafely(self.key, self.new_key)
 
         return RESP_OK
+
+    async def after(self, in_multi: bool = False) -> None:
+        try:
+            if self.database.list_database.has_key(self.new_key):
+                await self.blocking_manager.notify_list(self.new_key, in_multi=in_multi)
+        except ServerWrongTypeError:
+            pass
 
 
 @command(b"renamenx", {b"keyspace", b"write", b"slow"})
@@ -434,6 +443,7 @@ class Scan(DatabaseCommand):
 @command(b"sort", {b"read", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class Sort(Command):
     database: Database = server_command_dependency()
+    blocking_manager: BlockingManager = server_command_dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
     by: bytes | None = keyword_parameter(token=b"BY", default=None)
@@ -462,9 +472,16 @@ class Sort(Command):
             return 0
 
         self.database.set_key_value(
-            KeyValue(self.destination, [str(v).encode() if v is not None else b"" for v in result_values]),
+            KeyValue(self.destination, [(v if v is not None else b"") for v in result_values]),
         )
         return len(result_values)
+
+    async def after(self, in_multi: bool = False) -> None:
+        try:
+            if self.destination and self.database.list_database.has_key(self.destination):
+                await self.blocking_manager.notify_list(self.destination, in_multi=in_multi)
+        except ServerWrongTypeError:
+            pass
 
 
 @command(b"sort_ro", {b"write", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
@@ -579,8 +596,18 @@ class TimeToLive(DatabaseCommand):
 
 @command(b"type", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Type(DatabaseCommand):
+    key: bytes = positional_parameter()
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        value = self.database.get_value_or_none(self.key)
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            return b"string"
+        if isinstance(value, list):
+            return b"list"
+
+        raise TypeError(f"not supporting type {type(value)}")
 
 
 @command(b"unlink", {b"keyspace", b"write", b"slow", b"dangerous"})

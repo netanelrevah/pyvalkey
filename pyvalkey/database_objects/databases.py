@@ -18,7 +18,7 @@ from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.utils import (
     is_integer,
 )
-from pyvalkey.database_objects.errors import ServerWrongTypeError
+from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.utils import flatten
 from pyvalkey.utils.collections import SetMapping
 
@@ -206,6 +206,25 @@ class KeyValue(Generic[KeyValueTypeVar]):
         return KeyValue(key, value, expiration)
 
 
+# @dataclass(slots=True)
+# class Key:
+#     key: bytes
+#     expiration: int | None = field(default=None)
+#     last_accessed: int = field(default_factory=lambda: int(time.time() * 1000))
+#     lfu_counter: int = LFU_INITIAL_VALUE
+#
+# @dataclass(slots=True)
+# class GenericKeyValue(Generic[KeyValueTypeVar]):
+#     pass
+#
+# @dataclass(slots=True)
+# class SetKeyValue(GenericKeyValue[set[bytes]]):
+#     key: Key
+#     value: set[bytes]
+#
+#
+
+
 MISSING: KeyValue = KeyValue(b"", {})
 
 
@@ -215,8 +234,17 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
     key_with_expiration: SortedSet
     watchlist: dict[bytes, set[ClientWatchlist]]
 
+    def _clear_key(self, key_value: KeyValue[KeyValueTypeVar]) -> None:
+        if key_value.expiration is not None:
+            self.key_with_expiration.discard(key_value)
+        self.data.pop(key_value.key)
+
     def is_empty(self, value: KeyValueTypeVar) -> bool:
-        raise NotImplementedError()
+        if isinstance(value, bytes | int | list | set | dict):
+            return not value
+        if isinstance(value, ValkeySortedSet):
+            return len(value) == 0
+        raise TypeError()
 
     def has_typed_key(self, key: bytes, type_check: Callable[[KeyValueTypeVar], bool] | None = None) -> bool:
         key_value = self.data.get(key, None)
@@ -226,9 +254,12 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
 
         if key_value.expiration is not None:
             if int(time.time() * 1000) > key_value.expiration:
-                self.data.pop(key)
-                self.key_with_expiration.discard(key_value)
+                self._clear_key(key_value)
                 return False
+
+        if self.is_empty(key_value.value):
+            self._clear_key(key_value)
+            return False
 
         if type_check is not None and not type_check(key_value.value):
             raise ServerWrongTypeError()
@@ -594,8 +625,11 @@ class BlockingManager:
     lazy_notification_keys: list[bytes] = field(default_factory=list)
 
     async def wait_for_lists(
-        self, database: Database, keys: list[bytes], timeout: int | None = None, in_multi: bool = False
+        self, database: Database, keys: list[bytes], timeout: int | float | None = None, in_multi: bool = False
     ) -> bytes | None:
+        if timeout is not None and timeout < 0:
+            raise ServerError(b"ERR timeout is negative")
+
         for key in keys:
             if not database.list_database.has_key(key):
                 continue

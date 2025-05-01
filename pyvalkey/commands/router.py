@@ -62,6 +62,8 @@ class CommandsRouter:
 
             full_command_name = parent_command + b"|" + command_name if parent_command else command_name
 
+            setattr(command_cls, "full_command_name", full_command_name)
+
             if full_command_name in ACL.COMMANDS_NAMES:
                 raise ValueError("redecalration of command")
 

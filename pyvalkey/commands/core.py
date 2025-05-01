@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 @dataclass_transform()
 @dataclass
 class Command:
+    full_command_name: ClassVar[bytes]
     flags: ClassVar[set[bytes]]
 
     async def before(self, in_multi: bool = False) -> None:

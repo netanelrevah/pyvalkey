@@ -89,8 +89,10 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self._transport = transport
+        host: str
+        port: int
         host, port = transport.get_extra_info("peername")
-        self._client_context = ClientContext.create(self.server_context, host, port)
+        self._client_context = ClientContext.create(self.server_context, host.encode(), port)
 
         self.parser_task = asyncio.create_task(self.parse())
 
@@ -172,6 +174,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
             if not isinstance(result, RespError):
                 await routed_command.after()
             self.dump(result)
+
+            self.current_client.last_command = routed_command.full_command_name
+
             if self.server_context.pause_timeout:
                 while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
                     time.sleep(0.1)

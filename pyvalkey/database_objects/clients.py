@@ -22,6 +22,8 @@ class Client:
     library_name: bytes = b""
     library_version: bytes = b""
 
+    last_command: bytes = b""
+
     @property
     def address(self) -> bytes:
         return self.host + b":" + str(self.port).encode()
@@ -37,6 +39,7 @@ class Client:
             b"addr": self.address,
             b"flags": self.flags,
             b"name": self.name,
+            b"cmd": self.last_command,
         }
         return b" ".join([k + b"=" + to_bytes(v) for k, v in items.items()])
 

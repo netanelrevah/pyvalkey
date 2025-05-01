@@ -7,6 +7,8 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
     image, logs = client.images.build(path=".", rm=True)
 
+    log_file_name = f"{tags}.docker.log"
+
     tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory").strip()
     command = (
         f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
@@ -22,7 +24,7 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
     status = container.wait()
 
-    open("docker.logs", "wb").write(container.logs())
+    open(log_file_name, "wb").write(container.logs())
 
     container.remove()
 

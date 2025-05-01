@@ -239,13 +239,21 @@ class DatabaseSize(DatabaseCommand):
         return self.database.size()
 
 
-@command(b"debug", acl_categories={b"fast", b"connection"})
+# @command(b"debug", acl_categories={b"fast", b"connection"})
+# class Debug(Command):
+#     set_active_expire: int = keyword_parameter(flag=b"set-active-expire", default=b"0")
+#     object: bytes | None = keyword_parameter(token=b"object", default=None)
+#
+#     def execute(self) -> ValueType:
+#         return True
+
+
+@command(b"log", acl_categories={b"fast", b"connection"}, parent_command=b"debug")
 class Debug(Command):
-    set_active_expire: int = keyword_parameter(flag=b"set-active-expire", default=b"0")
-    object: bytes | None = keyword_parameter(token=b"object", default=None)
+    message: bytes = keyword_parameter()
 
     def execute(self) -> ValueType:
-        return True
+        return RESP_OK
 
 
 def touch_all_database_watched_keys(database: Database) -> None:
