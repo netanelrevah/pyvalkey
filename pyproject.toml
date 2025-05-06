@@ -13,6 +13,11 @@ dependencies = [
     "typer>=0.15.1",
 ]
 
+[project.optional-dependencies]
+lua = [
+    "lupa>=2.4",
+]
+
 [dependency-groups]
 dev = [
     "docker>=7.1.0",

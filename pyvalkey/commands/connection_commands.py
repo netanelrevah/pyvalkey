@@ -1,8 +1,9 @@
 import time
+from dataclasses import field
 from enum import Enum
 from hashlib import sha256
 
-from pyvalkey.commands.context import ClientContext
+from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import (
@@ -12,6 +13,7 @@ from pyvalkey.commands.parameters import (
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
+from pyvalkey.database_objects.databases import UnblockMessage
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
@@ -86,23 +88,21 @@ class ClientGetName(Command):
 
 @command(b"kill", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientKill(Command):
-    client_context: ClientContext = server_command_dependency()
+    server_context: ServerContext = server_command_dependency()
     old_format_address: bytes | None = positional_parameter(default=None)
     client_id: int = keyword_parameter(flag=b"ID", default=None)
     address: bytes = keyword_parameter(flag=b"ADDR", default=None)
 
     def execute(self) -> ValueType:
         if self.old_format_address:
-            clients = self.client_context.server_context.clients.filter_(address=self.old_format_address).values()
+            clients = self.server_context.clients.filter_(address=self.old_format_address).values()
             if not clients:
                 return RespError(b"ERR No such client")
             (client,) = clients
             client.is_killed = True
             return RESP_OK
 
-        clients = self.client_context.server_context.clients.filter_(
-            client_id=self.client_id, address=self.address
-        ).values()
+        clients = self.server_context.clients.filter_(client_id=self.client_id, address=self.address).values()
         for client in clients:
             client.is_killed = True
         return len(clients)
@@ -110,22 +110,22 @@ class ClientKill(Command):
 
 @command(b"pause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientPause(Command):
-    client_context: ClientContext = server_command_dependency()
+    server_context: ServerContext = server_command_dependency()
     timeout_seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        self.client_context.server_context.pause_timeout = time.time() + self.timeout_seconds
-        self.client_context.server_context.is_paused = True
+        self.server_context.pause_timeout = time.time() + self.timeout_seconds
+        self.server_context.is_paused = True
         return RESP_OK
 
 
 @command(b"unpause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientUnpause(Command):
-    client_context: ClientContext = server_command_dependency()
+    server_context: ServerContext = server_command_dependency()
     timeout_seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        self.client_context.server_context.is_paused = False
+        self.server_context.is_paused = False
         return RESP_OK
 
 
@@ -137,13 +137,44 @@ class ReplyMode(Enum):
 
 @command(b"reply", {b"slow", b"connection"}, b"client")
 class ClientReply(Command):
-    client_context: ClientContext = server_command_dependency()
     mode: ReplyMode = positional_parameter()
 
     def execute(self) -> ValueType:
         if self.mode == ReplyMode.ON:
             return RESP_OK
         return None
+
+
+class UnblcokOption(Enum):
+    timeout = b"TIMEOUT"
+    error = b"ERROR"
+
+
+@command(b"unblock", {b"slow", b"connection"}, b"client")
+class ClientUnblock(Command):
+    server_context: ServerContext = server_command_dependency()
+
+    client_id: int = positional_parameter()
+    unblock_option: UnblcokOption = positional_parameter(default=UnblcokOption.timeout)
+
+    _unblocked: int = field(init=False, default=0)
+
+    async def before(self, in_multi: bool = False) -> None:
+        if self.client_id not in self.server_context.clients:
+            return
+
+        client = self.server_context.clients[self.client_id]
+        if client.blocking_queue is None:
+            return
+
+        await client.blocking_queue.put(
+            UnblockMessage.ERROR if self.unblock_option == UnblcokOption.error else UnblockMessage.TIMEOUT
+        )
+
+        self._unblocked = 1
+
+    def execute(self) -> ValueType:
+        return self._unblocked
 
 
 @command(b"setinfo", {b"slow", b"connection"}, b"client")

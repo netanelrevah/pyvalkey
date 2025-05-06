@@ -25,7 +25,7 @@ def increment_by_float(database: Database, key: bytes, increment: float = 1) -> 
         key_value = KeyValue(key, b"0")
     previous_value = key_value.value
     key_value.value = increment_bytes_value_as_float(previous_value, increment)
-    database.string_database.set_key_value(key_value)
+    database.bytes_database.set_key_value(key_value)
     return previous_value
 
 

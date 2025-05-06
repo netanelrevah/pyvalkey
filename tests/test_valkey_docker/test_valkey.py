@@ -3,30 +3,33 @@ from valkey import Valkey
 
 
 def run_tests(s: Valkey, tags="", additional_args: str = ""):
-    client = docker.from_env()
+    container = None
+    try:
+        client = docker.from_env()
 
-    image, logs = client.images.build(path=".", rm=True)
+        image, logs = client.images.build(path=".", rm=True)
 
-    tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory").strip()
-    command = (
-        f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
-    )
+        log_file_name = f"{tags}.docker.log"
 
-    print(command)
+        tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory -slow").strip()
+        command = f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
 
-    container = client.containers.run(
-        image,
-        command=command + additional_args,
-        detach=True,
-    )
+        print(command)
 
-    status = container.wait()
+        container = client.containers.run(
+            image,
+            command=command + additional_args,
+            detach=True,
+        )
 
-    open("docker.logs", "wb").write(container.logs())
+        status = container.wait()
 
-    container.remove()
+        open(log_file_name, "wb").write(container.logs())
 
-    assert status["StatusCode"] == 0
+        assert status["StatusCode"] == 0
+    finally:
+        if container is not None:
+            container.remove()
 
 
 def test_all(s: Valkey):

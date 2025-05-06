@@ -82,6 +82,7 @@ def keyword_parameter(
     token: bytes | None = None,
     multi_token: bool = False,
     skip_first: bool = False,
+    parse_error: bytes | None = None,
 ) -> Any:  # noqa: ANN401
     return server_parameter(
         values_mapping=values_mapping,
@@ -91,4 +92,5 @@ def keyword_parameter(
         multi_token=multi_token,
         key_mode=key_mode,
         skip_first=skip_first,
+        parse_error=parse_error,
     )

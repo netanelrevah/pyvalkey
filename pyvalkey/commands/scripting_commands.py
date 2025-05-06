@@ -15,9 +15,15 @@ class Eval(Command):
 
 
 @command(b"flush", {b"fast", b"connection"}, parent_command=b"function")
-class FunctionFLush(Command):
+class FunctionFlush(Command):
     def execute(self) -> ValueType:
         return True
+
+
+@command(b"load", {b"fast", b"connection"}, parent_command=b"function")
+class FunctionLoad(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
 
 
 @command(b"kill", {b"connection", b"fast"}, parent_command=b"script")

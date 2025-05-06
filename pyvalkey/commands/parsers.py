@@ -77,7 +77,7 @@ class ParameterParser:
             case int():
                 return IntParameterParser(parse_error=parse_error)
             case float():
-                return FloatParameterParser()
+                return FloatParameterParser(parse_error=parse_error)
             case list():
                 if parameter_field.metadata.get(ParameterMetadata.MULTI_TOKEN, False):
                     return ParameterParser.create(parameter_field, get_args(parameter_type)[0])
@@ -201,11 +201,16 @@ class IntParameterParser(ParameterParser):
             raise ServerError(b"ERR value is not an integer or out of range")
 
 
+@dataclass
 class FloatParameterParser(ParameterParser):
+    parse_error: bytes | None = None
+
     def parse(self, parameters: list[bytes]) -> float:
         try:
             return float(self.next_parameter(parameters))
         except ValueError:
+            if self.parse_error is not None:
+                raise ServerError(self.parse_error)
             raise ServerError(b"ERR value is not a valid float")
 
 
@@ -311,8 +316,13 @@ class ObjectParametersParser(ParametersGroup):
                 and isinstance(parameter_parser.parameter_parser, ListParameterParser)
                 and index + 1 < len(self.parameters_parsers)
             ):
-                if parameter_parser.parameter_parser.length_field_name is not None:
-                    length = parsed_parameters[parameter_parser.parameter_parser.length_field_name]
+                length_field_name = parameter_parser.parameter_parser.length_field_name
+                if length_field_name is not None:
+                    length = parsed_parameters[length_field_name]
+
+                    if length <= 0:
+                        raise ServerError(f"ERR {length_field_name} should be greater than 0".encode())
+
                     parsed_parameters.update(parameter_parser.parse(parameters[:length]))
                     parameters = parameters[length:]
                 else:
