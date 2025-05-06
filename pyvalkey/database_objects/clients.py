@@ -1,4 +1,5 @@
 import itertools
+from asyncio import Queue
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Self
@@ -23,6 +24,8 @@ class Client:
     library_version: bytes = b""
 
     last_command: bytes = b""
+
+    blocking_queue: Queue | None = None
 
     @property
     def address(self) -> bytes:

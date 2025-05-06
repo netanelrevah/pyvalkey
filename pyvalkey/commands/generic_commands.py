@@ -53,7 +53,11 @@ class Delete(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
+        count = 0
+        for key in self.keys:
+            if self.database.pop(key, None) is not None:
+                count += 1
+        return count
 
 
 @command(b"dump", {b"keyspace", b"read", b"slow"})
@@ -69,7 +73,10 @@ class Dump(DatabaseCommand):
             "value": key_value.value,
         }
         if isinstance(key_value.value, list):
-            dump_value["type"] = "list"
+            dump_value = {
+                "type": "list",
+                "value": [item.decode() for item in key_value.value],
+            }
         elif isinstance(key_value.value, set):
             dump_value["type"] = "set"
         elif isinstance(key_value.value, dict):
@@ -212,13 +219,10 @@ class ObjectEncoding(DatabaseCommand):
         if key_value is None:
             return None
         if isinstance(key_value.value, list):
-            if self.configuration.list_max_listpack_size < 0:
-                if self.approximate_list_size(key_value.value) <= (
-                    abs(self.configuration.list_max_listpack_size) * (4 * 1024)
-                ):
-                    return b"listpack"
-                else:
-                    return b"quicklist"
+            if self.configuration.list_max_listpack_size < 0 and self.approximate_list_size(key_value.value) <= (
+                (2 * (2 ** abs(self.configuration.list_max_listpack_size))) * 1024
+            ):
+                return b"listpack"
             elif len(key_value.value) <= self.configuration.list_max_listpack_size:
                 return b"listpack"
             return b"quicklist"
@@ -405,7 +409,7 @@ class Restore(DatabaseCommand):
         elif json_value["type"] == "set":
             value = set(json_value["value"])
         elif json_value["type"] == "list":
-            value = json_value["value"]
+            value = [item.encode() for item in json_value["value"]]
         elif json_value["type"] == "sorted_set":
             value = ValkeySortedSet([(score, member) for score, member in json_value["value"]])
         elif json_value["type"] == "string":
@@ -421,12 +425,13 @@ class Restore(DatabaseCommand):
         kwargs = {}
         if self.idle_time_seconds:
             kwargs["last_accessed"] = self.idle_time_seconds
+        if self.ttl:
+            kwargs["expriration"] = (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.ttl
 
         self.database.set_key_value(
             KeyValue(
                 self.key,
                 value,
-                (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.absolute_ttl,
                 **kwargs,
             )
         )

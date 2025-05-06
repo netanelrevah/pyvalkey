@@ -2,6 +2,7 @@ from dataclasses import field
 from enum import Enum
 
 from pyvalkey.commands.consts import LONG_MAX
+from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import server_command_dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
@@ -10,6 +11,7 @@ from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.database_objects.databases import BlockingManager, Database
 from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, ArrayNone, ValueType
 
 
@@ -20,7 +22,9 @@ class DirectionMode(Enum):
 
 @command(b"blpop", {b"write", b"list", b"fast"})
 class ListBlockingLeftPop(Command):
+    client_context: ClientContext = server_command_dependency()
     database: Database = server_command_dependency()
+    information: Information = server_command_dependency()
     blocking_manager: BlockingManager = server_command_dependency()
 
     keys: list[bytes] = positional_parameter()
@@ -30,7 +34,7 @@ class ListBlockingLeftPop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.database, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -39,11 +43,13 @@ class ListBlockingLeftPop(Command):
 
         list_value = self.database.list_database.get_value(self._key)
         value = list_value.pop(0)
+        self.information.rdb_changes_since_last_save += 1
         return [self._key, value]
 
 
 @command(b"brpop", {b"write", b"list", b"fast"})
 class ListBlockingRightPop(Command):
+    client_context: ClientContext = server_command_dependency()
     database: Database = server_command_dependency()
     blocking_manager: BlockingManager = server_command_dependency()
 
@@ -54,7 +60,7 @@ class ListBlockingRightPop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.database, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -73,6 +79,7 @@ class Direction(Enum):
 
 @command(b"blmpop", {b"write", b"list", b"fast"})
 class ListBlockingMultiplePop(Command):
+    client_context: ClientContext = server_command_dependency()
     database: Database = server_command_dependency()
     blocking_manager: BlockingManager = server_command_dependency()
 
@@ -86,7 +93,7 @@ class ListBlockingMultiplePop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.database, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -103,6 +110,7 @@ class ListBlockingMultiplePop(Command):
 
 @command(b"lmpop", {b"write", b"list", b"fast"})
 class ListMultiplePop(Command):
+    client_context: ClientContext = server_command_dependency()
     database: Database = server_command_dependency()
 
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
@@ -127,6 +135,7 @@ class ListMultiplePop(Command):
 
 @command(b"brpoplpush", {b"write", b"list", b"fast"})
 class ListBlockingRightPopLeftPush(Command):
+    client_context: ClientContext = server_command_dependency()
     database: Database = server_command_dependency()
     blocking_manager: BlockingManager = server_command_dependency()
 
@@ -138,7 +147,7 @@ class ListBlockingRightPopLeftPush(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.database, [self.source], self.timeout, in_multi=in_multi
+            self.client_context, [self.source], self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -158,8 +167,10 @@ class ListBlockingRightPopLeftPush(Command):
 
 @command(b"blmove", {b"write", b"list", b"fast"})
 class ListBlockingMove(Command):
+    client_context: ClientContext = server_command_dependency()
     database: Database = server_command_dependency()
     blocking_manager: BlockingManager = server_command_dependency()
+    information: Information = server_command_dependency()
 
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -171,7 +182,7 @@ class ListBlockingMove(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.database, [self.source], self.timeout, in_multi=in_multi
+            self.client_context, [self.source], self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -184,6 +195,8 @@ class ListBlockingMove(Command):
             self.database.list_database.get_or_create(self.destination).value.insert(0, value)
         else:
             self.database.list_database.get_or_create(self.destination).value.append(value)
+
+        self.information.rdb_changes_since_last_save += 1
         return value
 
     async def after(self, in_multi: bool = False) -> None:
@@ -267,11 +280,8 @@ class ListSet(DatabaseCommand):
         if list_value is None:
             raise ServerError(b"ERR no such key")
 
-        if self.index >= len(list_value):
+        if self.index >= len(list_value) or self.index < -len(list_value):
             raise ServerError(b"ERR index out of range")
-
-        if self.index < 0:
-            list_value[self.index + len(list_value)] = self.element
 
         list_value[self.index] = self.element
         return RESP_OK
@@ -382,6 +392,7 @@ class ListPosition(DatabaseCommand):
 
 @command(b"lpush", {b"list", b"fast"}, flags={b"write", b"denyoom"})
 class ListPush(DatabaseCommand):
+    information: Information = server_command_dependency()
     blocking_manager: BlockingManager = server_command_dependency()
 
     key: bytes = positional_parameter(key_mode=b"W")
@@ -392,6 +403,7 @@ class ListPush(DatabaseCommand):
 
         for v in self.values:
             a_list.insert(0, v)
+            self.information.rdb_changes_since_last_save += 1
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:

@@ -25,7 +25,7 @@ from pyvalkey.commands.transactions_commands import (
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientList
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database
+from pyvalkey.database_objects.databases import Database, UnblockMessage
 from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     RouterKeyError,
@@ -97,6 +97,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self.parser_task = asyncio.create_task(self.parse())
 
     def connection_lost(self, exception: Exception | None) -> None:
+        print(f"{self.current_client.client_id} connection lost")
+        if self.client_context.current_client.blocking_queue is not None:
+            self.client_context.current_client.blocking_queue.put_nowait(UnblockMessage.ERROR)
         del self.clients[self.current_client.client_id]
 
     def dump(self, value: ValueType) -> None:
@@ -117,6 +120,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         try:
             async for query in self._resp_query_parser:
                 await self.handle(query)
+                await asyncio.sleep(0)
         except RespSyntaxError as e:
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
@@ -150,8 +154,22 @@ class ValkeyClientProtocol(asyncio.Protocol):
         print(self.current_client.client_id, [i[:100] if i and not isinstance(i, int) else i for i in command])
 
         try:
-            routed_command = self.router.route(command, self.client_context)
-
+            routed_command_cls, parameters = self.router.route(command)
+            command_statistics = self.server_context.information.get_command_statistics(
+                routed_command_cls.full_command_name
+            )
+        except RouterKeyError:
+            if self.client_context.transaction_context is not None:
+                self.client_context.transaction_context.is_aborted = True
+            self.dump(
+                RespError(
+                    f"ERR unknown command '{command[0].decode()}', "
+                    f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
+                )
+            )
+            return
+        try:
+            routed_command = routed_command_cls.create(parameters, self.client_context)
             if self.configurations.maxmemory > 0:
                 if b"denyoom" in routed_command.flags:
                     raise ServerError(b"ERR OOM command not allowed when used memory > 'maxmemory'.")
@@ -170,10 +188,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 self.current_user.check_permissions(routed_command)
 
             await routed_command.before()
+            start = time.time()
             result = routed_command.execute()
+            command_statistics.microseconds += int(time.time() - start) * 1000000
             if not isinstance(result, RespError):
                 await routed_command.after()
             self.dump(result)
+            command_statistics.calls += 1
 
             self.current_client.last_command = routed_command.full_command_name
 
@@ -191,10 +212,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 )
             )
         except ServerWrongNumberOfArgumentsError:
+            command_statistics.rejected_calls += 1
             self.dump(RespError(b"ERR wrong number of arguments for '" + command[0].lower() + b"' command"))
         except ServerWrongTypeError:
+            command_statistics.failed_calls += 1
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
         except CommandPermissionError as e:
+            command_statistics.rejected_calls += 1
             if not self.current_user:
                 raise e
             self.dump(
@@ -207,6 +231,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 )
             )
         except ServerError as e:
+            command_statistics.failed_calls += 1
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
             self.dump(RespError(e.message))

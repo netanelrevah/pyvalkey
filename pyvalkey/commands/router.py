@@ -10,7 +10,6 @@ from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.core import Command
 
 
@@ -35,10 +34,10 @@ class CommandsRouter:
 
         return routed_command
 
-    def route(self, parameters: list[bytes], client_context: ClientContext) -> Command:
+    def route(self, parameters: list[bytes]) -> tuple[type[Command], list[bytes]]:
         parameters = parameters[:]
-        routed_command: type[Command] = self.internal_route(parameters, self.ROUTES)
-        return routed_command.create(parameters, client_context)
+        routed_command_cls: type[Command] = self.internal_route(parameters, self.ROUTES)
+        return routed_command_cls, parameters
 
     @classmethod
     def command(

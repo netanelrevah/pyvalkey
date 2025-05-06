@@ -10,8 +10,8 @@ from pyvalkey.commands.parameters import ParameterMetadata, keyword_parameter, p
 from pyvalkey.commands.router import CommandsRouter, command
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
 from pyvalkey.database_objects.configurations import ConfigurationError, Configurations
-from pyvalkey.database_objects.databases import Database
-from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.database_objects.databases import BlockingManager, Database
+from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
@@ -233,6 +233,17 @@ class ConfigSet(Command):
         return RESP_OK
 
 
+@command(b"resetstat", {b"admin", b"slow", b"dangerous"}, b"config")
+class ConfigResetStatistics(Command):
+    configurations: Configurations = server_command_dependency()
+    information: Information = server_command_dependency()
+
+    def execute(self) -> ValueType:
+        self.information.commands_statistics = {}
+        self.information.rdb_changes_since_last_save = 0
+        return RESP_OK
+
+
 @command(b"dbsize", {b"keyspace", b"read", b"fast"})
 class DatabaseSize(DatabaseCommand):
     def execute(self) -> ValueType:
@@ -251,19 +262,18 @@ class DatabaseSize(DatabaseCommand):
 @command(b"log", acl_categories={b"fast", b"connection"}, parent_command=b"debug")
 class Debug(Command):
     message: bytes = keyword_parameter()
+    server_context: ServerContext = server_command_dependency()
 
     def execute(self) -> ValueType:
+        if self.server_context.notification_manager.list_notifications.values_count > 0:
+            raise Exception()
+
         return RESP_OK
-
-
-def touch_all_database_watched_keys(database: Database) -> None:
-    for key in database.data.keys():
-        database.touch_watched_key(key)
 
 
 def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
     for database in databases.values():
-        touch_all_database_watched_keys(database)
+        database.touch_all_database_watched_keys()
 
 
 @command(b"flushall", {b"keyspace", b"write", b"slow", b"dangerous"})
@@ -282,7 +292,7 @@ class FlushDatabase(Command):
 
     def execute(self) -> ValueType:
         if self.client_context.current_database in self.client_context.server_context.databases:
-            for key in self.client_context.database.data.keys():
+            for key in self.client_context.database.keys():
                 self.client_context.database.touch_watched_key(key)
             self.client_context.server_context.databases.pop(self.client_context.current_database)
         return RESP_OK
@@ -295,7 +305,7 @@ class GetInformation(Command):
     section: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.information.all()
+        return self.information.sections(self.section)
 
 
 @command(b"usage", {b"read", b"slow"}, b"memory")
@@ -309,6 +319,7 @@ class MemoryUsage(Command):
 @command(b"swapdb", {b"keyspace", b"write", b"slow", b"dangerous"})
 class SwapDb(Command):
     server_context: ServerContext = server_command_dependency()
+    blocking_manager: BlockingManager = server_command_dependency()
 
     index1: int = positional_parameter(parse_error=b"ERR invalid first DB index")
     index2: int = positional_parameter(parse_error=b"ERR invalid second DB index")
@@ -320,30 +331,42 @@ class SwapDb(Command):
         if self.index1 not in self.server_context.databases:
             raise ServerError(b"ERR DB index is out of range")
 
-        touch_all_database_watched_keys(self.server_context.databases[self.index1])
+        database1 = self.server_context.databases[self.index1]
+        database1.touch_all_database_watched_keys()
         if self.index2 not in self.server_context.databases:
-            self.server_context.databases[self.index2] = self.server_context.databases.pop(self.index1)
-            self.server_context.databases[self.index2].index = self.index2
-            self.server_context.databases[self.index2].watchlist = {}
+            new_database = self.server_context.get_or_create_database(self.index2)
+            new_database.content = self.server_context.databases.pop(self.index1).content
             return RESP_OK
 
-        touch_all_database_watched_keys(self.server_context.databases[self.index2])
+        database2 = self.server_context.databases[self.index2]
+        database2.touch_all_database_watched_keys()
 
-        (self.server_context.databases[self.index1], self.server_context.databases[self.index2]) = (
-            self.server_context.databases[self.index2],
-            self.server_context.databases[self.index1],
-        )
+        content1, content2 = (database1.content, database2.content)
 
-        self.server_context.databases[self.index1].index = self.index1
-        self.server_context.databases[self.index2].index = self.index2
-        self.server_context.databases[self.index1].watchlist, self.server_context.databases[self.index2].watchlist = (
-            self.server_context.databases[self.index2].watchlist,
-            self.server_context.databases[self.index1].watchlist,
-        )
-        touch_all_database_watched_keys(self.server_context.databases[self.index1])
-        touch_all_database_watched_keys(self.server_context.databases[self.index2])
+        database1.replace_content(content2)
+        database2.replace_content(content1)
+
+        database1.touch_all_database_watched_keys()
+        database2.touch_all_database_watched_keys()
 
         return RESP_OK
+
+    async def after(self, in_multi: bool = False) -> None:
+        database1 = self.server_context.databases[self.index1]
+        for key in database1.keys():
+            try:
+                if database1.list_database.has_key(key):
+                    await self.blocking_manager.notify_list(key, in_multi=in_multi)
+            except ServerWrongTypeError:
+                pass
+
+        database2 = self.server_context.databases[self.index2]
+        for key in database2.keys():
+            try:
+                if database2.list_database.has_key(key):
+                    await self.blocking_manager.notify_list(key, in_multi=in_multi)
+            except ServerWrongTypeError:
+                pass
 
 
 @command(b"sync", {b"keyspace", b"write", b"slow", b"dangerous"})

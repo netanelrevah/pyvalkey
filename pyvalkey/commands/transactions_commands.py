@@ -13,10 +13,10 @@ def unwatch(databases: dict[int, Database], client_watchlist: ClientWatchlist) -
     for index, key in client_watchlist.watchlist:
         if index not in databases:
             continue
-        watchlist_database = databases[index]
-        if key not in watchlist_database.watchlist:
+        watchlist_database: Database = databases[index]
+        if key not in watchlist_database.content.watchlist:
             continue
-        key_database_watchlist = watchlist_database.watchlist[key]
+        key_database_watchlist = watchlist_database.content.watchlist[key]
         key_database_watchlist.remove(client_watchlist)
     client_watchlist.watchlist = {}
 

@@ -1,4 +1,5 @@
 import time
+from dataclasses import field
 from enum import Enum
 from hashlib import sha256
 
@@ -12,6 +13,7 @@ from pyvalkey.commands.parameters import (
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
+from pyvalkey.database_objects.databases import UnblockMessage
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
@@ -141,6 +143,38 @@ class ClientReply(Command):
         if self.mode == ReplyMode.ON:
             return RESP_OK
         return None
+
+
+class UnblcokOption(Enum):
+    timeout = b"TIMEOUT"
+    error = b"ERROR"
+
+
+@command(b"unblock", {b"slow", b"connection"}, b"client")
+class ClientUnblock(Command):
+    server_context: ServerContext = server_command_dependency()
+
+    client_id: int = positional_parameter()
+    unblock_option: UnblcokOption = positional_parameter(default=UnblcokOption.timeout)
+
+    _unblocked: int = field(init=False, default=0)
+
+    async def before(self, in_multi: bool = False) -> None:
+        if self.client_id not in self.server_context.clients:
+            return
+
+        client = self.server_context.clients[self.client_id]
+        if client.blocking_queue is None:
+            return
+
+        await client.blocking_queue.put(
+            UnblockMessage.ERROR if self.unblock_option == UnblcokOption.error else UnblockMessage.TIMEOUT
+        )
+
+        self._unblocked = 1
+
+    def execute(self) -> ValueType:
+        return self._unblocked
 
 
 @command(b"setinfo", {b"slow", b"connection"}, b"client")
