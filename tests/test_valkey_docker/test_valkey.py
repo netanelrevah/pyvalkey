@@ -24,11 +24,12 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
         status = container.wait()
 
-        open(log_file_name, "wb").write(container.logs())
-
         assert status["StatusCode"] == 0
     finally:
         if container is not None:
+            open(log_file_name, "wb").write(container.logs())
+
+            container.stop()
             container.remove()
 
 
@@ -37,7 +38,7 @@ def test_all(s: Valkey):
 
 
 def test_all_known_tags(s: Valkey):
-    run_tests(s, tags="sort keyspace hash incr list")
+    run_tests(s, tags="sort keyspace hash incr list dump acl tracking multi")
 
 
 def test_sort(s: Valkey):
@@ -74,3 +75,7 @@ def test_tracking(s: Valkey):
 
 def test_multi(s: Valkey):
     run_tests(s, tags="multi")
+
+
+def test_scripting(s: Valkey):
+    run_tests(s, tags="scripting")

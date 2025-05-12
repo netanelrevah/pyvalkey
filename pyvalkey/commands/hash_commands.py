@@ -1,7 +1,7 @@
 import random
 
 from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN, LONG_MAX
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
@@ -139,7 +139,7 @@ class HashMapSetMultiple(DatabaseCommand):
 
 @command(b"hrandfield", {b"write", b"hash", b"fast"})
 class HashRandomField(DatabaseCommand):
-    protocol: RespProtocolVersion = server_command_dependency()
+    protocol: RespProtocolVersion = dependency()
 
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)

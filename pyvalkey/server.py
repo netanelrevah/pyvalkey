@@ -23,7 +23,7 @@ from pyvalkey.commands.transactions_commands import (
     TransactionWatch,
 )
 from pyvalkey.database_objects.acl import ACL, ACLUser
-from pyvalkey.database_objects.clients import Client, ClientList
+from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, UnblockMessage
 from pyvalkey.database_objects.errors import (
@@ -60,7 +60,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         return self.server_context.databases
 
     @property
-    def clients(self) -> ClientList:
+    def clients(self) -> ClientsMap:
         return self.server_context.clients
 
     @property
@@ -92,7 +92,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         host: str
         port: int
         host, port = transport.get_extra_info("peername")
-        self._client_context = ClientContext.create(self.server_context, host.encode(), port)
+        self._client_context = ClientContext.create(self.server_context, host.encode(), port, self.router)
 
         self.parser_task = asyncio.create_task(self.parse())
 
@@ -105,7 +105,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
     def dump(self, value: ValueType) -> None:
         dumped = BytesIO()
         dump(value, dumped, self.client_context.protocol)
-        print(self.current_client.client_id, "result", dumped.getvalue()[:100])
+        print(self.current_client.client_id, "result", dumped.getvalue()[:103])
 
         if self.current_client.reply_mode == "skip":
             self.current_client.reply_mode = "on"
@@ -151,7 +151,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
         self.server_context.information.total_commands_processed += 1
 
-        print(self.current_client.client_id, [i[:100] if i and not isinstance(i, int) else i for i in command])
+        print(self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command])
 
         try:
             routed_command_cls, parameters = self.router.route(command)

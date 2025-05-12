@@ -47,7 +47,7 @@ class Client:
         return b" ".join([k + b"=" + to_bytes(v) for k, v in items.items()])
 
 
-class ClientList(dict[int, Client]):
+class ClientsMap(dict[int, Client]):
     def __init__(
         self, *seq: dict[int, Client] | Iterable[tuple[int, Client]] | None, **kwargs: dict[int, Client]
     ) -> None:
@@ -60,8 +60,8 @@ class ClientList(dict[int, Client]):
 
     def filter_(
         self, client_id: int | None = None, address: bytes | None = None, client_type: bytes | None = None
-    ) -> "ClientList":
-        filtered = ClientList()
+    ) -> "ClientsMap":
+        filtered = ClientsMap()
         for c in self.all().values():
             if client_id is not None and c.client_id != client_id:
                 continue

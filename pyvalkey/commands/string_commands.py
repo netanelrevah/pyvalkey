@@ -10,23 +10,17 @@ from pyvalkey.resp import RESP_OK, ValueType
 
 
 def increment_by_int(database: Database, key: bytes, increment: int = 1) -> int:
-    key_value: KeyValue[int] | None = database.int_database.get_or_none(key)
-    if key_value is None:
-        key_value = KeyValue(key, 0)
-    previous_value = key_value.value
-    key_value.value = previous_value + increment
-    database.int_database.set_key_value(key_value)
-    return previous_value
+    previous_value = database.int_database.get_value_or_none(key) or 0
+    new_value = previous_value + increment
+    database.int_database.upsert(key, new_value)
+    return new_value
 
 
 def increment_by_float(database: Database, key: bytes, increment: float = 1) -> bytes:
-    key_value: KeyValue[bytes] | None = database.bytes_database.get_or_none(key)
-    if key_value is None:
-        key_value = KeyValue(key, b"0")
-    previous_value = key_value.value
-    key_value.value = increment_bytes_value_as_float(previous_value, increment)
-    database.bytes_database.set_key_value(key_value)
-    return previous_value
+    previous_value = database.bytes_database.get_value_or_none(key) or b"0"
+    new_value = increment_bytes_value_as_float(previous_value, increment)
+    database.bytes_database.upsert(key, new_value)
+    return new_value
 
 
 def increment_by(database: Database, key: bytes, increment: int | float = 1) -> bytes | int:

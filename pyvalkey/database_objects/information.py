@@ -72,7 +72,7 @@ class Information:
     def clients(self) -> bytes:
         info = [
             b"# Clients",
-            b"blocked_clients:" + to_bytes(self.server_context.notification_manager.list_notifications.values_count),
+            b"blocked_clients:" + to_bytes(self.server_context.num_of_blocked_clients()),
         ]
         return b"\r\n".join(info)
 

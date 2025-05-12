@@ -328,9 +328,9 @@ class Resp3Dumper(RespDumper):
     def dump(self, value: ValueType) -> None:
         if isinstance(value, bool):
             if value:
-                self.dump(1)
+                self.writer.write(b"#t\r\n")
             else:
-                self.dump(0)
+                self.writer.write(b"#f\r\n")
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):

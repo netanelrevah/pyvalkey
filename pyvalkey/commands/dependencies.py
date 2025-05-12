@@ -1,8 +1,11 @@
 from dataclasses import field
+from enum import Enum, auto
 from typing import Any
 
-from pyvalkey.commands.creators import DependencyMetadata
+
+class DependencyMetadata(Enum):
+    DEPENDENCY = auto()
 
 
-def server_command_dependency() -> Any:  # noqa: ANN401
+def dependency() -> Any:  # noqa: ANN401
     return field(metadata={DependencyMetadata.DEPENDENCY: True})

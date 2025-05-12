@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Self, dataclass_transform
 
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import ValueType
 
@@ -37,4 +37,4 @@ class Command:
 
 @dataclass
 class DatabaseCommand(Command):
-    database: Database = server_command_dependency()
+    database: Database = dependency()

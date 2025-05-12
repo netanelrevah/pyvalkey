@@ -5,13 +5,13 @@ from os import urandom
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import ParameterMetadata, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import CommandsRouter, command
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
 from pyvalkey.database_objects.configurations import ConfigurationError, Configurations
 from pyvalkey.database_objects.databases import BlockingManager, Database
-from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
@@ -42,7 +42,7 @@ class AclCategory(Command):
 
 @command(b"deluser", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclDeleteUser(Command):
-    acl: ACL = server_command_dependency()
+    acl: ACL = dependency()
 
     user_names: list[bytes] = positional_parameter()
 
@@ -57,7 +57,7 @@ class AclDeleteUser(Command):
 
 @command(b"getuser", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclGetUser(Command):
-    acl: ACL = server_command_dependency()
+    acl: ACL = dependency()
     user_name: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -68,7 +68,7 @@ class AclGetUser(Command):
 
 @command(b"dryrun", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclDryRun(Command):
-    acl: ACL = server_command_dependency()
+    acl: ACL = dependency()
 
     username: bytes = positional_parameter()
     command: bytes = positional_parameter()
@@ -80,7 +80,7 @@ class AclDryRun(Command):
 
 @command(b"setuser", {b"admin", b"slow", b"dangerous"}, b"acl")
 class AclSetUser(Command):
-    acl: ACL = server_command_dependency()
+    acl: ACL = dependency()
     user_name: bytes = positional_parameter()
     rules: list[bytes] = positional_parameter()
 
@@ -208,7 +208,7 @@ class CommandGetKeys(Command):
 
 @command(b"get", {b"admin", b"slow", b"dangerous"}, b"config")
 class ConfigGet(Command):
-    configurations: Configurations = server_command_dependency()
+    configurations: Configurations = dependency()
     parameters: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -218,7 +218,7 @@ class ConfigGet(Command):
 
 @command(b"set", {b"admin", b"slow", b"dangerous"}, b"config")
 class ConfigSet(Command):
-    configurations: Configurations = server_command_dependency()
+    configurations: Configurations = dependency()
     parameters_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -235,8 +235,8 @@ class ConfigSet(Command):
 
 @command(b"resetstat", {b"admin", b"slow", b"dangerous"}, b"config")
 class ConfigResetStatistics(Command):
-    configurations: Configurations = server_command_dependency()
-    information: Information = server_command_dependency()
+    configurations: Configurations = dependency()
+    information: Information = dependency()
 
     def execute(self) -> ValueType:
         self.information.commands_statistics = {}
@@ -262,11 +262,13 @@ class DatabaseSize(DatabaseCommand):
 @command(b"log", acl_categories={b"fast", b"connection"}, parent_command=b"debug")
 class Debug(Command):
     message: bytes = keyword_parameter()
-    server_context: ServerContext = server_command_dependency()
+    server_context: ServerContext = dependency()
 
     def execute(self) -> ValueType:
-        if self.server_context.notification_manager.list_notifications.values_count > 0:
+        if self.server_context.num_of_blocked_clients() > 0:
             raise Exception()
+
+        print((b"\n===========\n" + self.message.strip() + b"\n===========\n").decode())
 
         return RESP_OK
 
@@ -278,7 +280,7 @@ def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
 
 @command(b"flushall", {b"keyspace", b"write", b"slow", b"dangerous"})
 class FlushAllDatabases(Command):
-    server_context: ServerContext = server_command_dependency()
+    server_context: ServerContext = dependency()
 
     def execute(self) -> ValueType:
         touch_all_databases_watched_keys(self.server_context.databases)
@@ -288,7 +290,7 @@ class FlushAllDatabases(Command):
 
 @command(b"flushdb", {b"keyspace", b"write", b"slow", b"dangerous"})
 class FlushDatabase(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
         if self.client_context.current_database in self.client_context.server_context.databases:
@@ -300,7 +302,7 @@ class FlushDatabase(Command):
 
 @command(b"info", {b"slow", b"dangerous"})
 class GetInformation(Command):
-    information: Information = server_command_dependency()
+    information: Information = dependency()
 
     section: list[bytes] = positional_parameter()
 
@@ -318,8 +320,8 @@ class MemoryUsage(Command):
 
 @command(b"swapdb", {b"keyspace", b"write", b"slow", b"dangerous"})
 class SwapDb(Command):
-    server_context: ServerContext = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    server_context: ServerContext = dependency()
+    blocking_manager: BlockingManager = dependency()
 
     index1: int = positional_parameter(parse_error=b"ERR invalid first DB index")
     index2: int = positional_parameter(parse_error=b"ERR invalid second DB index")
@@ -352,21 +354,8 @@ class SwapDb(Command):
         return RESP_OK
 
     async def after(self, in_multi: bool = False) -> None:
-        database1 = self.server_context.databases[self.index1]
-        for key in database1.keys():
-            try:
-                if database1.list_database.has_key(key):
-                    await self.blocking_manager.notify_list(key, in_multi=in_multi)
-            except ServerWrongTypeError:
-                pass
-
-        database2 = self.server_context.databases[self.index2]
-        for key in database2.keys():
-            try:
-                if database2.list_database.has_key(key):
-                    await self.blocking_manager.notify_list(key, in_multi=in_multi)
-            except ServerWrongTypeError:
-                pass
+        await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index1], in_multi=in_multi)
+        await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index2], in_multi=in_multi)
 
 
 @command(b"sync", {b"keyspace", b"write", b"slow", b"dangerous"})

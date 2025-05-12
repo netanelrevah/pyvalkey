@@ -4,12 +4,12 @@ from enum import Enum
 from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
-from pyvalkey.database_objects.databases import BlockingManager, Database
+from pyvalkey.database_objects.databases import Database, ListBlockingManager
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, ArrayNone, ValueType
@@ -22,10 +22,10 @@ class DirectionMode(Enum):
 
 @command(b"blpop", {b"write", b"list", b"fast"})
 class ListBlockingLeftPop(Command):
-    client_context: ClientContext = server_command_dependency()
-    database: Database = server_command_dependency()
-    information: Information = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    client_context: ClientContext = dependency()
+    database: Database = dependency()
+    information: Information = dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     keys: list[bytes] = positional_parameter()
     timeout: float = positional_parameter(parse_error=b"ERR timeout is out of range")
@@ -49,9 +49,9 @@ class ListBlockingLeftPop(Command):
 
 @command(b"brpop", {b"write", b"list", b"fast"})
 class ListBlockingRightPop(Command):
-    client_context: ClientContext = server_command_dependency()
-    database: Database = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    client_context: ClientContext = dependency()
+    database: Database = dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     keys: list[bytes] = positional_parameter()
     timeout: float = positional_parameter(parse_error=b"ERR timeout is out of range")
@@ -79,9 +79,9 @@ class Direction(Enum):
 
 @command(b"blmpop", {b"write", b"list", b"fast"})
 class ListBlockingMultiplePop(Command):
-    client_context: ClientContext = server_command_dependency()
-    database: Database = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    client_context: ClientContext = dependency()
+    database: Database = dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     timeout: float = positional_parameter(parse_error=b"ERR timeout is out of range")
     num_keys: int = positional_parameter()
@@ -110,8 +110,8 @@ class ListBlockingMultiplePop(Command):
 
 @command(b"lmpop", {b"write", b"list", b"fast"})
 class ListMultiplePop(Command):
-    client_context: ClientContext = server_command_dependency()
-    database: Database = server_command_dependency()
+    client_context: ClientContext = dependency()
+    database: Database = dependency()
 
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
     keys: list[bytes] = positional_parameter(length_field_name="numkeys")
@@ -135,9 +135,9 @@ class ListMultiplePop(Command):
 
 @command(b"brpoplpush", {b"write", b"list", b"fast"})
 class ListBlockingRightPopLeftPush(Command):
-    client_context: ClientContext = server_command_dependency()
-    database: Database = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    client_context: ClientContext = dependency()
+    database: Database = dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -162,15 +162,15 @@ class ListBlockingRightPopLeftPush(Command):
 
     async def after(self, in_multi: bool = False) -> None:
         if self._key is not None:
-            await self.blocking_manager.notify_list(self.destination, in_multi=in_multi)
+            await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
 @command(b"blmove", {b"write", b"list", b"fast"})
 class ListBlockingMove(Command):
-    client_context: ClientContext = server_command_dependency()
-    database: Database = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
-    information: Information = server_command_dependency()
+    client_context: ClientContext = dependency()
+    database: Database = dependency()
+    blocking_manager: ListBlockingManager = dependency()
+    information: Information = dependency()
 
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -201,13 +201,13 @@ class ListBlockingMove(Command):
 
     async def after(self, in_multi: bool = False) -> None:
         if self._key is not None:
-            await self.blocking_manager.notify_list(self.destination, in_multi=in_multi)
+            await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
 @command(b"lmove", {b"write", b"list", b"fast"})
 class ListMove(Command):
-    database: Database = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    database: Database = dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -230,7 +230,7 @@ class ListMove(Command):
         return value
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_list(self.destination, in_multi=in_multi)
+        await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
 @command(b"lindex", {b"read", b"list", b"slow"})
@@ -392,8 +392,8 @@ class ListPosition(DatabaseCommand):
 
 @command(b"lpush", {b"list", b"fast"}, flags={b"write", b"denyoom"})
 class ListPush(DatabaseCommand):
-    information: Information = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    information: Information = dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"W")
     values: list[bytes] = positional_parameter()
@@ -407,12 +407,12 @@ class ListPush(DatabaseCommand):
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_list(self.key, in_multi=in_multi)
+        await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
 @command(b"lpushx", {b"list", b"fast"}, flags={b"write", b"denyoom"})
 class ListPushIfExists(DatabaseCommand):
-    blocking_manager: BlockingManager = server_command_dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"W")
     values: list[bytes] = positional_parameter()
@@ -428,7 +428,7 @@ class ListPushIfExists(DatabaseCommand):
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_list(self.key, in_multi=in_multi)
+        await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
 @command(b"rpop", {b"write", b"list", b"fast"})
@@ -451,7 +451,7 @@ class ListRightPop(DatabaseCommand):
 
 @command(b"rpoplpush", {b"write", b"list", b"fast"})
 class ListRightPopLeftPush(DatabaseCommand):
-    blocking_manager: BlockingManager = server_command_dependency()
+    blocking_manager: ListBlockingManager = dependency()
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
 
@@ -466,7 +466,7 @@ class ListRightPopLeftPush(DatabaseCommand):
         return value
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_list(self.destination, in_multi=in_multi)
+        await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
 @command(b"lrem", {b"write", b"list", b"slow"})
@@ -499,7 +499,7 @@ class ListRemove(DatabaseCommand):
 
 @command(b"rpush", {b"write", b"list", b"fast"})
 class ListPushAtTail(DatabaseCommand):
-    blocking_manager: BlockingManager = server_command_dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter()
     values: list[bytes] = positional_parameter()
@@ -512,12 +512,12 @@ class ListPushAtTail(DatabaseCommand):
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_list(self.key, in_multi=in_multi)
+        await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
 @command(b"rpushx", {b"write", b"list", b"fast"})
 class ListPushAtTailIfExists(DatabaseCommand):
-    blocking_manager: BlockingManager = server_command_dependency()
+    blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter()
     values: list[bytes] = positional_parameter()
@@ -533,4 +533,4 @@ class ListPushAtTailIfExists(DatabaseCommand):
         return len(list_value)
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_list(self.key, in_multi=in_multi)
+        await self.blocking_manager.notify(self.key, in_multi=in_multi)

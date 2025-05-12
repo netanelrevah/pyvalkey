@@ -5,7 +5,7 @@ from hashlib import sha256
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
     keyword_parameter,
     positional_parameter,
@@ -20,9 +20,9 @@ from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
 @command(b"auth", {b"fast", b"connection"})
 class Authorize(Command):
-    acl: ACL = server_command_dependency()
-    configurations: Configurations = server_command_dependency()
-    client_context: ClientContext = server_command_dependency()
+    acl: ACL = dependency()
+    configurations: Configurations = dependency()
+    client_context: ClientContext = dependency()
 
     username: bytes | None = positional_parameter(default=None)
     password: bytes = positional_parameter()
@@ -51,7 +51,7 @@ class Authorize(Command):
 
 @command(b"list", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientList(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
     client_type: bytes | None = keyword_parameter(flag=b"TYPE", default=None)
 
     def execute(self) -> ValueType:
@@ -62,7 +62,7 @@ class ClientList(Command):
 
 @command(b"id", {b"slow", b"connection"}, b"client")
 class ClientId(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
         return self.client_context.current_client.client_id
@@ -70,7 +70,7 @@ class ClientId(Command):
 
 @command(b"setname", {b"slow", b"connection"}, b"client")
 class ClientSetName(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
     name: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -80,7 +80,7 @@ class ClientSetName(Command):
 
 @command(b"getname", {b"slow", b"connection"}, b"client")
 class ClientGetName(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
         return self.client_context.current_client.name or None
@@ -88,7 +88,7 @@ class ClientGetName(Command):
 
 @command(b"kill", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientKill(Command):
-    server_context: ServerContext = server_command_dependency()
+    server_context: ServerContext = dependency()
     old_format_address: bytes | None = positional_parameter(default=None)
     client_id: int = keyword_parameter(flag=b"ID", default=None)
     address: bytes = keyword_parameter(flag=b"ADDR", default=None)
@@ -110,7 +110,7 @@ class ClientKill(Command):
 
 @command(b"pause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientPause(Command):
-    server_context: ServerContext = server_command_dependency()
+    server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -121,7 +121,7 @@ class ClientPause(Command):
 
 @command(b"unpause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientUnpause(Command):
-    server_context: ServerContext = server_command_dependency()
+    server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -152,7 +152,7 @@ class UnblcokOption(Enum):
 
 @command(b"unblock", {b"slow", b"connection"}, b"client")
 class ClientUnblock(Command):
-    server_context: ServerContext = server_command_dependency()
+    server_context: ServerContext = dependency()
 
     client_id: int = positional_parameter()
     unblock_option: UnblcokOption = positional_parameter(default=UnblcokOption.timeout)
@@ -179,7 +179,7 @@ class ClientUnblock(Command):
 
 @command(b"setinfo", {b"slow", b"connection"}, b"client")
 class ClientSetInformation(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
     library_name: bytes | None = keyword_parameter(flag=b"LIB-NAME", default=None)
     library_version: bytes | None = keyword_parameter(flag=b"LIB-VER", default=None)
 
@@ -201,7 +201,7 @@ class Echo(Command):
 
 @command(b"hello", {b"connection", b"fast"})
 class Hello(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
     protocol_version: RespProtocolVersion | None = positional_parameter(
         default=None, parse_error=b"NOPROTO unsupported protocol version"
     )
@@ -238,7 +238,7 @@ class Ping(Command):
 
 @command(b"select", {b"connection", b"fast"})
 class SelectDatabase(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
     index: int = positional_parameter()
 
     def execute(self) -> ValueType:

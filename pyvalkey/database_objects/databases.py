@@ -560,12 +560,12 @@ class IntDatabase(DatabaseBase[int]):
     def convert_value_if_needed(self, value: int | bytes) -> int:
         if isinstance(value, int):
             return value
+        if not is_integer(value):
+            raise ServerError(b"ERR value is not an integer or out of range")
         return int(value)
 
     def has_key(self, key: bytes) -> bool:
-        return self.has_typed_key(
-            key, lambda value: isinstance(value, int) or (isinstance(value, bytes) and is_integer(value))
-        )
+        return self.has_typed_key(key, lambda value: isinstance(value, int) or (isinstance(value, bytes)))
 
 
 @dataclass
@@ -627,10 +627,12 @@ class UnblockMessage(Enum):
 
 
 @dataclass
-class BlockingManager:
-    list_notifications: SetMapping[bytes, Queue] = field(default_factory=SetMapping)
-
+class BlockingManagerBase:
+    notifications: SetMapping[bytes, Queue] = field(default_factory=SetMapping)
     lazy_notification_keys: list[bytes] = field(default_factory=list)
+
+    def has_key(self, database: Database, key: bytes) -> bool:
+        raise NotImplementedError()
 
     async def wait_for_lists(
         self,
@@ -643,7 +645,7 @@ class BlockingManager:
             raise ServerError(b"ERR timeout is negative")
 
         for key in keys:
-            if not client_context.database.list_database.has_key(key):
+            if not self.has_key(client_context.database, key):
                 continue
             return key
 
@@ -651,7 +653,7 @@ class BlockingManager:
             return None
 
         client_context.current_client.blocking_queue = Queue()
-        self.list_notifications.add_multiple(keys, client_context.current_client.blocking_queue)
+        self.notifications.add_multiple(keys, client_context.current_client.blocking_queue)
 
         try:
             while True:
@@ -664,33 +666,70 @@ class BlockingManager:
                     print(f"{client_context.current_client.client_id} got unblock timeout from queue")
                     raise TimeoutError()
                 print(f"{client_context.current_client.client_id} got '{key.decode()}' from queue")
-                if client_context.database.list_database.has_key(key):
+                if self.has_key(client_context.database, key):
                     return key
                 print(f"{client_context.current_client.client_id} key '{key.decode()}' not in database, continue...")
         except TimeoutError:
             return None
         finally:
-            self.list_notifications.remove_all(client_context.current_client.blocking_queue)
+            self.notifications.remove_all(client_context.current_client.blocking_queue)
             client_context.current_client.blocking_queue = None
 
-    async def notify_list(self, key: bytes, in_multi: bool = False) -> None:
+    async def notify(self, key: bytes, in_multi: bool = False) -> None:
         if in_multi:
             print(f"adding '{key.decode()}' to lazy notification keys")
             self.lazy_notification_keys.append(key)
             return
-        for queue in self.list_notifications.iter_values(key):
+        for queue in self.notifications.iter_values(key):
             print(f"putting '{key.decode()}' into queue")
             await queue.put(key)
 
-    async def notify_list_lazy(self, database: Database) -> None:
+    async def notify_safely(self, database: Database, key: bytes, in_multi: bool = False) -> None:
+        try:
+            if self.has_key(database, key):
+                await self.notify(key, in_multi=in_multi)
+        except ServerWrongTypeError:
+            pass
+
+    async def notify_lazy(self, database: Database) -> None:
         while self.lazy_notification_keys:
             key = self.lazy_notification_keys.pop(0)
             if key not in database.content.data or not isinstance(database.content.data[key].value, list):
                 print(f"lazy key '{key.decode()}' not found, continue...")
                 continue
-            for queue in self.list_notifications.iter_values(key):
+            for queue in self.notifications.iter_values(key):
                 print(f"putting '{key.decode()}' into queue")
                 await queue.put(key)
+
+
+class ListBlockingManager(BlockingManagerBase):
+    def has_key(self, database: Database, key: bytes) -> bool:
+        return database.list_database.has_key(key)
+
+
+class SortedSetBlockingManager(BlockingManagerBase):
+    def has_key(self, database: Database, key: bytes) -> bool:
+        return database.sorted_set_database.has_key(key)
+
+
+@dataclass
+class BlockingManager:
+    list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)
+    sorted_set_blocking_manager: SortedSetBlockingManager = field(default_factory=SortedSetBlockingManager)
+
+    async def notify_safely(
+        self,
+        database: Database,
+        key: bytes,
+        in_multi: bool = False,
+    ) -> None:
+        await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
+        await self.sorted_set_blocking_manager.notify_safely(database, key, in_multi=in_multi)
+
+    async def notify_safely_all(self, database: Database, in_multi: bool = False) -> None:
+        for key in database.keys():
+            await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
+            await self.sorted_set_blocking_manager.notify_safely(database, key, in_multi=in_multi)
 
 
 @dataclass(unsafe_hash=True)

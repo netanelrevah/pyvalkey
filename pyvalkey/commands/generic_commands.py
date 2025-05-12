@@ -6,18 +6,23 @@ from typing import Any
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import BlockingManager, Database, KeyValue, ValkeySortedSet
+from pyvalkey.database_objects.databases import (
+    BlockingManager,
+    Database,
+    KeyValue,
+    ValkeySortedSet,
+)
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
 
 
 @command(b"copy", {b"keyspace", b"write", b"slow"})
 class Copy(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     source: bytes = positional_parameter(key_mode=b"R")
     destination: bytes = positional_parameter(key_mode=b"W")
@@ -159,8 +164,8 @@ class Migrate(DatabaseCommand):
 
 @command(b"move", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Move(Command):
-    database: Database = server_command_dependency()
-    server_context: ServerContext = server_command_dependency()
+    database: Database = dependency()
+    server_context: ServerContext = dependency()
 
     key: bytes = positional_parameter()
     db: int = positional_parameter()
@@ -182,7 +187,7 @@ class Move(Command):
 
 @command(b"encoding", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
 class ObjectEncoding(DatabaseCommand):
-    configuration: Configurations = server_command_dependency()
+    configuration: Configurations = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
 
@@ -326,7 +331,7 @@ class TimeToLiveMilliseconds(DatabaseCommand):
 
 @command(b"randomkey", {b"keyspace", b"write", b"slow", b"dangerous"})
 class RandomKey(Command):
-    database: Database = server_command_dependency()
+    database: Database = dependency()
 
     def execute(self) -> ValueType:
         if self.database.empty():
@@ -353,8 +358,9 @@ class RandomKey(Command):
 
 
 @command(b"rename", {b"keyspace", b"write", b"slow"})
-class Rename(DatabaseCommand):
-    blocking_manager: BlockingManager = server_command_dependency()
+class Rename(Command):
+    database: Database = dependency()
+    blocking_manager: BlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
     new_key: bytes = positional_parameter(key_mode=b"W")
@@ -368,11 +374,7 @@ class Rename(DatabaseCommand):
         return RESP_OK
 
     async def after(self, in_multi: bool = False) -> None:
-        try:
-            if self.database.list_database.has_key(self.new_key):
-                await self.blocking_manager.notify_list(self.new_key, in_multi=in_multi)
-        except ServerWrongTypeError:
-            pass
+        await self.blocking_manager.notify_safely(self.database, self.new_key, in_multi=in_multi)
 
 
 @command(b"renamenx", {b"keyspace", b"write", b"slow"})
@@ -447,8 +449,8 @@ class Scan(DatabaseCommand):
 
 @command(b"sort", {b"read", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class Sort(Command):
-    database: Database = server_command_dependency()
-    blocking_manager: BlockingManager = server_command_dependency()
+    database: Database = dependency()
+    blocking_manager: BlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
     by: bytes | None = keyword_parameter(token=b"BY", default=None)
@@ -482,16 +484,14 @@ class Sort(Command):
         return len(result_values)
 
     async def after(self, in_multi: bool = False) -> None:
-        try:
-            if self.destination and self.database.list_database.has_key(self.destination):
-                await self.blocking_manager.notify_list(self.destination, in_multi=in_multi)
-        except ServerWrongTypeError:
-            pass
+        if self.destination is None:
+            return
+        await self.blocking_manager.notify_safely(self.database, self.destination, in_multi=in_multi)
 
 
 @command(b"sort_ro", {b"write", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class SortReadOnly(Command):
-    database: Database = server_command_dependency()
+    database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
     by: bytes | None = keyword_parameter(token=b"BY", default=None)
@@ -623,11 +623,18 @@ class Unlink(DatabaseCommand):
 
 @command(b"wait", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Wait(DatabaseCommand):
+    numreplicas: int = positional_parameter()
+    timeout: int = positional_parameter()
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        return 0
 
 
 @command(b"waitaof", {b"keyspace", b"write", b"slow", b"dangerous"})
 class WaitAOF(DatabaseCommand):
+    numlocal: int = positional_parameter()
+    numreplicas: int = positional_parameter()
+    timeout: int = positional_parameter()
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        return [0, 0]
