@@ -117,7 +117,7 @@ class Expire(DatabaseCommand):
     seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.set_expiration(self.key, self.seconds * 1000)
+        return self.database.set_expiration_in(self.key, self.seconds * 1000)
 
 
 @command(b"expireat", {b"keyspace", b"write", b"fast"})
@@ -293,7 +293,7 @@ class ExpireMilliseconds(DatabaseCommand):
     seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.set_expiration(self.key, self.seconds)
+        return self.database.set_expiration_in(self.key, self.seconds)
 
 
 @command(b"pexpireat", {b"keyspace", b"write", b"fast"})

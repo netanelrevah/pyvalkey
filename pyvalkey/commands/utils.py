@@ -3,24 +3,23 @@ from math import inf
 
 from pyvalkey.database_objects.errors import ServerError
 
-NUMERIC_REGEX = re.compile(r"^-?\d+(\.\d*)?$")
-INTEGER_REGEX = re.compile(r"^-?\d+$")
+NUMERIC_REGEX = re.compile(b"^-?\d+(\.\d*)?$")
+INTEGER_REGEX = re.compile(b"^-?\d+$")
 FLOATING_POINT_REGEX = NUMERIC_REGEX
 
 
-def is_numeric(value: bytes | str) -> bool:
-    return NUMERIC_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+def is_numeric(value: bytes) -> bool:
+    return NUMERIC_REGEX.match(value) is not None
 
 
-def is_integer(value: bytes | str) -> bool:
-    return INTEGER_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+def is_integer(value: bytes) -> bool:
+    return INTEGER_REGEX.match(value) is not None
 
 
-def is_floating_point(value: bytes | str) -> bool:
-    str_value = value if isinstance(value, str) else value.decode()
-    if str_value in ["+inf", "-inf", "inf"]:
+def is_floating_point(value: bytes) -> bool:
+    if value in [b"+inf", b"-inf", b"inf"]:
         return True
-    return FLOATING_POINT_REGEX.match(str_value) is not None
+    return FLOATING_POINT_REGEX.match(value) is not None
 
 
 def parse_range_parameters(start: int, stop: int, is_reversed: bool = False) -> slice:

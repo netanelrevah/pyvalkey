@@ -211,7 +211,7 @@ class Hello(Command):
             self.client_context.protocol = self.protocol_version
 
         response = {
-            b"server": b"redis",
+            b"server": b"valkey",
             b"version": self.client_context.server_context.information.server_version,
             b"proto": self.client_context.protocol,
             b"id": self.client_context.current_client.client_id,

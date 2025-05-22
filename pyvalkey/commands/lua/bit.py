@@ -9,12 +9,17 @@ if TYPE_CHECKING:
     from pyvalkey.commands.lua.helpers import LuaRuntimeWrapper
 
 
+HIGHEST_TO_HEX_LENGTH = 8
+
+
 def to_bit(value: Any) -> int:  # noqa: ANN401
     return ctypes.c_int32(value).value
 
 
 def to_hex(value: Any, length: int) -> str:  # noqa: ANN401
-    hex_value = hex(to_bit(value))[2:]
+    if length > HIGHEST_TO_HEX_LENGTH or length < 0:
+        length = HIGHEST_TO_HEX_LENGTH
+    hex_value = hex(to_bit(value))[2:].upper()
     return hex_value.zfill(length)[:length]
 
 

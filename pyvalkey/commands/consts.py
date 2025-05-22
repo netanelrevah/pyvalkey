@@ -1,5 +1,7 @@
 import sys
 
+UINT32_MAX = 0xFFFFFFFF  # 4294967295
+
 LONG_MIN = -sys.maxsize - 1
 LONG_MAX = sys.maxsize
 LONG_LONG_MIN = -(1 << 63)  # -9223372036854775808

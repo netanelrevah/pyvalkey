@@ -1,10 +1,13 @@
 import time
+from enum import Enum
+from math import isinf, isnan
 
+from pyvalkey.commands.consts import LONG_LONG_MIN, UINT32_MAX
 from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
-from pyvalkey.database_objects.databases import Database, KeyValue
+from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -38,12 +41,10 @@ class Append(DatabaseCommand):
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        key_value = self.database.bytes_database.get_or_none(self.key)
-        if key_value is None:
-            key_value = KeyValue(self.key, b"")
-        key_value.value += self.value
-        self.database.set_key_value(key_value)
-        return len(key_value.value) - len(self.value)
+        value = self.database.bytes_database.get_value_or_empty(self.key)
+        new_value = value + self.value
+        self.database.bytes_database.upsert(self.key, new_value)
+        return len(value)
 
 
 @command(b"decr", {b"write", b"string", b"fast"})
@@ -60,6 +61,9 @@ class DecrementBy(DatabaseCommand):
     decrement: int = positional_parameter()
 
     def execute(self) -> ValueType:
+        if self.decrement == LONG_LONG_MIN:
+            raise ServerError(b"ERR decrement would overflow")
+
         return increment_by(self.database, self.key, self.decrement * -1)
 
 
@@ -92,6 +96,8 @@ class GetExpire(DatabaseCommand):
     persist: bool = keyword_parameter(flag=b"PERSIST")
 
     def execute(self) -> ValueType:
+        print(self.ex, self.px, self.exat, self.pxat, self.persist)
+
         key_value = self.database.string_database.get_or_none(self.key)
         if key_value is None:
             return None
@@ -107,7 +113,7 @@ class GetExpire(DatabaseCommand):
             value = getattr(self, name)
 
             if name in ["ex", "px"]:
-                self.database.set_expiration(self.key, value * (1000 if name == "ex" else 1))
+                self.database.set_expiration_in(self.key, value * (1000 if name == "ex" else 1))
             if name in ["exat", "pxat"]:
                 self.database.set_expiration_at(self.key, value * (1000 if name == "exat" else 1))
             if name == "persist":
@@ -123,11 +129,8 @@ class StringGetRange(DatabaseCommand):
     end: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        key_value = self.database.bytes_database.get_or_none(self.key)
-        if key_value is None:
-            return b""
-
-        return key_value.value[parse_range_parameters(self.start, self.end)]
+        value = self.database.bytes_database.get_value_or_empty(self.key)
+        return value[parse_range_parameters(self.start, self.end)]
 
 
 @command(b"getset", {b"write", b"string", b"slow"})
@@ -137,7 +140,7 @@ class GetSet(DatabaseCommand):
 
     def execute(self) -> ValueType:
         old_value = self.database.string_database.get_value_or_create(self.key)
-        self.database.string_database.set_value(self.key, self.value)
+        self.database.string_database.upsert(self.key, self.value)
         return old_value
 
 
@@ -164,7 +167,112 @@ class IncrementByFloat(DatabaseCommand):
     increment: float = positional_parameter()
 
     def execute(self) -> ValueType:
+        if isnan(self.increment) or isinf(self.increment):
+            raise ServerError(b"ERR increment would produce NaN or Infinity")
         return increment_by(self.database, self.key, self.increment)
+
+
+@command(b"lcs", {b"write", b"string", b"fast"})
+class LongestCommonSubsequence(DatabaseCommand):
+    key1: bytes = positional_parameter()
+    key2: bytes = positional_parameter()
+    length: bool = keyword_parameter(flag=b"LEN", default=False)
+    index: bool = keyword_parameter(flag=b"IDX", default=False)
+    min_match_length: int = keyword_parameter(token=b"MINMATCHLEN", default=0)
+    with_match_length: bool = keyword_parameter(flag=b"WITHMATCHLEN", default=False)
+
+    def compute_matrix(self, s1: bytes, s2: bytes) -> list[list[int]]:
+        matrix = [[0 for _ in range(len(s2) + 1)] for _ in range(len(s1) + 1)]
+
+        for i in range(len(s1) + 1):
+            for j in range(len(s2) + 1):
+                if i == 0 or j == 0:
+                    matrix[i][j] = 0
+                elif s1[i - 1] == s2[j - 1]:
+                    matrix[i][j] = matrix[i - 1][j - 1] + 1
+                else:
+                    matrix[i][j] = max(matrix[i - 1][j], matrix[i][j - 1])
+
+        return matrix
+
+    def get_lcs_length(self, matrix: list[list[int]]) -> int:
+        return matrix[-2][-2] + 1
+
+    def get_lcs_matches(self, matrix: list[list[int]], s1: bytes, s2: bytes) -> tuple[list, bytes]:
+        match_bytes = b""
+        matches = []
+
+        s1_range_start = len(s1)
+        s1_range_end = 0
+        s2_range_start = 0
+        s2_range_end = 0
+
+        i = len(s1)
+        j = len(s2)
+        while i > 0 and j > 0:
+            emit_range = False
+            if s1[i - 1] == s2[j - 1]:
+                match_bytes = s1[i - 1 : i] + match_bytes
+
+                if s1_range_start == len(s1):
+                    s1_range_start = i - 1
+                    s1_range_end = i - 1
+                    s2_range_start = j - 1
+                    s2_range_end = j - 1
+                elif s1_range_start == i and s2_range_start == j:
+                    s1_range_start -= 1
+                    s2_range_start -= 1
+                else:
+                    emit_range = True
+
+                if s1_range_start == 0 or s2_range_start == 0:
+                    emit_range = True
+
+                i -= 1
+                j -= 1
+            else:
+                if matrix[i - 1][j] > matrix[i][j - 1]:
+                    i -= 1
+                else:
+                    j -= 1
+                if s1_range_start != len(s1):
+                    emit_range = True
+
+            if emit_range:
+                match_length = s1_range_end - s1_range_start + 1
+                if self.min_match_length == 0 or match_length >= self.min_match_length:
+                    match: list = [
+                        [s1_range_start, s1_range_end],
+                        [s2_range_start, s2_range_end],
+                    ]
+                    if self.with_match_length:
+                        match += [match_length]
+                    matches.append(match)
+                s1_range_start = len(s1)
+        return matches, match_bytes
+
+    def execute(self) -> ValueType:
+        s1 = self.database.bytes_database.get_value_or_empty(self.key1)
+        s2 = self.database.bytes_database.get_value_or_empty(self.key2)
+
+        if self.length and self.index:
+            raise ServerError(b"ERR If you want both the length and indexes, please just use IDX.")
+
+        if len(s1) >= UINT32_MAX - 1 or len(s2) >= UINT32_MAX - 1:
+            raise ServerError(b"ERR String too long for LCS")
+
+        matrix = self.compute_matrix(s1, s2)
+        lcs_length = self.get_lcs_length(matrix)
+
+        if self.length:
+            return lcs_length
+
+        matches, match_bytes = self.get_lcs_matches(matrix, s1, s2)
+
+        if not self.index:
+            return match_bytes
+
+        return {b"matches": matches, b"len": lcs_length}
 
 
 @command(b"mget", {b"read", b"string", b"fast"})
@@ -210,14 +318,24 @@ class SetIfNotExistsMultiple(DatabaseCommand):
         return True
 
 
+class ExistenceMode(Enum):
+    OnlyIfNotExist = b"NX"
+    OnlyIfExist = b"XX"
+
+
 @command(b"set", {b"write", b"string", b"slow"})
 class Set(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
+    existence_mode: ExistenceMode | None = keyword_parameter(
+        flag={b"NX": ExistenceMode.OnlyIfNotExist, b"XX": ExistenceMode.OnlyIfExist}, default=None
+    )
+    condition: bytes | None = keyword_parameter(flag=b"IFEQ", default=None)
     ex: int | None = keyword_parameter(flag=b"EX", default=None)
     px: int | None = keyword_parameter(flag=b"PX", default=None)
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
+    get: bool = keyword_parameter(flag=b"GET", default=False)
 
     def get_one_and_only_token(self) -> str | None:
         fields_names = ["ex", "px", "exat", "pxat"]
@@ -242,9 +360,27 @@ class Set(DatabaseCommand):
             if token_name in ["exat", "pxat"]:
                 expiration = token_value * (1000 if token_name == "exat" else 1)
 
+        if self.condition is not None and self.existence_mode is not None:
+            raise ServerError(b"ERR syntax error")
+
+        database: DatabaseBase = self.database
+        if self.get or self.condition is not None:
+            database = self.database.string_database
+
+        previous_value = database.get_value_or_none(self.key)
+        if previous_value is None:
+            if self.existence_mode == ExistenceMode.OnlyIfExist:
+                return None
+        elif self.existence_mode == ExistenceMode.OnlyIfNotExist:
+            return previous_value if self.get else None
+
+        if self.condition is not None and previous_value != self.condition:
+            return None
+
         self.database.pop(self.key, None)
-        self.database.set_key_value(KeyValue.of_string(self.key, self.value, expiration))
-        return RESP_OK
+        self.database.string_database.set_key_value(KeyValue.of_string(self.key, self.value, expiration=expiration))
+
+        return RESP_OK if not self.get else previous_value
 
 
 @command(b"setex", {b"write", b"string", b"slow"})
@@ -255,7 +391,7 @@ class SetExpire(DatabaseCommand):
 
     def execute(self) -> ValueType:
         self.database.string_database.upsert(self.key, self.value)
-        self.database.set_expiration(self.key, self.seconds)
+        self.database.set_expiration_in(self.key, self.seconds)
         return RESP_OK
 
 
@@ -305,3 +441,14 @@ class StringLength(DatabaseCommand):
 
     def execute(self) -> ValueType:
         return len(self.database.bytes_database.get_value_or_empty(self.key))
+
+
+@command(b"substr", {b"stream", b"write", b"fast"})
+class StringSubstring(DatabaseCommand):
+    key: bytes = positional_parameter()
+    start: int = positional_parameter()
+    end: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        value = self.database.bytes_database.get_value_or_empty(self.key)
+        return value[parse_range_parameters(self.start, self.end)]

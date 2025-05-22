@@ -3,6 +3,8 @@ from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.scripting import ScriptingEngine
+from pyvalkey.commands.utils import is_integer
+from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, ValueType
 
 
@@ -15,6 +17,9 @@ class Eval(Command):
     keys_and_args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
+        if self.num_keys < 0:
+            raise ServerError(b"ERR Number of keys can't be negative")
+
         return self.scripting_engine.eval(
             self.script, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :]
         )
@@ -29,9 +34,17 @@ class FunctionCall(Command):
     keys_and_args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.scripting_engine.call_function(
-            self.function, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :]
-        )
+        if self.num_keys < 0:
+            raise ServerError(b"ERR Number of keys can't be negative")
+
+        arguments: list[int | bytes] = []
+        for argument in self.keys_and_args[self.num_keys :]:
+            if is_integer(argument):
+                arguments.append(int(argument))
+            else:
+                arguments.append(argument)
+
+        return self.scripting_engine.call_function(self.function, self.keys_and_args[: self.num_keys], arguments)
 
 
 @command(b"fcall_ro", {b"connection", b"fast"})
@@ -43,6 +56,9 @@ class ReadOnlyFunctionCall(Command):
     keys_and_args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
+        if self.num_keys < 0:
+            raise ServerError(b"ERR Number of keys can't be negative")
+
         return RESP_OK
 
 
@@ -60,8 +76,8 @@ class FunctionLoad(Command):
     function_code: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        self.scripting_engine.load_function(self.function_code)
-        return RESP_OK
+        name = self.scripting_engine.load_function(self.function_code)
+        return name
 
 
 @command(b"kill", {b"connection", b"fast"}, parent_command=b"script")

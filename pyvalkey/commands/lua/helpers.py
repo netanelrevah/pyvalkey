@@ -16,10 +16,14 @@ from pyvalkey.database_objects.errors import (
     ServerWrongNumberOfArgumentsError,
     ServerWrongTypeError,
 )
-from pyvalkey.resp import RESP_OK, RespError, ValueType
+from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
 if TYPE_CHECKING:
+    from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.scripting import ScriptingEngine
+
+
+MAX_CONVERT_DEPTH = 100
 
 
 @dataclass
@@ -28,7 +32,12 @@ class RegisteredFunction:
     flags: list[str]
 
 
-def convert_lua_value_to_valkey_value(lua_value: Any) -> ValueType:  # noqa: ANN401
+def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueType:  # noqa: ANN401
+    print("convert_lua_value_to_valkey_value", depth)
+
+    if depth > MAX_CONVERT_DEPTH:
+        return RespError(b"ERR reached lua stack limit")
+
     if isinstance(lua_value, float):
         return int(lua_value)
     if isinstance(lua_value, bool):
@@ -37,7 +46,7 @@ def convert_lua_value_to_valkey_value(lua_value: Any) -> ValueType:  # noqa: ANN
         return lua_value
     if lua_type(lua_value) == "table":
         if b"ok" in lua_value:  # type: ignore[operator, index]
-            return convert_lua_value_to_valkey_value(lua_value.ok)  # type: ignore[attr-defined]
+            return convert_lua_value_to_valkey_value(lua_value.ok, depth + 1)  # type: ignore[attr-defined]
         elif b"_G" in lua_value:  # type: ignore[operator, index]
             return None
         elif b"err" in lua_value:  # type: ignore[operator, index]
@@ -48,7 +57,7 @@ def convert_lua_value_to_valkey_value(lua_value: Any) -> ValueType:  # noqa: ANN
             for key, value in lua_value.items():
                 if not isinstance(key, int):
                     all_numbers = False
-                values[key] = convert_lua_value_to_valkey_value(value)
+                values[key] = convert_lua_value_to_valkey_value(value, depth + 1)
             if all_numbers:
                 return list(values.values())
             return values
@@ -81,7 +90,13 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
         [i[:300] for i in command],
     )
 
-    routed_command_cls, parameters = scripting_manager._commands_router.route(command)
+    try:
+        routed_command_cls, parameters = scripting_manager._commands_router.route(command)
+    except RouterKeyError:
+        return scripting_manager.lua_runtime.table(
+            err=f"ERR unknown command '{command[0].decode()}', "
+            f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
+        )
 
     client_context = scripting_manager._client_context.__class__(
         scripting_manager._client_context.server_context,
@@ -95,11 +110,8 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
 
     try:
         routed_command = routed_command_cls.create(parameters, client_context)
-    except RouterKeyError:
-        return scripting_manager.lua_runtime.table(
-            err=f"ERR unknown command '{command[0].decode()}', "
-            f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
-        )
+    except ServerWrongNumberOfArgumentsError:
+        raise ServerLuaError(b"ERR Wrong number of args calling command from script script")
 
     if b"no-script" in routed_command.flags:
         raise ServerLuaError(b"ERR This Valkey command is not allowed from script")
@@ -108,14 +120,12 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
 
     try:
         result: ValueType = routed_command.execute()
-    except ServerWrongNumberOfArgumentsError:
-        raise ServerLuaError(b"ERR wrong number of args calling command from script")
     except ServerWrongTypeError:
         raise ServerLuaError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
     except ServerError as e:
         return scripting_manager.lua_runtime.table(err=e.message)
 
-    print("reids.call", scripting_manager._client_context.current_client.client_id, "result", result)
+    print("redis.call", scripting_manager._client_context.current_client.client_id, "result", result, type(result))
 
     if result == RESP_OK:
         return scripting_manager.lua_runtime.table(ok="OK")
@@ -123,22 +133,24 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
         return False
     if isinstance(result, RespError):
         return scripting_manager.lua_runtime.table(err=result)
-    if isinstance(result, int):
-        return str(result).encode()
     if isinstance(result, list):
         return scripting_manager.lua_runtime.table(*result)
 
     return result
 
 
+@unpacks_lua_table
 def call(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noqa: ANN401
+    print(args)
     return _call(scripting_manager, *args, readonly=False)
 
 
+@unpacks_lua_table
 def ro_call(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noqa: ANN401
     return _call(scripting_manager, *args, readonly=True)
 
 
+@unpacks_lua_table
 def pcall(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noqa: ANN401
     try:
         return _call(scripting_manager, *args)
@@ -146,6 +158,7 @@ def pcall(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noq
         return scripting_manager.lua_runtime.table_from({b"err": b"ERR" + str(e).encode()})
 
 
+@unpacks_lua_table
 def ro_pcall(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noqa: ANN401
     try:
         return _call(scripting_manager, *args, readonly=True)
@@ -162,6 +175,10 @@ def prohibit_calling(function_name: bytes, *args: Any, **kwargs: Any) -> NoRetur
     raise ServerError(f"ERR attempt to call field '{function_name.decode()}'".encode())
 
 
+def set_resp(client_context: ClientContext, value: int) -> None:
+    client_context.protocol = RespProtocolVersion(value)
+
+
 def create_lua_runtime(scripting_manager: ScriptingEngine, readonly: bool = False) -> LuaRuntimeWrapper:
     lua_runtime = LuaRuntimeWrapper(
         LuaRuntime(
@@ -170,6 +187,7 @@ def create_lua_runtime(scripting_manager: ScriptingEngine, readonly: bool = Fals
             register_eval=False,
             register_builtins=False,
             unpack_returned_tuples=True,
+            overflow_handler=lambda value: str(value),
         )  # type: ignore[call-arg]
     )
 
@@ -178,15 +196,39 @@ def create_lua_runtime(scripting_manager: ScriptingEngine, readonly: bool = Fals
     register_cmsgpack_module(lua_runtime, lua_globals)
     register_bit_module(lua_runtime, lua_globals)
 
+    sha1hex_wrapper = lua_runtime.eval(b"""
+      function(f)
+        local sha1hex = function(x) 
+          if x == nil then
+            error("wrong number of arguments")
+          end
+          return f(x) 
+        end
+        return sha1hex
+      end
+      """)
+
+    call_wrapper = lua_runtime.eval(b"""
+      function(f, scripting_manager)
+        local call = function(command, ...) 
+          return f(scripting_manager, command, unpack(arg)) 
+        end
+        return call
+      end
+      """)
+
     lua_globals.server = lua_runtime.table(
-        register_function=unpacks_lua_table(partial(register_function, scripting_manager)), sha1hex=sha1hex
+        register_function=unpacks_lua_table(partial(register_function, scripting_manager)),
+        sha1hex=sha1hex_wrapper(sha1hex),
     )
     if readonly:
-        lua_globals.server.call = partial(ro_call, scripting_manager)
-        lua_globals.server.pcall = partial(ro_pcall, scripting_manager)  # type: ignore[attr-defined]
+        lua_globals.server.call = call_wrapper(ro_call, scripting_manager)
+        lua_globals.server.pcall = call_wrapper(ro_pcall, scripting_manager)  # type: ignore[attr-defined]
     else:
-        lua_globals.server.call = partial(call, scripting_manager)  # type: ignore[attr-defined]
-        lua_globals.server.pcall = partial(pcall, scripting_manager)  # type: ignore[attr-defined]
+        lua_globals.server.call = call_wrapper(call, scripting_manager)  # type: ignore[attr-defined]
+        lua_globals.server.pcall = call_wrapper(pcall, scripting_manager)  # type: ignore[attr-defined]
+
+    lua_globals.server.setresp = partial(set_resp, scripting_manager._client_context)
 
     lua_globals.os.execute = partial(prohibit_calling, b"execute")
     lua_globals.os.exit = partial(prohibit_calling, b"exit")

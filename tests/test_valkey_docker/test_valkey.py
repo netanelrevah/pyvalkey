@@ -9,9 +9,9 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
         image, logs = client.images.build(path=".", rm=True)
 
-        log_file_name = f"{tags}.docker.log"
+        log_file_name = f"{'-'.join(tags.split())}.docker.log"
 
-        tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory -slow").strip()
+        tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory").strip()
         command = f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
 
         print(command)
@@ -37,8 +37,8 @@ def test_all(s: Valkey):
     run_tests(s)
 
 
-def test_all_known_tags(s: Valkey):
-    run_tests(s, tags="sort keyspace hash incr list dump acl tracking multi")
+def test_regression(s: Valkey):
+    run_tests(s, tags="sort incr string")
 
 
 def test_sort(s: Valkey):
@@ -79,3 +79,7 @@ def test_multi(s: Valkey):
 
 def test_scripting(s: Valkey):
     run_tests(s, tags="scripting")
+
+
+def test_type_string(s: Valkey):
+    run_tests(s, tags="string")

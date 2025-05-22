@@ -13,7 +13,7 @@ class ResetMode(Enum):
 
 
 @command(b"reset", {b"slow", b"admin"}, b"cluster", flags={b"no-script"})
-class FunctionCall(Command):
+class ClusterReset(Command):
     reset_mode: ResetMode = positional_parameter(default=ResetMode.SOFT)
 
     def execute(self) -> ValueType:

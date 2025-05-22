@@ -42,12 +42,21 @@ class ScriptingEngine:
             self._lua_runtime = create_lua_runtime(self, readonly=True)
         return self._lua_runtime
 
-    def load_function(self, script: bytes) -> None:
+    def load_function(self, script: bytes) -> bytes:
         metadata, code = script.split(b"\n", 1)
+
+        shebang, *args = metadata.split()
+        if shebang != b"#!lua":
+            raise Exception()
+        if not args or not args[0].startswith(b"name="):
+            raise Exception()
+        name = args[0].split(b"=", 1)[1]
 
         self.lua_runtime.execute(code)
 
-    def call_function(self, function_name: bytes, keys: list[bytes], argv: list[bytes]) -> ValueType:
+        return name
+
+    def call_function(self, function_name: bytes, keys: list[bytes], argv: list[bytes | int]) -> ValueType:
         try:
             registered_function = self.registered_functions[function_name]
             if "no-writes" in registered_function.flags:
@@ -55,6 +64,7 @@ class ScriptingEngine:
             else:
                 lua_runtime = self.lua_runtime
 
+            print("call_function", keys, argv)
             return_value = registered_function.compiled_function(lua_runtime.table(*keys), lua_runtime.table(*argv))
         except ServerLuaError as e:
             raise ServerError(e.message)
@@ -69,7 +79,10 @@ class ScriptingEngine:
         self.lua_runtime.globals().KEYS = self.lua_runtime.table(*keys)  # type: ignore[attr-defined]
         self.lua_runtime.globals().ARGV = self.lua_runtime.table(*argv)  # type: ignore[attr-defined]
 
-        return_value = self.lua_runtime.eval(script)
+        return_value = self.lua_runtime.execute(script)
+
+        self.lua_runtime.globals().KEYS = None  # type: ignore[attr-defined]
+        self.lua_runtime.globals().ARGV = None  # type: ignore[attr-defined]
 
         return convert_lua_value_to_valkey_value(return_value)
 

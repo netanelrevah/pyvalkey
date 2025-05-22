@@ -210,25 +210,6 @@ class KeyValue(Generic[KeyValueTypeVar]):
         return KeyValue(key, value, expiration)
 
 
-# @dataclass(slots=True)
-# class Key:
-#     key: bytes
-#     expiration: int | None = field(default=None)
-#     last_accessed: int = field(default_factory=lambda: int(time.time() * 1000))
-#     lfu_counter: int = LFU_INITIAL_VALUE
-#
-# @dataclass(slots=True)
-# class GenericKeyValue(Generic[KeyValueTypeVar]):
-#     pass
-#
-# @dataclass(slots=True)
-# class SetKeyValue(GenericKeyValue[set[bytes]]):
-#     key: Key
-#     value: set[bytes]
-#
-#
-
-
 MISSING: KeyValue = KeyValue(b"", {})
 
 
@@ -455,7 +436,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         key_value.expiration = None
         return True
 
-    def set_expiration(self, key: bytes, expiration_milliseconds: int) -> bool:
+    def set_expiration_in(self, key: bytes, expiration_milliseconds: int) -> bool:
         try:
             key_value = self.get(key)
         except KeyError:
@@ -532,7 +513,7 @@ class BytesDatabase(DatabaseBase[bytes]):
     content: DatabaseContent
 
     def is_empty(self, value: int | bytes) -> bool:
-        return value in (b"", 0)
+        return value == b""
 
     def create_empty(self) -> bytes:
         return b""
@@ -552,7 +533,7 @@ class IntDatabase(DatabaseBase[int]):
     content: DatabaseContent
 
     def is_empty(self, value: int | bytes) -> bool:
-        return value in (b"", 0)
+        return value == b""
 
     def create_empty(self) -> int:
         return 0
@@ -574,7 +555,7 @@ class StringDatabase(DatabaseBase[bytes | int]):
     content: DatabaseContent
 
     def is_empty(self, value: int | bytes) -> bool:
-        return value in (b"", 0)
+        return value == b""
 
     def create_empty(self) -> bytes:
         return b""

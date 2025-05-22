@@ -30,7 +30,7 @@ class CommandStatistics:
 
 @dataclass
 class Information:
-    server_version: bytes = b"7.0.0"
+    server_version: bytes = b"255.255.255"
     arch_bits: bytes = b"64"
     cluster_enabled: bool = False
     enterprise: bool = False
