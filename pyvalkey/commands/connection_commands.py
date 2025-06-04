@@ -145,7 +145,7 @@ class ClientReply(Command):
         return None
 
 
-class UnblcokOption(Enum):
+class UnblockOption(Enum):
     timeout = b"TIMEOUT"
     error = b"ERROR"
 
