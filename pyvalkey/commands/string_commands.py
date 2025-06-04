@@ -2,7 +2,7 @@ import time
 from enum import Enum
 from math import isinf, isnan
 
-from pyvalkey.commands.consts import LONG_LONG_MIN, UINT32_MAX
+from pyvalkey.commands.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
 from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
@@ -14,6 +14,12 @@ from pyvalkey.resp import RESP_OK, ValueType
 
 def increment_by_int(database: Database, key: bytes, increment: int = 1) -> int:
     previous_value = database.int_database.get_value_or_none(key) or 0
+
+    if (increment < 0 and previous_value < 0 and increment < LONG_MIN - previous_value) or (
+        increment > 0 and previous_value > 0 and increment > LONG_MAX - previous_value
+    ):
+        raise ServerError(b"ERR increment or decrement would overflow")
+
     new_value = previous_value + increment
     database.int_database.upsert(key, new_value)
     return new_value

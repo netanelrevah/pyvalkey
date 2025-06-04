@@ -124,6 +124,8 @@ class ListParameterParser(ParameterParser):
         list_parameter = []
         while parameters:
             list_parameter.append(self.parameter_parser.parse(parameters))
+        # if self.length_field_name and not list_parameter:
+        #     raise ServerWrongNumberOfArgumentsError()
         return list_parameter
 
     @classmethod
@@ -268,6 +270,8 @@ class OptionalKeywordParametersGroup(ParametersGroup):
 
             if keyword_parameter.has_token:
                 parameters.pop(0)
+                if not parameters:
+                    raise ServerError(b"ERR syntax error")
 
             if keyword_parameter.is_multi:
                 parsed = keyword_parameter.parameter.parse(parameters)
@@ -322,6 +326,9 @@ class ObjectParametersParser(ParametersGroup):
 
                     if length <= 0:
                         raise ServerError(f"ERR {length_field_name} should be greater than 0".encode())
+
+                    if not parameters[:length]:
+                        raise ServerWrongNumberOfArgumentsError()
 
                     parsed_parameters.update(parameter_parser.parse(parameters[:length]))
                     parameters = parameters[length:]

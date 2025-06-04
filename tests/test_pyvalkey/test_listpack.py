@@ -91,7 +91,10 @@ def test_listpack_pop():
 def test_listpack_iterate_0_to_end():
     instance = create_list()
 
-    for index, element in enumerate(instance):
+    iterator = iter(instance)
+    for index, element in enumerate(iterator):
+        assert iterator.current_index
+
         if isinstance(element, int):
             assert element == int(MIX_LIST[index])
         else:
@@ -103,8 +106,33 @@ def test_listpack_iterate_end_to_start():
 
     reversed_mix_list = list(reversed(MIX_LIST))
 
-    for index, element in enumerate(ListpackIterator(instance, reversed=True)):
+    iterator = ListpackIterator(instance, reversed=True)
+    for index, element in enumerate(iterator):
+        assert iterator.current_index
+
         if isinstance(element, int):
             assert element == int(reversed_mix_list[index])
         else:
             assert element == reversed_mix_list[index]
+
+
+def test_listpack_complicated():
+    values = [
+        b"a",
+        b"1",
+        b"b",
+        b"2",
+        b":qoCBzKxd81?NkoKOhK?e54t12=e=z<FYB^9t?Z6z0l5XKDOWnI5x_Be4KZD`d5KEOJmk]9r5s`1@qb5iU",
+        b"3",
+    ]
+
+    instance = listpack()
+    for item in values:
+        instance.append(item)
+
+    iterator = ListpackIterator(instance)
+    for index, element in enumerate(iterator):
+        if isinstance(element, int):
+            assert element == int(values[index])
+        else:
+            assert element == values[index]

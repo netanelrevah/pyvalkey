@@ -31,8 +31,8 @@ class Listpack:
     def total_bytes(self, total_bytes: int) -> None:
         self.data[0] = total_bytes & 0xFF
         self.data[1] = (total_bytes >> 8) & 0xFF
-        self.data[1] = (total_bytes >> 16) & 0xFF
-        self.data[1] = (total_bytes >> 24) & 0xFF
+        self.data[2] = (total_bytes >> 16) & 0xFF
+        self.data[3] = (total_bytes >> 24) & 0xFF
 
     @property
     def number_of_elements(self) -> int:
@@ -131,7 +131,7 @@ class Listpack:
             self.number_of_elements = number_of_element
         return number_of_element
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> ListpackIterator:
         return ListpackIterator(self)
 
     def get_encoded_size_unsafe(self, index: int) -> int:
@@ -150,9 +150,9 @@ class Listpack:
         if listpack_64bit_int.is_encoded(self, index):
             return 9
         if listpack_12bit_string.is_encoded(self, index):
-            return 1 + listpack_12bit_string.length(self, index)
+            return 2 + listpack_12bit_string.length(self, index)
         if listpack_32bit_string.is_encoded(self, index):
-            return 1 + listpack_32bit_string.length(self, index)
+            return 5 + listpack_32bit_string.length(self, index)
         if self.data[index] == self.EOF:
             return 1
         return 0
@@ -252,9 +252,9 @@ class ListpackIterator(Iterator[Any]):
 
     def skip(self) -> None:
         if self.reversed:
-            self.current_index = self.iterated.get_previous_index(self.current_index)
+            self._current_index = self.iterated.get_previous_index(self.current_index)
         else:
-            self.current_index = self.iterated.get_next_index(self.current_index)
+            self._current_index = self.iterated.get_next_index(self.current_index)
 
 
 class ListpackElement:
@@ -408,23 +408,6 @@ class Listpack7BitUint(IntListpackElement):
         )
 
 
-class Listpack6BitString(BytesListpackElement):
-    FLAG = 0x80
-    MASK = 0xC0
-    HEADER_LENGTH = 1
-
-    @classmethod
-    def length(cls, instance: listpack, index: int) -> int:
-        return instance.data[index] & 0x3F
-
-    @classmethod
-    def encode_string(cls, value: bytes) -> int_array:
-        encoded = int_array("B", [len(value) | cls.FLAG])
-        encoded.frombytes(value)
-        encoded.append(len(value) + cls.HEADER_LENGTH)
-        return encoded
-
-
 class Listpack13BitInt(IntListpackElement):
     FLAG = 0b11000000  # 0xC0
     MASK = 0b11100000  # 0xE0
@@ -449,26 +432,6 @@ class Listpack13BitInt(IntListpackElement):
                 2,
             ],
         )
-
-
-class Listpack12BitString(BytesListpackElement):
-    FLAG = 0b11100000  # 0xE0
-    MASK = 0x11110000  # 0xF0
-    HEADER_LENGTH = 2
-
-    @classmethod
-    def length(cls, instance: listpack, index: int) -> int:
-        return ((instance.data[index] & 0xF) << 8) | instance.data[index + 1]
-
-    @classmethod
-    def encode_string(cls, value: bytes) -> int_array:
-        encoded = int_array(
-            "B",
-            [(len(value) >> 8) | cls.FLAG, len(value) & 0xFF],
-        )
-        encoded.frombytes(value)
-        encoded += cls.encode_back_length(len(value) + cls.HEADER_LENGTH)
-        return encoded
 
 
 class Listpack16BitInt(IntListpackElement):
@@ -562,8 +525,45 @@ class Listpack64BitInt(IntListpackElement):
         )
 
 
+class Listpack6BitString(BytesListpackElement):
+    FLAG = 0x80
+    MASK = 0xC0
+    HEADER_LENGTH = 1
+
+    @classmethod
+    def length(cls, instance: listpack, index: int) -> int:
+        return instance.data[index] & 0x3F
+
+    @classmethod
+    def encode_string(cls, value: bytes) -> int_array:
+        encoded = int_array("B", [len(value) | cls.FLAG])
+        encoded.frombytes(value)
+        encoded.append(len(value) + cls.HEADER_LENGTH)
+        return encoded
+
+
+class Listpack12BitString(BytesListpackElement):
+    FLAG = 0b11100000  # 0xE0
+    MASK = 0b11110000  # 0xF0
+    HEADER_LENGTH = 2
+
+    @classmethod
+    def length(cls, instance: listpack, index: int) -> int:
+        return ((instance.data[index] & 0xF) << 8) | instance.data[index + 1]
+
+    @classmethod
+    def encode_string(cls, value: bytes) -> int_array:
+        encoded = int_array(
+            "B",
+            [(len(value) >> 8) | cls.FLAG, len(value) & 0xFF],
+        )
+        encoded.frombytes(value)
+        encoded += cls.encode_back_length(len(value) + cls.HEADER_LENGTH)
+        return encoded
+
+
 class Listpack32BitString(BytesListpackElement):
-    FLAG = 0b11110000  # 0xF1
+    FLAG = 0b11110000  # 0xF0
     MASK = 0b11111111  # 0xFF
     HEADER_LENGTH = 5
 

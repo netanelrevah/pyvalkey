@@ -159,7 +159,7 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
-KeyValueType = ValkeySortedSet | dict[bytes, bytes] | set[bytes] | list[bytes] | bytes | int
+KeyValueType = ValkeySortedSet | dict[bytes, bytes | int] | set[bytes] | list[bytes] | bytes | int
 
 
 KeyValueTypeVar = TypeVar("KeyValueTypeVar", bound=KeyValueType)
@@ -401,7 +401,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         return self.convert_value_if_needed(self.get(key).value)
 
     def get_value_or_create(self, key: bytes) -> KeyValueTypeVar:
-        return self.get_or_create(key).value
+        return self.convert_value_if_needed(self.get_or_create(key).value)
 
     def set_key_value(self, key_value: KeyValue, block_overwrite: bool = False) -> None:
         if block_overwrite is True and key_value.key in self.content.data:
@@ -574,7 +574,7 @@ class Database(DatabaseBase[KeyValueType]):
     int_database: IntDatabase = field(init=False)
     sorted_set_database: TypedDatabase[ValkeySortedSet] = field(init=False)
     set_database: TypedDatabase[set] = field(init=False)
-    hash_database: TypedDatabase[dict] = field(init=False)
+    hash_database: TypedDatabase[dict[bytes, int | bytes]] = field(init=False)
     list_database: ListDatabase = field(init=False)
 
     def has_key(self, key: bytes) -> bool:

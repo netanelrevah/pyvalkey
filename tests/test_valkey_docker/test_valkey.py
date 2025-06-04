@@ -38,7 +38,7 @@ def test_all(s: Valkey):
 
 
 def test_regression(s: Valkey):
-    run_tests(s, tags="sort incr string")
+    run_tests(s, tags="hash incr list string sort set")
 
 
 def test_sort(s: Valkey):
@@ -83,3 +83,7 @@ def test_scripting(s: Valkey):
 
 def test_type_string(s: Valkey):
     run_tests(s, tags="string")
+
+
+def test_type_set(s: Valkey):
+    run_tests(s, tags="set")

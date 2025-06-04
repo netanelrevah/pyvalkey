@@ -1,30 +1,67 @@
 import random
+from math import isinf, isnan
 
-from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN, LONG_MAX
+from pyvalkey.commands.consts import LONG_MAX, LONG_MIN
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
-from pyvalkey.commands.utils import is_numeric
+from pyvalkey.commands.utils import increment_bytes_value_as_float, is_floating_point, is_integer
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.utils import flatten
 from pyvalkey.resp import RESP_OK, RespProtocolVersion, ValueType
 
 
-def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, increment: int | float) -> dict:
-    hash_get = database.hash_database.get_value_or_create(key)
-
-    if field not in hash_get:
-        hash_get[field] = 0
-    if not isinstance(hash_get[field], int | float):
-        if not is_numeric(hash_get[field]):
-            raise ServerError(b"ERR hash value is not an " + (b"integer" if isinstance(increment, int) else b"float"))
-        hash_get[field] = type(increment)(hash_get[field])
-    if not (LONG_LONG_MIN < hash_get[field] + increment < LONG_LONG_MAX):
+def increment_by_int(database: Database, key: bytes, field: bytes, increment: int) -> int:
+    hash_value = database.hash_database.get_value_or_create(key)
+    previous_value = hash_value.get(field, 0)
+    if isinstance(previous_value, bytes):
+        if not is_integer(previous_value):
+            raise ServerError(b"ERR hash value is not an integer")
+        previous_value = int(previous_value)
+    if (increment < 0 and previous_value < 0 and increment < LONG_MIN - previous_value) or (
+        increment > 0 and previous_value > 0 and increment > LONG_MAX - previous_value
+    ):
         raise ServerError(b"ERR increment or decrement would overflow")
-    hash_get[field] += increment
-    return hash_get[field]
+    new_value = previous_value + increment
+    hash_value[field] = new_value
+    return new_value
+
+
+def increment_by_float(database: Database, key: bytes, field: bytes, increment: float) -> bytes:
+    hash_value = database.hash_database.get_value_or_create(key)
+    previous_value = hash_value.get(field, b"0")
+    if isinstance(previous_value, bytes):
+        if not is_floating_point(previous_value):
+            raise ServerError(b"ERR hash value is not an float")
+    elif isinstance(previous_value, int):
+        previous_value = str(previous_value).encode()
+    new_value = increment_bytes_value_as_float(previous_value, increment)
+    hash_value[field] = new_value
+    return new_value
+
+
+def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, increment: int | float) -> bytes | int:
+    if isinstance(increment, int):
+        return increment_by_int(database, key, field, increment)
+    elif isinstance(increment, float):
+        return increment_by_float(database, key, field, increment)
+    else:
+        raise ValueError()
+
+    # hash_get = database.hash_database.get_value_or_create(key)
+    #
+    # if field not in hash_get:
+    #     hash_get[field] = 0
+    # if not isinstance(hash_get[field], int | float):
+    #     if not is_numeric(hash_get[field]):
+    #         raise ServerError(b"ERR hash value is not an " + (b"integer" if isinstance(increment, int) else b"float"))
+    #     hash_get[field] = type(increment)(hash_get[field])
+    # if not (LONG_LONG_MIN < hash_get[field] + increment < LONG_LONG_MAX):
+    #     raise ServerError(b"ERR increment or decrement would overflow")
+    # hash_get[field] += increment
+    # return hash_get[field]
 
 
 @command(b"hdel", {b"write", b"hash", b"fast"})
@@ -33,17 +70,8 @@ class HashMapDelete(DatabaseCommand):
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        key_value = self.database.hash_database.get_or_none(self.key)
-
-        if key_value is None:
-            return 0
-        hash_map = key_value.value
-
-        result = sum([1 if hash_map.pop(f, None) is not None else 0 for f in self.fields])
-
-        if not hash_map:
-            self.database.pop(self.key)
-
+        value = self.database.hash_database.get_value_or_empty(self.key)
+        result = sum([1 if value.pop(f, None) is not None else 0 for f in self.fields])
         return result
 
 
@@ -70,7 +98,7 @@ class HashMapGetAll(DatabaseCommand):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_set = self.database.hash_database.get_value(self.key)
+        hash_set = self.database.hash_database.get_value_or_empty(self.key)
 
         response = []
         for k, v in hash_set.items():
@@ -95,6 +123,9 @@ class HashMapIncreaseByFloat(DatabaseCommand):
     value: float = positional_parameter()
 
     def execute(self) -> ValueType:
+        if isnan(self.value) or isinf(self.value):
+            raise ServerError(b"ERR value is NaN or Infinity")
+
         return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
 
 
@@ -120,7 +151,7 @@ class HashMapGetMultiple(DatabaseCommand):
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        hash_map = self.database.hash_database.get_value(self.key)
+        hash_map = self.database.hash_database.get_value_or_empty(self.key)
         return [hash_map.get(f, None) for f in self.fields]
 
 
@@ -174,6 +205,16 @@ class HashRandomField(DatabaseCommand):
         return list(flatten([[key, hash_map[key]] for key in keys]))
 
 
+@command(b"hscan", {b"hash"})
+class HashMapScan(DatabaseCommand):
+    key: bytes = positional_parameter()
+    cursor: int = positional_parameter()
+
+    def execute(self) -> ValueType:
+        self.database.hash_database.get_value(self.key)
+        return RESP_OK
+
+
 @command(b"hset", {b"write", b"hash", b"fast"})
 class HashMapSet(DatabaseCommand):
     key: bytes = positional_parameter()
@@ -211,7 +252,11 @@ class HashMapStringLength(DatabaseCommand):
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len(self.database.hash_database.get_value(self.key).get(self.field, b""))
+        value = self.database.hash_database.get_value_or_empty(self.key)
+        field_value = value.get(self.field, b"")
+        if isinstance(field_value, int):
+            field_value = str(field_value).encode()
+        return len(field_value)
 
 
 @command(b"hvals", {b"read", b"hash", b"slow"})

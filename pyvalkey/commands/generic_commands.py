@@ -4,11 +4,13 @@ import random
 import time
 from typing import Any
 
+from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
+from pyvalkey.commands.utils import is_integer
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import (
     BlockingManager,
@@ -17,6 +19,7 @@ from pyvalkey.database_objects.databases import (
     ValkeySortedSet,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.listpack import listpack
 from pyvalkey.resp import RESP_OK, ValueType
 
 
@@ -85,7 +88,12 @@ class Dump(DatabaseCommand):
         elif isinstance(key_value.value, set):
             dump_value["type"] = "set"
         elif isinstance(key_value.value, dict):
-            dump_value["type"] = "hash"
+            dump_value = {
+                "type": "hash",
+                "value": {
+                    k.decode(): (v.decode() if isinstance(v, bytes) else str(v)) for k, v in key_value.value.items()
+                },
+            }
         elif isinstance(key_value.value, int):
             dump_value["type"] = "int"
         elif isinstance(key_value.value, ValkeySortedSet):
@@ -195,11 +203,36 @@ class ObjectEncoding(DatabaseCommand):
     def approximate_list_size(cls, value: list[bytes]) -> int:
         return sum(len(item) for item in value)
 
+    def is_list_listpack(self, value: list[bytes]) -> bool:
+        list_max_listpack_size = self.configuration.list_max_listpack_size
+
+        if list_max_listpack_size >= 0:
+            list_max_listpack_size = list_max_listpack_size or 1  # Fix 0 to be 1
+            if len(value) <= list_max_listpack_size:
+                return True
+
+        else:
+            list_max_listpack_size = max(list_max_listpack_size, -5)  # Fix lower than -5 to be -5
+
+            listpack_value = listpack()
+            for item in value:
+                listpack_value.append(item)
+
+            if listpack_value.total_bytes <= ((2 * (2 ** abs(list_max_listpack_size))) * 1024):
+                return True
+
+        return False
+
     def is_set_intset(self, value: set[bytes]) -> bool:
         if len(value) > self.configuration.set_max_intset_entries:
             return False
-        if any([not item.isdigit() for item in value]):
-            return False
+        for item in value:
+            if not is_integer(item):
+                return False
+            else:
+                item = int(item)
+                if item > LONG_LONG_MAX or item < LONG_LONG_MIN:
+                    return False
         return True
 
     def is_sorted_set_listpack(self, value: ValkeySortedSet) -> bool:
@@ -209,13 +242,15 @@ class ObjectEncoding(DatabaseCommand):
             return False
         return True
 
-    def is_dict_listpack(self, value: dict[bytes, bytes]) -> bool:
+    def is_dict_listpack(self, value: dict[bytes, bytes | int]) -> bool:
         if len(value) > self.configuration.hash_max_listpack_entries:
             return False
-        if (
-            max(4 + len(k) + (len(v) if isinstance(v, bytes) else len(str(v))) for k, v in value.items())
-            > self.configuration.hash_max_listpack_value
-        ):
+
+        maximum_value = 0
+        for k, v in value.items():
+            maximum_value = max(maximum_value, len(k), len(v if isinstance(v, bytes) else str(v)))
+
+        if maximum_value > self.configuration.hash_max_listpack_value:
             return False
         return True
 
@@ -224,18 +259,16 @@ class ObjectEncoding(DatabaseCommand):
         if key_value is None:
             return None
         if isinstance(key_value.value, list):
-            if self.configuration.list_max_listpack_size < 0 and self.approximate_list_size(key_value.value) <= (
-                (2 * (2 ** abs(self.configuration.list_max_listpack_size))) * 1024
-            ):
-                return b"listpack"
-            elif len(key_value.value) <= self.configuration.list_max_listpack_size:
+            if self.is_list_listpack(key_value.value):
                 return b"listpack"
             return b"quicklist"
 
         if isinstance(key_value.value, set):
             if self.is_set_intset(key_value.value):
                 return b"intset"
-            if len(key_value.value) <= self.configuration.set_max_listpack_entries:
+            if len(key_value.value) <= self.configuration.set_max_listpack_entries and all(
+                map(lambda k: len(k) <= self.configuration.set_max_listpack_value, key_value.value)
+            ):
                 return b"listpack"
             return b"hashtable"
 
