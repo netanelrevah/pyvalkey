@@ -17,9 +17,6 @@ if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
 
 
-
-
-
 @dataclass
 class CommandCreator:
     command_cls: type[Command]
