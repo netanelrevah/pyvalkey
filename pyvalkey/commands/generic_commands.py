@@ -461,7 +461,7 @@ class Restore(DatabaseCommand):
         if self.idle_time_seconds:
             kwargs["last_accessed"] = self.idle_time_seconds
         if self.ttl:
-            kwargs["expriration"] = (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.ttl
+            kwargs["expiration"] = (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.ttl
 
         self.database.set_key_value(
             KeyValue(
