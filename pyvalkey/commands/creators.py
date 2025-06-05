@@ -2,22 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import Field, dataclass, fields
-from enum import Enum, auto
 from typing import TYPE_CHECKING, Self, get_type_hints
 
 from pyvalkey.commands.context import ClientContext, ServerContext
+from pyvalkey.commands.dependencies import DependencyMetadata
+from pyvalkey.commands.scripting import ScriptingEngine
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import BlockingManager, Database
+from pyvalkey.database_objects.databases import BlockingManager, Database, ListBlockingManager, SortedSetBlockingManager
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RespProtocolVersion
 
 if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
-
-
-class DependencyMetadata(Enum):
-    DEPENDENCY = auto()
 
 
 @dataclass
@@ -46,7 +43,17 @@ class CommandCreator:
             elif command_dependency_type == RespProtocolVersion:
                 command_kwargs[command_dependency.name] = client_context.protocol
             elif command_dependency_type == BlockingManager:
-                command_kwargs[command_dependency.name] = client_context.server_context.notification_manager
+                command_kwargs[command_dependency.name] = client_context.server_context.blocking_manager
+            elif command_dependency_type == ListBlockingManager:
+                command_kwargs[command_dependency.name] = (
+                    client_context.server_context.blocking_manager.list_blocking_manager
+                )
+            elif command_dependency_type == SortedSetBlockingManager:
+                command_kwargs[command_dependency.name] = (
+                    client_context.server_context.blocking_manager.sorted_set_blocking_manager
+                )
+            elif command_dependency_type == ScriptingEngine:
+                command_kwargs[command_dependency.name] = client_context.scripting_manager
             else:
                 raise TypeError()
 

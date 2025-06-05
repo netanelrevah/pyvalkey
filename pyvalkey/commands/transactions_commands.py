@@ -2,10 +2,10 @@ from dataclasses import field
 
 from pyvalkey.commands.context import ClientContext, TransactionContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.database_objects.databases import BlockingManager, ClientWatchlist, Database
+from pyvalkey.database_objects.databases import ClientWatchlist, Database, ListBlockingManager, SortedSetBlockingManager
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
@@ -13,17 +13,17 @@ def unwatch(databases: dict[int, Database], client_watchlist: ClientWatchlist) -
     for index, key in client_watchlist.watchlist:
         if index not in databases:
             continue
-        watchlist_database = databases[index]
-        if key not in watchlist_database.watchlist:
+        watchlist_database: Database = databases[index]
+        if key not in watchlist_database.content.watchlist:
             continue
-        key_database_watchlist = watchlist_database.watchlist[key]
+        key_database_watchlist = watchlist_database.content.watchlist[key]
         key_database_watchlist.remove(client_watchlist)
     client_watchlist.watchlist = {}
 
 
 @command(b"multi", {b"transaction", b"fast"}, flags={b"nomulti"})
 class TransactionStart(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
         self.client_context.transaction_context = TransactionContext()
@@ -33,7 +33,7 @@ class TransactionStart(Command):
 
 @command(b"discard", {b"transaction", b"fast"})
 class TransactionDiscard(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
         if self.client_context.transaction_context is None:
@@ -47,9 +47,10 @@ class TransactionDiscard(Command):
 
 @command(b"exec", {b"connection", b"fast"})
 class TransactionExecute(Command):
-    database: Database = server_command_dependency()
-    client_context: ClientContext = server_command_dependency()
-    notification_manager: BlockingManager = server_command_dependency()
+    database: Database = dependency()
+    client_context: ClientContext = dependency()
+    list_blocking_manager: ListBlockingManager = dependency()
+    sorted_set_blocking_manager: SortedSetBlockingManager = dependency()
 
     _result: ValueType = field(default=None, init=False)
     _keys_to_notify: set[bytes] = field(default_factory=set, init=False)
@@ -82,12 +83,13 @@ class TransactionExecute(Command):
         return self._result
 
     async def after(self, _: bool = False) -> None:
-        await self.notification_manager.notify_list_lazy(self.database)
+        await self.list_blocking_manager.notify_lazy(self.database)
+        await self.sorted_set_blocking_manager.notify_lazy(self.database)
 
 
 @command(b"watch", {b"transaction", b"fast"}, flags={b"nomulti"})
 class TransactionWatch(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     keys: list[bytes] = positional_parameter()
 
@@ -105,7 +107,7 @@ class TransactionWatch(Command):
 
 @command(b"unwatch", {b"transaction", b"fast"}, flags={b"nomulti"})
 class TransactionUnwatch(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
         unwatch(self.client_context.server_context.databases, self.client_context.client_watchlist)

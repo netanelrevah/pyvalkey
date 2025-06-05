@@ -1,4 +1,5 @@
 import itertools
+from asyncio import Queue
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Self
@@ -22,6 +23,10 @@ class Client:
     library_name: bytes = b""
     library_version: bytes = b""
 
+    last_command: bytes = b""
+
+    blocking_queue: Queue | None = None
+
     @property
     def address(self) -> bytes:
         return self.host + b":" + str(self.port).encode()
@@ -37,11 +42,12 @@ class Client:
             b"addr": self.address,
             b"flags": self.flags,
             b"name": self.name,
+            b"cmd": self.last_command,
         }
         return b" ".join([k + b"=" + to_bytes(v) for k, v in items.items()])
 
 
-class ClientList(dict[int, Client]):
+class ClientsMap(dict[int, Client]):
     def __init__(
         self, *seq: dict[int, Client] | Iterable[tuple[int, Client]] | None, **kwargs: dict[int, Client]
     ) -> None:
@@ -54,8 +60,8 @@ class ClientList(dict[int, Client]):
 
     def filter_(
         self, client_id: int | None = None, address: bytes | None = None, client_type: bytes | None = None
-    ) -> "ClientList":
-        filtered = ClientList()
+    ) -> "ClientsMap":
+        filtered = ClientsMap()
         for c in self.all().values():
             if client_id is not None and c.client_id != client_id:
                 continue

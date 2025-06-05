@@ -13,6 +13,12 @@ dependencies = [
     "typer>=0.15.1",
 ]
 
+[project.optional-dependencies]
+lua = [
+    "lupa>=2.4",
+    "u-msgpack-python>=2.8.0",
+]
+
 [dependency-groups]
 dev = [
     "docker>=7.1.0",
@@ -21,7 +27,10 @@ dev = [
     "pytest-parametrization>=2022.2.1",
     "ruff>=0.9.6",
     "sortedcontainers-stubs>=2.4.2",
+    "types-lupa>=2.4.0.20250112",
     "valkey>=6.1.0",
+    "lupa>=2.4",
+    "u-msgpack-python>=2.8.0",
 ]
 
 [tool.pytest.ini_options]
@@ -58,7 +67,8 @@ lint.ignore = [
 [[tool.mypy.overrides]]
 module = [
     "sortedcontainers",
-    "typer"
+    "typer",
+    "umsgpack"
 ]
 ignore_missing_imports = true
 

@@ -1,6 +1,7 @@
 import math
 from enum import Enum
 
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import (
     keyword_parameter,
     positional_parameter,
@@ -15,7 +16,7 @@ from pyvalkey.database_objects.databases import (
     ValkeySortedSet,
 )
 from pyvalkey.database_objects.errors import ServerError
-from pyvalkey.resp import ValueType
+from pyvalkey.resp import RESP_OK, ValueType
 
 
 def parse_score_parameter(score: bytes) -> tuple[bytes, bool]:
@@ -160,6 +161,22 @@ class SortedSetAdd(DatabaseCommand):
                     raise ServerError(b"ERR value is not valid float")
             key_value.value.add(score, member)
         return len(key_value.value) - length_before
+
+
+class PopModifier(Enum):
+    MIN = b"MIN"
+    MAX = b"MAX"
+
+
+@command(b"zmpop", {b"sortedset"})
+class SortedSetPop(Command):
+    numkeys: int = positional_parameter()
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    pop_modifier: PopModifier = positional_parameter()
+    count: int | None = keyword_parameter(token=b"COUNT", default=None)
+
+    def execute(self) -> ValueType:
+        return RESP_OK
 
 
 @command(b"zrange", {b"read", b"sortedset", b"slow"})

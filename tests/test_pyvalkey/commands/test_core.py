@@ -8,7 +8,7 @@ from pyvalkey.commands.core import Command
 from pyvalkey.commands.generic_commands import Copy
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.commands.server_commands import Debug
+from pyvalkey.commands.server_commands import DebugSetActiveExpire
 from pyvalkey.commands.sorted_set_commands import AddMode, RangeMode, SortedSetAdd, SortedSetRange
 from pyvalkey.database_objects.errors import ServerError, ServerWrongNumberOfArgumentsError
 
@@ -92,9 +92,9 @@ class ListCommand(Command):
     expected_kwargs={"client_id": 1},
 )
 @Parametrization.case(
-    name="",
-    parameters=b"set-active-expire 0".split(),
-    command_cls=Debug,
+    name="debug set-active-expire 0",
+    parameters=b"0".split(),
+    command_cls=DebugSetActiveExpire,
     expected_kwargs={"set_active_expire": 0},
 )
 @Parametrization.case(

@@ -14,6 +14,7 @@ from pyvalkey.commands.utils import (
     get_bit_from_bytes,
     set_bit_to_bytes,
 )
+from pyvalkey.database_objects.databases import KeyValue
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
 
@@ -146,17 +147,10 @@ class SetBit(DatabaseCommand):
 
         bit_bool_value = bool(self.value)
 
-        key_value = self.database.bytes_database.get_or_none(self.key)
+        value = self.database.bytes_database.get_value_or_empty(self.key)
 
-        value = b""
-        previous_value = 0
-        if key_value is not None:
-            value = key_value.value
-            previous_value = get_bit_from_bytes(key_value.value, self.offset)
-
-        self.database.upsert(
-            self.key,
-            set_bit_to_bytes(value, self.offset, bit_bool_value),
+        self.database.string_database.set_key_value(
+            KeyValue.of_string(self.key, set_bit_to_bytes(value, self.offset, bit_bool_value)),
         )
 
-        return previous_value
+        return get_bit_from_bytes(value, self.offset)

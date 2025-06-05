@@ -1,26 +1,26 @@
+import decimal
 import re
 from math import inf
 
 from pyvalkey.database_objects.errors import ServerError
 
-NUMERIC_REGEX = re.compile(r"^-?\d+(\.\d*)?$")
-INTEGER_REGEX = re.compile(r"^-?\d+$")
+NUMERIC_REGEX = re.compile(b"^-?\d+(\.\d*)?$")
+INTEGER_REGEX = re.compile(b"^-?\d+$")
 FLOATING_POINT_REGEX = NUMERIC_REGEX
 
 
-def is_numeric(value: bytes | str) -> bool:
-    return NUMERIC_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+def is_numeric(value: bytes) -> bool:
+    return NUMERIC_REGEX.match(value) is not None
 
 
-def is_integer(value: bytes | str) -> bool:
-    return INTEGER_REGEX.match(value if isinstance(value, str) else value.decode()) is not None
+def is_integer(value: bytes) -> bool:
+    return INTEGER_REGEX.match(value) is not None
 
 
-def is_floating_point(value: bytes | str) -> bool:
-    str_value = value if isinstance(value, str) else value.decode()
-    if str_value in ["+inf", "-inf", "inf"]:
+def is_floating_point(value: bytes) -> bool:
+    if value in [b"+inf", b"-inf", b"inf"]:
         return True
-    return FLOATING_POINT_REGEX.match(str_value) is not None
+    return FLOATING_POINT_REGEX.match(value) is not None
 
 
 def parse_range_parameters(start: int, stop: int, is_reversed: bool = False) -> slice:
@@ -46,8 +46,21 @@ def convert_bytes_value_to_float(value: bytes) -> float:
     return float(value)
 
 
+decimal_context = decimal.Context()
+decimal_context.prec = 20
+
+
+def float_to_str(value: float) -> str:
+    """
+    Convert the given float to a string,
+    without resorting to scientific notation
+    """
+    d1 = decimal_context.create_decimal(repr(value))
+    return format(d1, "f")
+
+
 def convert_float_value_to_bytes(value: float) -> bytes:
-    return str(value).rstrip("0").rstrip(".").encode()
+    return float_to_str(value).rstrip("0").rstrip(".").encode()
 
 
 def convert_bytes_value_as_int(value: bytes) -> int:

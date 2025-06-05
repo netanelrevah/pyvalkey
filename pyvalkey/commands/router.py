@@ -10,7 +10,6 @@ from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.core import Command
 
 
@@ -35,10 +34,10 @@ class CommandsRouter:
 
         return routed_command
 
-    def route(self, parameters: list[bytes], client_context: ClientContext) -> Command:
+    def route(self, parameters: list[bytes]) -> tuple[type[Command], list[bytes]]:
         parameters = parameters[:]
-        routed_command: type[Command] = self.internal_route(parameters, self.ROUTES)
-        return routed_command.create(parameters, client_context)
+        routed_command_cls: type[Command] = self.internal_route(parameters, self.ROUTES)
+        return routed_command_cls, parameters
 
     @classmethod
     def command(
@@ -61,6 +60,8 @@ class CommandsRouter:
             setattr(command_cls, "flags", set(flags or []))
 
             full_command_name = parent_command + b"|" + command_name if parent_command else command_name
+
+            setattr(command_cls, "full_command_name", full_command_name)
 
             if full_command_name in ACL.COMMANDS_NAMES:
                 raise ValueError("redecalration of command")

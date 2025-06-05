@@ -4,20 +4,28 @@ import random
 import time
 from typing import Any
 
+from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
-from pyvalkey.commands.dependencies import server_command_dependency
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
+from pyvalkey.commands.utils import is_integer
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, KeyValue, ValkeySortedSet
+from pyvalkey.database_objects.databases import (
+    BlockingManager,
+    Database,
+    KeyValue,
+    ValkeySortedSet,
+)
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.listpack import listpack
 from pyvalkey.resp import RESP_OK, ValueType
 
 
 @command(b"copy", {b"keyspace", b"write", b"slow"})
 class Copy(Command):
-    client_context: ClientContext = server_command_dependency()
+    client_context: ClientContext = dependency()
 
     source: bytes = positional_parameter(key_mode=b"R")
     destination: bytes = positional_parameter(key_mode=b"W")
@@ -53,7 +61,11 @@ class Delete(DatabaseCommand):
     keys: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return len([1 for _ in filter(None, [self.database.pop(key, None) for key in self.keys])])
+        count = 0
+        for key in self.keys:
+            if self.database.pop(key, None) is not None:
+                count += 1
+        return count
 
 
 @command(b"dump", {b"keyspace", b"read", b"slow"})
@@ -69,11 +81,19 @@ class Dump(DatabaseCommand):
             "value": key_value.value,
         }
         if isinstance(key_value.value, list):
-            dump_value["type"] = "list"
+            dump_value = {
+                "type": "list",
+                "value": [item.decode() for item in key_value.value],
+            }
         elif isinstance(key_value.value, set):
             dump_value["type"] = "set"
         elif isinstance(key_value.value, dict):
-            dump_value["type"] = "hash"
+            dump_value = {
+                "type": "hash",
+                "value": {
+                    k.decode(): (v.decode() if isinstance(v, bytes) else str(v)) for k, v in key_value.value.items()
+                },
+            }
         elif isinstance(key_value.value, int):
             dump_value["type"] = "int"
         elif isinstance(key_value.value, ValkeySortedSet):
@@ -105,7 +125,7 @@ class Expire(DatabaseCommand):
     seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.set_expiration(self.key, self.seconds * 1000)
+        return self.database.set_expiration_in(self.key, self.seconds * 1000)
 
 
 @command(b"expireat", {b"keyspace", b"write", b"fast"})
@@ -152,8 +172,8 @@ class Migrate(DatabaseCommand):
 
 @command(b"move", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Move(Command):
-    database: Database = server_command_dependency()
-    server_context: ServerContext = server_command_dependency()
+    database: Database = dependency()
+    server_context: ServerContext = dependency()
 
     key: bytes = positional_parameter()
     db: int = positional_parameter()
@@ -175,7 +195,7 @@ class Move(Command):
 
 @command(b"encoding", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
 class ObjectEncoding(DatabaseCommand):
-    configuration: Configurations = server_command_dependency()
+    configuration: Configurations = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
 
@@ -183,11 +203,36 @@ class ObjectEncoding(DatabaseCommand):
     def approximate_list_size(cls, value: list[bytes]) -> int:
         return sum(len(item) for item in value)
 
+    def is_list_listpack(self, value: list[bytes]) -> bool:
+        list_max_listpack_size = self.configuration.list_max_listpack_size
+
+        if list_max_listpack_size >= 0:
+            list_max_listpack_size = list_max_listpack_size or 1  # Fix 0 to be 1
+            if len(value) <= list_max_listpack_size:
+                return True
+
+        else:
+            list_max_listpack_size = max(list_max_listpack_size, -5)  # Fix lower than -5 to be -5
+
+            listpack_value = listpack()
+            for item in value:
+                listpack_value.append(item)
+
+            if listpack_value.total_bytes <= ((2 * (2 ** abs(list_max_listpack_size))) * 1024):
+                return True
+
+        return False
+
     def is_set_intset(self, value: set[bytes]) -> bool:
         if len(value) > self.configuration.set_max_intset_entries:
             return False
-        if any([not item.isdigit() for item in value]):
-            return False
+        for item in value:
+            if not is_integer(item):
+                return False
+            else:
+                int_item = int(item)
+                if int_item > LONG_LONG_MAX or int_item < LONG_LONG_MIN:
+                    return False
         return True
 
     def is_sorted_set_listpack(self, value: ValkeySortedSet) -> bool:
@@ -197,13 +242,15 @@ class ObjectEncoding(DatabaseCommand):
             return False
         return True
 
-    def is_dict_listpack(self, value: dict[bytes, bytes]) -> bool:
+    def is_dict_listpack(self, value: dict[bytes, bytes | int]) -> bool:
         if len(value) > self.configuration.hash_max_listpack_entries:
             return False
-        if (
-            max(4 + len(k) + (len(v) if isinstance(v, bytes) else len(str(v))) for k, v in value.items())
-            > self.configuration.hash_max_listpack_value
-        ):
+
+        maximum_value = 0
+        for k, v in value.items():
+            maximum_value = max(maximum_value, len(k), len(v if isinstance(v, bytes) else str(v)))
+
+        if maximum_value > self.configuration.hash_max_listpack_value:
             return False
         return True
 
@@ -212,21 +259,16 @@ class ObjectEncoding(DatabaseCommand):
         if key_value is None:
             return None
         if isinstance(key_value.value, list):
-            if self.configuration.list_max_listpack_size < 0:
-                if self.approximate_list_size(key_value.value) <= (
-                    abs(self.configuration.list_max_listpack_size) * (4 * 1024)
-                ):
-                    return b"listpack"
-                else:
-                    return b"quicklist"
-            elif len(key_value.value) <= self.configuration.list_max_listpack_size:
+            if self.is_list_listpack(key_value.value):
                 return b"listpack"
             return b"quicklist"
 
         if isinstance(key_value.value, set):
             if self.is_set_intset(key_value.value):
                 return b"intset"
-            if len(key_value.value) <= self.configuration.set_max_listpack_entries:
+            if len(key_value.value) <= self.configuration.set_max_listpack_entries and all(
+                map(lambda k: len(k) <= self.configuration.set_max_listpack_value, key_value.value)
+            ):
                 return b"listpack"
             return b"hashtable"
 
@@ -284,7 +326,7 @@ class ExpireMilliseconds(DatabaseCommand):
     seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.set_expiration(self.key, self.seconds)
+        return self.database.set_expiration_in(self.key, self.seconds)
 
 
 @command(b"pexpireat", {b"keyspace", b"write", b"fast"})
@@ -322,7 +364,7 @@ class TimeToLiveMilliseconds(DatabaseCommand):
 
 @command(b"randomkey", {b"keyspace", b"write", b"slow", b"dangerous"})
 class RandomKey(Command):
-    database: Database = server_command_dependency()
+    database: Database = dependency()
 
     def execute(self) -> ValueType:
         if self.database.empty():
@@ -349,7 +391,10 @@ class RandomKey(Command):
 
 
 @command(b"rename", {b"keyspace", b"write", b"slow"})
-class Rename(DatabaseCommand):
+class Rename(Command):
+    database: Database = dependency()
+    blocking_manager: BlockingManager = dependency()
+
     key: bytes = positional_parameter(key_mode=b"R")
     new_key: bytes = positional_parameter(key_mode=b"W")
 
@@ -360,6 +405,9 @@ class Rename(DatabaseCommand):
         self.database.rename_unsafely(self.key, self.new_key)
 
         return RESP_OK
+
+    async def after(self, in_multi: bool = False) -> None:
+        await self.blocking_manager.notify_safely(self.database, self.new_key, in_multi=in_multi)
 
 
 @command(b"renamenx", {b"keyspace", b"write", b"slow"})
@@ -396,7 +444,7 @@ class Restore(DatabaseCommand):
         elif json_value["type"] == "set":
             value = set(json_value["value"])
         elif json_value["type"] == "list":
-            value = json_value["value"]
+            value = [item.encode() for item in json_value["value"]]
         elif json_value["type"] == "sorted_set":
             value = ValkeySortedSet([(score, member) for score, member in json_value["value"]])
         elif json_value["type"] == "string":
@@ -412,12 +460,13 @@ class Restore(DatabaseCommand):
         kwargs = {}
         if self.idle_time_seconds:
             kwargs["last_accessed"] = self.idle_time_seconds
+        if self.ttl:
+            kwargs["expriration"] = (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.ttl
 
         self.database.set_key_value(
             KeyValue(
                 self.key,
                 value,
-                (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.absolute_ttl,
                 **kwargs,
             )
         )
@@ -433,7 +482,8 @@ class Scan(DatabaseCommand):
 
 @command(b"sort", {b"read", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class Sort(Command):
-    database: Database = server_command_dependency()
+    database: Database = dependency()
+    blocking_manager: BlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
     by: bytes | None = keyword_parameter(token=b"BY", default=None)
@@ -462,14 +512,19 @@ class Sort(Command):
             return 0
 
         self.database.set_key_value(
-            KeyValue(self.destination, [str(v).encode() if v is not None else b"" for v in result_values]),
+            KeyValue(self.destination, [(v if v is not None else b"") for v in result_values]),
         )
         return len(result_values)
+
+    async def after(self, in_multi: bool = False) -> None:
+        if self.destination is None:
+            return
+        await self.blocking_manager.notify_safely(self.database, self.destination, in_multi=in_multi)
 
 
 @command(b"sort_ro", {b"write", b"set", b"sortedset", b"list", b"slow", b"dangerous"})
 class SortReadOnly(Command):
-    database: Database = server_command_dependency()
+    database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
     by: bytes | None = keyword_parameter(token=b"BY", default=None)
@@ -579,8 +634,18 @@ class TimeToLive(DatabaseCommand):
 
 @command(b"type", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Type(DatabaseCommand):
+    key: bytes = positional_parameter()
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        value = self.database.get_value_or_none(self.key)
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            return b"string"
+        if isinstance(value, list):
+            return b"list"
+
+        raise TypeError(f"not supporting type {type(value)}")
 
 
 @command(b"unlink", {b"keyspace", b"write", b"slow", b"dangerous"})
@@ -591,11 +656,18 @@ class Unlink(DatabaseCommand):
 
 @command(b"wait", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Wait(DatabaseCommand):
+    numreplicas: int = positional_parameter()
+    timeout: int = positional_parameter()
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        return 0
 
 
 @command(b"waitaof", {b"keyspace", b"write", b"slow", b"dangerous"})
 class WaitAOF(DatabaseCommand):
+    numlocal: int = positional_parameter()
+    numreplicas: int = positional_parameter()
+    timeout: int = positional_parameter()
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        return [0, 0]
