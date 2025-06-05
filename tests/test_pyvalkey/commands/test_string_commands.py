@@ -78,7 +78,8 @@ class TestSet:
 
         assert Set(database, b"foo", b"new_value", condition=b"initial_value", get=True).execute() == b"initial_value"
 
-        assert database.content.data[b"foo"] == KeyValue(b"foo", b"new_value")
+        assert database.content.data[b"foo"].value == KeyValue(b"foo", b"new_value").value
+        assert database.content.data[b"foo"].key == KeyValue(b"foo", b"new_value").key
 
 
 class TestGet:

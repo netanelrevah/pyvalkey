@@ -14,7 +14,6 @@ class ParameterMetadata(Enum):
     PARSE_ERROR = auto()
     SKIP_FIRST = auto()
     LENGTH_FIELD_NAME = auto()
-    CAN_BE_EMPTY = auto()
 
 
 def server_parameter(
