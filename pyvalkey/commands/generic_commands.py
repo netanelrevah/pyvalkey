@@ -230,8 +230,8 @@ class ObjectEncoding(DatabaseCommand):
             if not is_integer(item):
                 return False
             else:
-                item = int(item)
-                if item > LONG_LONG_MAX or item < LONG_LONG_MIN:
+                int_item = int(item)
+                if int_item > LONG_LONG_MAX or int_item < LONG_LONG_MIN:
                     return False
         return True
 
