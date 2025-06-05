@@ -32,4 +32,4 @@ class TestObjectEncoding:
         )
         configurations = Configurations()
 
-        assert ObjectEncoding(database, configurations, b"hash1").execute() == b"hashtable"
+        assert ObjectEncoding(database, configurations, b"hash1").execute() == b"listpack"

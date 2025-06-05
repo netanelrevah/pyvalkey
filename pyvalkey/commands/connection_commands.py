@@ -155,7 +155,7 @@ class ClientUnblock(Command):
     server_context: ServerContext = dependency()
 
     client_id: int = positional_parameter()
-    unblock_option: UnblcokOption = positional_parameter(default=UnblcokOption.timeout)
+    unblock_option: UnblockOption = positional_parameter(default=UnblockOption.timeout)
 
     _unblocked: int = field(init=False, default=0)
 
@@ -168,7 +168,7 @@ class ClientUnblock(Command):
             return
 
         await client.blocking_queue.put(
-            UnblockMessage.ERROR if self.unblock_option == UnblcokOption.error else UnblockMessage.TIMEOUT
+            UnblockMessage.ERROR if self.unblock_option == UnblockOption.error else UnblockMessage.TIMEOUT
         )
 
         self._unblocked = 1

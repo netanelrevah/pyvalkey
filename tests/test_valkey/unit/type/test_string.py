@@ -16,7 +16,7 @@ def test_set_and_get_an_item(s: valkey.Valkey):
 
 def test_set_and_get_an_empty_item(s: valkey.Valkey):
     s.set("x", "")
-    assert s.get("x") == b""
+    assert s.get("x") is None
 
 
 def test_very_big_payload_in_get_or_set(s: valkey.Valkey):
