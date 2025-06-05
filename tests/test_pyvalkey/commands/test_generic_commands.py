@@ -1,6 +1,27 @@
-from pyvalkey.commands.generic_commands import ObjectEncoding
+import time
+
+from pyvalkey.commands.generic_commands import Keys, ObjectEncoding, TimeToLive
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue
+
+
+class TestTimeToLive:
+    def test_execute(self):
+        database = Database(
+            0, DatabaseContent({b"mykey{t}": KeyValue(b"mykey{t}", b"foo", int(time.time() + 100) * 1000)})
+        )
+
+        command = TimeToLive(database, b"mykey{t}")
+
+        assert 95 < command.execute() < 100
+
+
+class TestKeys:
+    def test_validate_pattern(self):
+        assert Keys.nesting(b"*?" * 1000) == 1000
+        assert Keys.nesting(b"*?" * 1001) == 1001
+        assert Keys.nesting(b"?*" * 1001) == 1000
+        assert Keys.nesting(b"?*" * 1002) == 1001
 
 
 class TestObjectEncoding:
