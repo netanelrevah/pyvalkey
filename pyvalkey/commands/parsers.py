@@ -169,6 +169,8 @@ class TupleParameterParser(ParameterParser):
 
     def parse(self, parameters: list[bytes]) -> tuple:
         tuple_parameter = []
+        if len(parameters) < len(self.parameter_parser_tuple):
+            raise ServerError(b"ERR syntax error")
         for parameter_parser in self.parameter_parser_tuple:
             tuple_parameter.append(parameter_parser.parse(parameters))
         return tuple(tuple_parameter)
@@ -182,6 +184,8 @@ class TupleParameterParser(ParameterParser):
                     parameter_parser_tuple.append(ParameterParser())
                 case int():
                     parameter_parser_tuple.append(IntParameterParser())
+                case float():
+                    parameter_parser_tuple.append(FloatParameterParser())
                 case _:
                     raise TypeError()
         return cls(tuple(parameter_parser_tuple))
@@ -292,6 +296,7 @@ class OptionalKeywordParametersGroup(ParametersGroup):
 @dataclass
 class ObjectParametersParser(ParametersGroup):
     parameters_parsers: list[ParameterParser]
+    allow_more_parameters: bool = False
 
     @classmethod
     def _is_optional(cls, parameter_parser: ParameterParser) -> bool:
@@ -341,7 +346,7 @@ class ObjectParametersParser(ParametersGroup):
                 continue
             parsed_parameters.update(parameter_parser.parse(parameters))
 
-        if parameters:
+        if parameters and not self.allow_more_parameters:
             if isinstance(self.parameters_parsers[-1], OptionalKeywordParametersGroup):
                 raise ServerError(b"ERR syntax error")
 
@@ -353,7 +358,7 @@ class ObjectParametersParser(ParametersGroup):
         return self.parse(list(parameters))
 
     @classmethod
-    def create_from_object(cls, object_cls: Any) -> Self:  # noqa: ANN401
+    def create_from_object(cls, object_cls: Any, allow_more_parameters: bool = False) -> Self:  # noqa: ANN401
         resolved_hints = get_type_hints(object_cls)
 
         parameter_fields = {
@@ -410,7 +415,7 @@ class ObjectParametersParser(ParametersGroup):
         if optional_keyword_parameters:
             parameters_parsers.append(OptionalKeywordParametersGroup(optional_keyword_parameters))
 
-        return cls(parameters_parsers)
+        return cls(parameters_parsers, allow_more_parameters=allow_more_parameters)
 
 
 @dataclass
@@ -423,7 +428,7 @@ class ObjectParser(ParametersGroup):
 
     @classmethod
     def create_from_object(cls, object_cls: Any) -> Self:  # noqa: ANN401
-        return cls(object_cls, ObjectParametersParser.create_from_object(object_cls))
+        return cls(object_cls, ObjectParametersParser.create_from_object(object_cls, allow_more_parameters=True))
 
 
 @dataclass_transform()

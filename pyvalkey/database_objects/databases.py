@@ -61,6 +61,21 @@ class ValkeySortedSet:
         self.members = SortedSet({(score, member) for member, score in members_and_scores})
         self.members_scores = SortedDict({member: score for member, score in members_and_scores})
 
+    def union(self, *others: ValkeySortedSet) -> ValkeySortedSet:
+        new_set = ValkeySortedSet()
+        new_set.members_scores = self.members_scores.copy()
+        new_set.members = self.members.copy()
+
+        for other in others:
+            for member, score in other.members_scores.items():
+                new_set.add(score, member)
+
+        return new_set
+
+    def update_from(self, other: ValkeySortedSet) -> None:
+        for member, score in other.members_scores.items():
+            self.add(score, member)
+
     def update(self, *scored_members: tuple[float, bytes]) -> None:
         for score, member in scored_members:
             self.add(score, member)
@@ -71,10 +86,13 @@ class ValkeySortedSet:
         for score, member in zip(*([iter(iterator)] * 2), strict=True):
             self.add(score, member)
 
+    def remove(self, member: bytes) -> None:
+        old_score = self.members_scores[member]
+        self.members.remove((old_score, member))
+
     def add(self, score: float, member: bytes) -> None:
         if member in self.members_scores:
-            old_score = self.members_scores[member]
-            self.members.remove((old_score, member))
+            self.remove(member)
         self.members_scores[member] = score
         self.members.add((score, member))
 

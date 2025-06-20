@@ -639,11 +639,13 @@ class Type(DatabaseCommand):
     def execute(self) -> ValueType:
         value = self.database.get_value_or_none(self.key)
         if value is None:
-            return None
+            return b"none"
         if isinstance(value, bytes):
             return b"string"
         if isinstance(value, list):
             return b"list"
+        if isinstance(value, ValkeySortedSet):
+            return b"sorted_set"
 
         raise TypeError(f"not supporting type {type(value)}")
 
