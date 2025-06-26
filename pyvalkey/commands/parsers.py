@@ -135,6 +135,8 @@ class ListParameterParser(ParameterParser):
                 parameter_parser = ParameterParser()
             case int():
                 parameter_parser = IntParameterParser()
+            case float():
+                parameter_parser = FloatParameterParser()
             case tuple():
                 parameter_parser = TupleParameterParser.create_from_tuple_types(get_args(list_type))
             case default:

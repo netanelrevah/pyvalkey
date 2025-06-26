@@ -72,6 +72,40 @@ class ValkeySortedSet:
 
         return new_set
 
+    def intersection(self, *others: ValkeySortedSet) -> ValkeySortedSet:
+        members = set(self.members_scores.keys())
+        for other in others:
+            members &= set(other.members_scores.keys())
+
+        new_set = ValkeySortedSet()
+        for member, score in self.members_scores.items():
+            if member in members:
+                new_set.add(score, member)
+
+        for other in others:
+            for member, score in other.members_scores.items():
+                if member in members:
+                    new_set.add(score + new_set.members_scores.get(member, 0), member)
+
+        return new_set
+
+    def difference(self, *others: ValkeySortedSet) -> ValkeySortedSet:
+        members = set(self.members_scores.keys())
+        for other in others:
+            members.difference_update(set(other.members_scores.keys()))
+
+        new_set = ValkeySortedSet()
+        for member, score in self.members_scores.items():
+            if member in members:
+                new_set.add(score, member)
+
+        for other in others:
+            for member, score in other.members_scores.items():
+                if member in members:
+                    new_set.add(score + new_set.members_scores.get(member, 0), member)
+
+        return new_set
+
     def update_from(self, other: ValkeySortedSet) -> None:
         for member, score in other.members_scores.items():
             self.add(score, member)
@@ -583,6 +617,21 @@ class StringDatabase(DatabaseBase[bytes | int]):
 
 
 @dataclass
+class AnySetDatabase(DatabaseBase[ValkeySortedSet | set[bytes]]):
+    index: int
+    content: DatabaseContent
+
+    def is_empty(self, value: ValkeySortedSet | set[bytes]) -> bool:
+        return len(value) == 0
+
+    def create_empty(self) -> ValkeySortedSet | set[bytes]:
+        return ValkeySortedSet()
+
+    def has_key(self, key: bytes) -> bool:
+        return self.has_typed_key(key, lambda value: isinstance(value, ValkeySortedSet | set))
+
+
+@dataclass
 class Database(DatabaseBase[KeyValueType]):
     index: int
     content: DatabaseContent = field(default_factory=DatabaseContent)
@@ -605,6 +654,7 @@ class Database(DatabaseBase[KeyValueType]):
         self.sorted_set_database = TypedDatabase(
             self.index, self.content, ValkeySortedSet, ValkeySortedSet, lambda value: len(value) == 0
         )
+        self.any_set_database = AnySetDatabase(self.index, self.content)
         self.set_database = TypedDatabase(self.index, self.content, set, set, lambda value: not value)
         self.hash_database = TypedDatabase(self.index, self.content, dict, dict, lambda value: not value)
         self.list_database = ListDatabase(self.index, self.content)

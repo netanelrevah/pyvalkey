@@ -1,7 +1,7 @@
-import functools
 import math
 from collections.abc import Callable
 from enum import Enum
+from itertools import zip_longest
 
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import (
@@ -617,37 +617,151 @@ class SortedSetRemoveRangeByLexical(DatabaseCommand):
         return removed_memebers
 
 
-def apply_set_store_operation(
+def sorted_set_store_operation(
+    database: Database,
+    operation: Callable[[ValkeySortedSet, ValkeySortedSet], ValkeySortedSet],
+    keys: list[bytes],
+    weights: list[float] | None = None,
+) -> ValkeySortedSet:
+    new_set: ValkeySortedSet | None = None
+    for key, weight in zip_longest(keys, weights or [], fillvalue=None):
+        if key is None:
+            raise ValueError()
+        any_set = database.any_set_database.get_value_or_empty(key)
+        if isinstance(any_set, set):
+            value = ValkeySortedSet((member, weight or 1.0) for member in any_set)
+        elif weight is not None and weight != 1.0:
+            value = ValkeySortedSet((member, weight * score) for (score, member) in any_set.members)
+        else:
+            value = any_set
+
+        if new_set is None:
+            new_set = value
+        else:
+            new_set = operation(new_set, value)
+
+    if new_set is None:
+        new_set = ValkeySortedSet()
+
+    return new_set
+
+
+def apply_sorted_set_store_operation(
     database: Database,
     operation: Callable[[ValkeySortedSet, ValkeySortedSet], ValkeySortedSet],
     keys: list[bytes],
     destination: bytes,
+    weights: list[float] | None = None,
 ) -> int:
-    new_set: ValkeySortedSet = functools.reduce(operation, map(database.sorted_set_database.get_value_or_empty, keys))
+    new_set = sorted_set_store_operation(database, operation, keys, weights)
+
     database.pop(destination, None)
     database.sorted_set_database.get_value_or_create(destination).update_from(new_set)
+
     return len(new_set)
+
+
+class AggregateMode(Enum):
+    SUM = b"SUM"
+    MIN = b"MIN"
+    MAX = b"MAX"
 
 
 @command(b"zunionstore", {b"write", b"set", b"slow"})
 class SortedSetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
-    keys: list[bytes] = positional_parameter()
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    weights: list[float] | None = keyword_parameter(token=b"WEIGHTS", default=None)
+    aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
 
     def execute(self) -> ValueType:
-        return apply_set_store_operation(self.database, ValkeySortedSet.union, self.keys, self.destination)
+        return apply_sorted_set_store_operation(
+            self.database, ValkeySortedSet.union, self.keys, self.destination, self.weights
+        )
 
 
-def apply_set_operation(
-    database: Database, operation: Callable[[ValkeySortedSet, ValkeySortedSet], ValkeySortedSet], keys: list[bytes]
+def apply_sorted_set_operation(
+    database: Database,
+    operation: Callable[[ValkeySortedSet, ValkeySortedSet], ValkeySortedSet],
+    keys: list[bytes],
+    weights: list[float] | None = None,
+    with_scores: bool = False,
 ) -> list:
-    return functools.reduce(operation, map(database.sorted_set_database.get_value_or_empty, keys))  # type: ignore[arg-type]
+    new_set = sorted_set_store_operation(database, operation, keys, weights)
+
+    if with_scores:
+        return [[member, score] for score, member in new_set.members]
+    return [member for score, member in new_set.members]
 
 
 @command(b"zunion", {b"write", b"set", b"slow"})
-class SortedSetStore(DatabaseCommand):
+class SortedSetUnion(DatabaseCommand):
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    weights: list[float] | None = keyword_parameter(token=b"WEIGHTS", default=None, length_field_name="numkeys")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+
+    def execute(self) -> ValueType:
+        return apply_sorted_set_operation(
+            self.database, ValkeySortedSet.union, self.keys, self.weights, self.with_scores
+        )
+
+
+@command(b"zinter", {b"write", b"set", b"slow"})
+class SortedSetIntersection(DatabaseCommand):
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    weights: list[float] | None = keyword_parameter(token=b"WEIGHTS", default=None, length_field_name="numkeys")
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+
+    def execute(self) -> ValueType:
+        return apply_sorted_set_operation(
+            self.database, ValkeySortedSet.intersection, self.keys, self.weights, self.with_scores
+        )
+
+
+@command(b"zinterstore", {b"write", b"set", b"slow"})
+class SortedSetIntersectionStore(DatabaseCommand):
+    destination: bytes = positional_parameter()
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    weights: list[float] | None = keyword_parameter(token=b"WEIGHTS", default=None)
+    aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
+
+    def execute(self) -> ValueType:
+        return apply_sorted_set_store_operation(
+            self.database, ValkeySortedSet.intersection, self.keys, self.destination, self.weights
+        )
+
+
+@command(b"zdiffstore", {b"write", b"set", b"slow"})
+class SortedSetDifferenceStore(DatabaseCommand):
+    destination: bytes = positional_parameter()
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    weights: list[float] | None = keyword_parameter(token=b"WEIGHTS", default=None)
+    aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
+
+    def execute(self) -> ValueType:
+        return apply_sorted_set_store_operation(
+            self.database, ValkeySortedSet.difference, self.keys, self.destination, self.weights
+        )
+
+
+@command(b"zintercard", {b"write", b"set", b"slow"})
+class SortedSetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
     keys: list[bytes] = positional_parameter(length_field_name="numkeys")
 
     def execute(self) -> ValueType:
-        return apply_set_operation(self.database, ValkeySortedSet.union, self.keys)
+        return len(apply_sorted_set_operation(self.database, ValkeySortedSet.intersection, self.keys))
+
+
+@command(b"zdiff", {b"write", b"set", b"slow"})
+class SortedSetDifference(DatabaseCommand):
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
+    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+
+    def execute(self) -> ValueType:
+        return apply_sorted_set_operation(self.database, ValkeySortedSet.difference, self.keys)
