@@ -67,7 +67,7 @@ class ListCommand(Command):
     name="",
     parameters=b"myzset 2 two 3 three".split(),
     command_cls=SortedSetAdd,
-    expected_kwargs={"key": b"myzset", "scores_members": [(b"2", b"two"), (b"3", b"three")]},
+    expected_kwargs={"key": b"myzset", "scores_members": [(2.0, b"two"), (3.0, b"three")]},
 )
 @Parametrization.case(
     name="",
@@ -75,7 +75,7 @@ class ListCommand(Command):
     command_cls=SortedSetAdd,
     expected_kwargs={
         "key": b"myzset",
-        "scores_members": [(b"2", b"two"), (b"3", b"three")],
+        "scores_members": [(2.0, b"two"), (3.0, b"three")],
         "add_mode": AddMode.INSERT_ONLY,
     },
 )

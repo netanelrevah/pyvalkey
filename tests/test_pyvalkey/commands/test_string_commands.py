@@ -1,6 +1,6 @@
 import time
 
-from _pytest.python_api import raises
+from pytest import raises
 
 from pyvalkey.commands.list_commands import ListBlockingLeftPop
 from pyvalkey.commands.string_commands import ExistenceMode, Get, GetExpire, LongestCommonSubsequence, Set
