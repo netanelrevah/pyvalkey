@@ -2,7 +2,7 @@ import valkey
 from parametrization import Parametrization
 
 from pyvalkey.commands.utils import parse_range_parameters
-from pyvalkey.database_objects.databases import MAX_BYTES
+from pyvalkey.database_objects.scored_sorted_set import MAX_BYTES
 
 
 def test_simple(s: valkey.Valkey, c: valkey.Valkey):

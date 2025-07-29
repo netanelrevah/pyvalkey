@@ -153,7 +153,7 @@ class Configurations(ConfigurationBase):
             except ValueError:
                 if b"memory" in self.FIELD_BY_NAME[name].flags:
                     raise ConfigurationError("argument must be a memory value")
-                raise
+                raise ConfigurationError("argument couldn't be parsed into an integer")
         else:
             setattr(self, field_name, value)
 

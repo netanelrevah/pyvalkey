@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import functools
-import itertools
 import operator
 import random
 import time
@@ -10,208 +8,27 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, TypeVar, cast
 
-from sortedcontainers import SortedDict, SortedSet
+from sortedcontainers import SortedSet
 
 from pyvalkey.commands.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
-from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.utils import (
     is_integer,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
-from pyvalkey.database_objects.utils import flatten
+from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.utils.collections import SetMapping
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
 
 
-@functools.total_ordering
-class MaxBytes(bytes):
-    def less(self, other: Any) -> bool:  # noqa: ANN401
-        if isinstance(other, bytes):
-            return False
-        raise NotImplementedError()
-
-    def more(self, other: Any) -> bool:  # noqa: ANN401
-        if isinstance(other, bytes):
-            return True
-        raise NotImplementedError()
-
-    __eq__ = less
-    __le__ = less
-    __lt__ = less
-    __ge__ = more
-    __gt__ = more
-
-
-MAX_BYTES = MaxBytes()
-
-
-@dataclass(eq=True)
-class RangeLimit:
-    offset: int = positional_parameter()
-    count: int = positional_parameter()
-
-
-class ValkeySortedSet:
-    def __init__(self, members_and_scores: Iterable[tuple[bytes, float]] | None = None) -> None:
-        members_and_scores = members_and_scores or []
-        self.members = SortedSet({(score, member) for member, score in members_and_scores})
-        self.members_scores = SortedDict({member: score for member, score in members_and_scores})
-
-    def union(self, *others: ValkeySortedSet) -> ValkeySortedSet:
-        new_set = ValkeySortedSet()
-        new_set.members_scores = self.members_scores.copy()
-        new_set.members = self.members.copy()
-
-        for other in others:
-            for member, score in other.members_scores.items():
-                new_set.add(score, member)
-
-        return new_set
-
-    def intersection(self, *others: ValkeySortedSet) -> ValkeySortedSet:
-        members = set(self.members_scores.keys())
-        for other in others:
-            members &= set(other.members_scores.keys())
-
-        new_set = ValkeySortedSet()
-        for member, score in self.members_scores.items():
-            if member in members:
-                new_set.add(score, member)
-
-        for other in others:
-            for member, score in other.members_scores.items():
-                if member in members:
-                    new_set.add(score + new_set.members_scores.get(member, 0), member)
-
-        return new_set
-
-    def difference(self, *others: ValkeySortedSet) -> ValkeySortedSet:
-        members = set(self.members_scores.keys())
-        for other in others:
-            members.difference_update(set(other.members_scores.keys()))
-
-        new_set = ValkeySortedSet()
-        for member, score in self.members_scores.items():
-            if member in members:
-                new_set.add(score, member)
-
-        for other in others:
-            for member, score in other.members_scores.items():
-                if member in members:
-                    new_set.add(score + new_set.members_scores.get(member, 0), member)
-
-        return new_set
-
-    def update_from(self, other: ValkeySortedSet) -> None:
-        for member, score in other.members_scores.items():
-            self.add(score, member)
-
-    def update(self, *scored_members: tuple[float, bytes]) -> None:
-        for score, member in scored_members:
-            self.add(score, member)
-
-    def update_with_iterator(self, iterator: Iterable[bytes | float]) -> None:
-        score: float
-        member: bytes
-        for score, member in zip(*([iter(iterator)] * 2), strict=True):
-            self.add(score, member)
-
-    def remove(self, member: bytes) -> None:
-        old_score = self.members_scores[member]
-        self.members.remove((old_score, member))
-
-    def add(self, score: float, member: bytes) -> None:
-        if member in self.members_scores:
-            self.remove(member)
-        self.members_scores[member] = score
-        self.members.add((score, member))
-
-    def range_by_score(
-        self,
-        min_score: float,
-        max_score: float,
-        min_inclusive: bool,
-        max_inclusive: bool,
-        with_scores: bool = False,
-        is_reversed: bool = False,
-        limit: RangeLimit | None = None,
-    ) -> Iterable[bytes | float]:
-        if not is_reversed:
-            minimum = (min_score, (b"" if min_inclusive else MAX_BYTES))
-            maximum = (max_score, (MAX_BYTES if max_inclusive else b""))
-        else:
-            min_inclusive, max_inclusive = max_inclusive, min_inclusive
-            minimum = (max_score, (b"" if max_inclusive else MAX_BYTES))
-            maximum = (min_score, (MAX_BYTES if min_inclusive else b""))
-
-        iterator = self.members.irange(minimum, maximum, (min_inclusive, max_inclusive), reverse=is_reversed)
-
-        if limit:
-            offset = limit.offset
-            count = limit.count + limit.offset
-        else:
-            offset = None
-            count = None
-        for score, member in itertools.islice(iterator, offset, count):
-            if with_scores:
-                yield member
-                yield score
-            else:
-                yield member
-
-    def range_by_lexical(
-        self,
-        min_lex: bytes,
-        max_lex: bytes,
-        min_inclusive: bool,
-        max_inclusive: bool,
-        with_scores: bool = False,
-        is_reversed: bool = False,
-        limit: RangeLimit | None = None,
-    ) -> Iterable[bytes | float]:
-        if not is_reversed:
-            minimum, maximum = min_lex, max_lex
-        else:
-            minimum, maximum = max_lex, min_lex
-            min_inclusive, max_inclusive = max_inclusive, min_inclusive
-
-        iterator = self.members_scores.irange(minimum, maximum, (min_inclusive, max_inclusive), reverse=is_reversed)
-
-        if limit:
-            offset = limit.offset
-            count = limit.count + limit.offset
-        else:
-            offset = None
-            count = None
-        for member in itertools.islice(iterator, offset, count):
-            if with_scores:
-                yield member
-                yield self.members_scores[member]
-            else:
-                yield member
-
-    def range(self, range_slice: slice, with_scores: bool = False) -> list[bytes | float]:
-        result = self.members[range_slice]
-
-        offset = None
-        count = None
-        if with_scores:
-            return list(itertools.islice(flatten(result, reverse_sub_lists=True), offset, count))
-        return list(itertools.islice((member for score, member in result), offset, count))
-
-    def __len__(self) -> int:
-        return len(self.members)
-
-
 def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
-KeyValueType = ValkeySortedSet | dict[bytes, bytes | int] | set[bytes] | list[bytes] | bytes | int
+KeyValueType = ScoredSortedSet | dict[bytes, bytes | int] | set[bytes] | list[bytes] | bytes | int
 
 
 KeyValueTypeVar = TypeVar("KeyValueTypeVar", bound=KeyValueType)
@@ -244,8 +61,8 @@ class KeyValue(Generic[KeyValueTypeVar]):
             new_value = cast(KeyValueTypeVar, self.value)
         elif isinstance(self.value, dict):
             new_value = cast(KeyValueTypeVar, dict(self.value))
-        elif isinstance(self.value, ValkeySortedSet):
-            new_value = cast(KeyValueTypeVar, ValkeySortedSet(self.value.members_scores.items()))
+        elif isinstance(self.value, ScoredSortedSet):
+            new_value = cast(KeyValueTypeVar, ScoredSortedSet(self.value.members_scores.items()))
         elif isinstance(self.value, list):
             new_value = cast(KeyValueTypeVar, list(self.value))
         elif isinstance(self.value, set):
@@ -301,7 +118,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
     def is_empty(self, value: KeyValueTypeVar) -> bool:
         if isinstance(value, bytes | int | list | set | dict):
             return not value
-        if isinstance(value, ValkeySortedSet):
+        if isinstance(value, ScoredSortedSet):
             return len(value) == 0
         raise TypeError()
 
@@ -617,18 +434,18 @@ class StringDatabase(DatabaseBase[bytes | int]):
 
 
 @dataclass
-class AnySetDatabase(DatabaseBase[ValkeySortedSet | set[bytes]]):
+class AnySetDatabase(DatabaseBase[ScoredSortedSet | set[bytes]]):
     index: int
     content: DatabaseContent
 
-    def is_empty(self, value: ValkeySortedSet | set[bytes]) -> bool:
+    def is_empty(self, value: ScoredSortedSet | set[bytes]) -> bool:
         return len(value) == 0
 
-    def create_empty(self) -> ValkeySortedSet | set[bytes]:
-        return ValkeySortedSet()
+    def create_empty(self) -> ScoredSortedSet | set[bytes]:
+        return ScoredSortedSet()
 
     def has_key(self, key: bytes) -> bool:
-        return self.has_typed_key(key, lambda value: isinstance(value, ValkeySortedSet | set))
+        return self.has_typed_key(key, lambda value: isinstance(value, ScoredSortedSet | set))
 
 
 @dataclass
@@ -639,7 +456,7 @@ class Database(DatabaseBase[KeyValueType]):
     string_database: StringDatabase = field(init=False)
     bytes_database: BytesDatabase = field(init=False)
     int_database: IntDatabase = field(init=False)
-    sorted_set_database: TypedDatabase[ValkeySortedSet] = field(init=False)
+    sorted_set_database: TypedDatabase[ScoredSortedSet] = field(init=False)
     set_database: TypedDatabase[set] = field(init=False)
     hash_database: TypedDatabase[dict[bytes, int | bytes]] = field(init=False)
     list_database: ListDatabase = field(init=False)
@@ -652,7 +469,7 @@ class Database(DatabaseBase[KeyValueType]):
         self.bytes_database = BytesDatabase(self.index, self.content)
         self.int_database = IntDatabase(self.index, self.content)
         self.sorted_set_database = TypedDatabase(
-            self.index, self.content, ValkeySortedSet, ValkeySortedSet, lambda value: len(value) == 0
+            self.index, self.content, ScoredSortedSet, ScoredSortedSet, lambda value: len(value) == 0
         )
         self.any_set_database = AnySetDatabase(self.index, self.content)
         self.set_database = TypedDatabase(self.index, self.content, set, set, lambda value: not value)
@@ -668,6 +485,7 @@ class Database(DatabaseBase[KeyValueType]):
         self.set_database.content = self.content
         self.hash_database.content = self.content
         self.list_database.content = self.content
+        self.any_set_database.content = self.content
 
 
 class UnblockMessage(Enum):
@@ -681,6 +499,9 @@ class BlockingManagerBase:
     lazy_notification_keys: list[bytes] = field(default_factory=list)
 
     def has_key(self, database: Database, key: bytes) -> bool:
+        raise NotImplementedError()
+
+    def is_instance(self, value: KeyValueTypeVar) -> bool:
         raise NotImplementedError()
 
     async def wait_for_lists(
@@ -743,7 +564,7 @@ class BlockingManagerBase:
     async def notify_lazy(self, database: Database) -> None:
         while self.lazy_notification_keys:
             key = self.lazy_notification_keys.pop(0)
-            if key not in database.content.data or not isinstance(database.content.data[key].value, list):
+            if key not in database.content.data or not self.is_instance(database.content.data[key].value):
                 print(f"lazy key '{key.decode()}' not found, continue...")
                 continue
             for queue in self.notifications.iter_values(key):
@@ -755,10 +576,16 @@ class ListBlockingManager(BlockingManagerBase):
     def has_key(self, database: Database, key: bytes) -> bool:
         return database.list_database.has_key(key)
 
+    def is_instance(self, value: KeyValueTypeVar) -> bool:
+        return isinstance(value, list)
+
 
 class SortedSetBlockingManager(BlockingManagerBase):
     def has_key(self, database: Database, key: bytes) -> bool:
         return database.sorted_set_database.has_key(key)
+
+    def is_instance(self, value: KeyValueTypeVar) -> bool:
+        return isinstance(value, ScoredSortedSet)
 
 
 @dataclass

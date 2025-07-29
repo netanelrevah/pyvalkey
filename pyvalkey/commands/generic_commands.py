@@ -16,9 +16,9 @@ from pyvalkey.database_objects.databases import (
     BlockingManager,
     Database,
     KeyValue,
-    ValkeySortedSet,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.listpack import listpack
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -96,7 +96,7 @@ class Dump(DatabaseCommand):
             }
         elif isinstance(key_value.value, int):
             dump_value["type"] = "int"
-        elif isinstance(key_value.value, ValkeySortedSet):
+        elif isinstance(key_value.value, ScoredSortedSet):
             dump_value = {
                 "type": "sorted_set",
                 "value": key_value.value.members,
@@ -235,7 +235,7 @@ class ObjectEncoding(DatabaseCommand):
                     return False
         return True
 
-    def is_sorted_set_listpack(self, value: ValkeySortedSet) -> bool:
+    def is_sorted_set_listpack(self, value: ScoredSortedSet) -> bool:
         if len(value) > self.configuration.zset_max_listpack_entries:
             return False
         if max(8 + len(m) for s, m in value.members) > self.configuration.zset_max_listpack_value:
@@ -272,7 +272,7 @@ class ObjectEncoding(DatabaseCommand):
                 return b"listpack"
             return b"hashtable"
 
-        if isinstance(key_value.value, ValkeySortedSet):
+        if isinstance(key_value.value, ScoredSortedSet):
             if self.is_sorted_set_listpack(key_value.value):
                 return b"listpack"
             return b"skiplist"
@@ -446,7 +446,7 @@ class Restore(DatabaseCommand):
         elif json_value["type"] == "list":
             value = [item.encode() for item in json_value["value"]]
         elif json_value["type"] == "sorted_set":
-            value = ValkeySortedSet([(score, member) for score, member in json_value["value"]])
+            value = ScoredSortedSet([(score, member) for score, member in json_value["value"]])
         elif json_value["type"] == "string":
             value = json_value["value"].encode()
         elif json_value["type"] == "int":
@@ -557,11 +557,11 @@ class SortReadOnly(Command):
         if key_value is None:
             return None
 
-        if not isinstance(key_value.value, list | set | ValkeySortedSet):
+        if not isinstance(key_value.value, list | set | ScoredSortedSet):
             raise ServerWrongTypeError()
 
         values: list[bytes]
-        if isinstance(key_value.value, ValkeySortedSet):
+        if isinstance(key_value.value, ScoredSortedSet):
             values = [member for score, member in key_value.value.members]
         else:
             values = list(key_value.value)
@@ -644,7 +644,7 @@ class Type(DatabaseCommand):
             return b"string"
         if isinstance(value, list):
             return b"list"
-        if isinstance(value, ValkeySortedSet):
+        if isinstance(value, ScoredSortedSet):
             return b"sorted_set"
 
         raise TypeError(f"not supporting type {type(value)}")

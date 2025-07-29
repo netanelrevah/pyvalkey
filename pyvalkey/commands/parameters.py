@@ -6,7 +6,7 @@ from typing import Any
 
 
 class ParameterMetadata(Enum):
-    SERVER_PARAMETER = auto()
+    COMMAND_PARAMETER = auto()
     VALUES_MAPPING = auto()
     TOKEN = auto()
     MULTI_TOKEN = auto()
@@ -28,7 +28,7 @@ def server_parameter(
     length_field_name: str | None = None,
 ) -> Any:  # noqa: ANN401
     metadata: dict[ParameterMetadata, Any] = {
-        ParameterMetadata.SERVER_PARAMETER: True,
+        ParameterMetadata.COMMAND_PARAMETER: True,
         ParameterMetadata.PARSE_ERROR: parse_error,
     }
     if length_field_name is not None:

@@ -247,7 +247,7 @@ class Resp2Dumper(RespDumper):
 
     @classmethod
     def dumps_float(cls, value: float) -> bytes:
-        return cls.dumps_bulk_string(f"{value:.17f}".rstrip("0").rstrip("."))
+        return f"{value:.17f}".rstrip("0").rstrip(".").encode()
 
     @classmethod
     def dumps_bulk_string(cls, value: str | bytes) -> bytes:
@@ -281,7 +281,7 @@ class Resp2Dumper(RespDumper):
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.writer.write(self.dumps_float(value))
+            self.writer.write(self.dumps_bulk_string(self.dumps_float(value)))
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
@@ -334,7 +334,7 @@ class Resp3Dumper(RespDumper):
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.writer.write(Resp2Dumper.dumps_float(value))
+            self.writer.write(b"," + Resp2Dumper.dumps_float(value) + b"\r\n")
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
