@@ -33,7 +33,7 @@ class SetMove(DatabaseCommand):
 @command(b"smismember", {b"read", b"set", b"slow"})
 class SetAreMembers(DatabaseCommand):
     key: bytes = positional_parameter()
-    members: list[bytes] = positional_parameter()
+    members: list[bytes] = positional_parameter(sequence_allow_empty=False)
 
     def execute(self) -> ValueType:
         a_set = self.database.set_database.get_value_or_empty(self.key)
@@ -127,14 +127,17 @@ class SetIntersection(DatabaseCommand):
 @command(b"sintercard", {b"read", b"set", b"fast"})
 class SetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
-    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    keys: list[bytes] = positional_parameter(
+        length_field_name="numkeys",
+        errors={
+            "when_length_field_more_then_parameters": b"ERR Number of keys can't be greater than number of args",
+        },
+    )
     limit: int = keyword_parameter(token=b"LIMIT", default=0, parse_error=b"ERR LIMIT can't be negative")
 
     def execute(self) -> ValueType:
         if self.limit < 0:
             raise ServerError(b"ERR LIMIT can't be negative")
-        if self.numkeys > len(self.keys):
-            raise ServerError(b"ERR Number of keys can't be greater than number of args")
 
         result_set: set[bytes] = set(self.database.set_database.get_value_or_empty(self.keys[0]))
         for key in self.keys[1:]:

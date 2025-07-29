@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import math
 import operator
+import random
 from collections.abc import Callable
 from dataclasses import field
 from enum import Enum
 from itertools import zip_longest
 from typing import Protocol
 
+from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -95,7 +97,14 @@ def sorted_set_range(
     is_reversed: bool = False,
     limit: RangeLimit | None = None,
     destination: bytes | None = None,
+    nested_member_score: bool = False,
 ) -> int | list:
+    if range_mode == RangeMode.BY_INDEX and limit is not None:
+        raise ServerError(b"ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX")
+
+    if range_mode == RangeMode.BY_LEX and with_scores:
+        raise ServerError(b"ERR syntax error, WITHSCORES not supported in combination with BYLEX")
+
     z = database.sorted_set_database.get_value_or_empty(key)
 
     if range_mode == RangeMode.BY_SCORE:
@@ -140,15 +149,15 @@ def sorted_set_range(
             with_scores=with_scores or destination is not None,
         )
 
-    if destination:
-        key_value = database.sorted_set_database.get_or_none(destination)
+    if destination is not None:
+        database.sorted_set_database.pop(destination, default=None)
+        value = database.sorted_set_database.get_value_or_create(destination)
+        value.update_with_iterator(result_iterator, invert_tuples=True)
 
-        if key_value is not None:
-            destination_sorted_set = key_value.value
-        else:
-            destination_sorted_set = ScoredSortedSet()
-        destination_sorted_set.update_with_iterator(result_iterator, invert_tuples=True)
-        return len(destination_sorted_set)
+        return len(value)
+
+    if with_scores and nested_member_score:
+        return [[member, score] for member, score in zip(*([iter(result_iterator)] * 2), strict=True)]
     return list(result_iterator)
 
 
@@ -422,14 +431,19 @@ class SortedSetBlockingMultiplePop(Command):
     database: Database = dependency()
 
     timeout: float = positional_parameter(parse_error=b"ERR timeout is out of range")
-    numkeys: int = positional_parameter()
+    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
     keys: list[bytes] = positional_parameter(length_field_name="numkeys")
     pop_modifier: PopModifier = positional_parameter()
-    count: int | None = keyword_parameter(token=b"COUNT", default=None)
+    count: int | None = keyword_parameter(
+        token=b"COUNT", default=None, parse_error=b"ERR count should be greater than 0"
+    )
 
     _key: bytes | None = field(default=None, init=False)
 
     async def before(self, in_multi: bool = False) -> None:
+        if self.count is not None and self.count < 1:
+            raise ServerError(b"ERR count should be greater than 0")
+
         self._key = await self.blocking_manager.wait_for_lists(
             self.client_context, self.keys, self.timeout, in_multi=in_multi
         )
@@ -451,6 +465,8 @@ class SortedSetBlockingMultiplePop(Command):
 
 @command(b"zrange", {b"read", b"sortedset", b"slow"})
 class SortedSetRange(DatabaseCommand):
+    client_context: ClientContext = dependency()
+
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
@@ -471,6 +487,7 @@ class SortedSetRange(DatabaseCommand):
             self.range_mode,
             self.rev,
             self.limit,
+            nested_member_score=self.client_context.protocol == RespProtocolVersion.RESP3,
         )
 
 
@@ -485,7 +502,6 @@ class SortedSetRangeStore(DatabaseCommand):
     )
     rev: bool = keyword_parameter(flag=b"REV")
     limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -493,7 +509,7 @@ class SortedSetRangeStore(DatabaseCommand):
             self.key,
             self.start,
             self.stop,
-            self.with_scores,
+            False,
             self.range_mode,
             self.rev,
             self.limit,
@@ -919,7 +935,10 @@ class SortedSetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
-        length_field_name="numkeys", parse_error=b"ERR at least 1 input key is needed for 'zunionstore' command"
+        length_field_name="numkeys",
+        errors={
+            "when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zunionstore' command"
+        },
     )
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
@@ -964,7 +983,8 @@ class SortedSetUnion(DatabaseCommand):
 
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
-        length_field_name="numkeys", parse_error=b"ERR at least 1 input key is needed for 'zunion' command"
+        length_field_name="numkeys",
+        errors={"when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zunion' command"},
     )
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
@@ -990,7 +1010,8 @@ class SortedSetIntersection(DatabaseCommand):
 
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
-        length_field_name="numkeys", parse_error=b"ERR at least 1 input key is needed for 'zinter' command"
+        length_field_name="numkeys",
+        errors={"when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zinter' command"},
     )
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
@@ -1015,7 +1036,10 @@ class SortedSetIntersectionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
-        length_field_name="numkeys", parse_error=b"ERR at least 1 input key is needed for 'zinterstore' command"
+        length_field_name="numkeys",
+        errors={
+            "when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zinterstore' command"
+        },
     )
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
@@ -1023,9 +1047,6 @@ class SortedSetIntersectionStore(DatabaseCommand):
     aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
 
     def execute(self) -> ValueType:
-        if self.numkeys <= 0:
-            raise ServerError(b"ERR at least 1 input key is needed for 'zunion' command")
-
         return apply_sorted_set_store_operation(
             self.database,
             ScoredSortedSet.intersection,
@@ -1041,7 +1062,10 @@ class SortedSetDifferenceStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
-        length_field_name="numkeys", parse_error=b"ERR at least 1 input key is needed for 'zdiffstore' command"
+        length_field_name="numkeys",
+        errors={
+            "when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zdiffstore' command"
+        },
     )
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
@@ -1049,9 +1073,6 @@ class SortedSetDifferenceStore(DatabaseCommand):
     aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
 
     def execute(self) -> ValueType:
-        if self.numkeys <= 0:
-            raise ServerError(b"ERR at least 1 input key is needed for 'zunion' command")
-
         return apply_sorted_set_store_operation(
             self.database,
             ScoredSortedSet.difference,
@@ -1064,8 +1085,13 @@ class SortedSetDifferenceStore(DatabaseCommand):
 
 @command(b"zintercard", {b"write", b"set", b"slow"})
 class SortedSetIntersectionCardinality(DatabaseCommand):
-    numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
-    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    numkeys: int = positional_parameter()
+    keys: list[bytes] = positional_parameter(
+        length_field_name="numkeys",
+        errors={
+            "when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zintercard' command"
+        },
+    )
     limit: int = keyword_parameter(token=b"LIMIT", default=0, parse_error=b"ERR LIMIT can't be negative")
 
     def execute(self) -> ValueType:
@@ -1088,7 +1114,8 @@ class SortedSetIntersectionCardinality(DatabaseCommand):
 class SortedSetDifference(DatabaseCommand):
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
-        length_field_name="numkeys", parse_error=b"ERR at least 1 input key is needed for 'zdiffstore' command"
+        length_field_name="numkeys",
+        errors={"when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zdiff' command"},
     )
     with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
 
@@ -1100,3 +1127,60 @@ class SortedSetDifference(DatabaseCommand):
             protocol=RespProtocolVersion.RESP2,
             with_scores=self.with_scores,
         )
+
+
+@command(b"zrandmember", {b"write", b"string", b"slow"})
+class SortedSetRandomMember(DatabaseCommand):
+    client_context: ClientContext = dependency()
+
+    key: bytes = positional_parameter()
+    count: int | None = positional_parameter(default=None)
+    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+
+    def execute(self) -> ValueType:
+        value = self.database.sorted_set_database.get_value_or_none(self.key)
+
+        if self.count is None:
+            if value is None:
+                return None
+            score, member = random.choice(list(value.members))
+            if self.with_scores:
+                return [member, score]
+            return member
+
+        if not (-LONG_MAX < self.count < LONG_MAX):
+            raise ServerError(f"ERR value is out of range, value must between {-LONG_MAX} and {LONG_MAX}".encode())
+
+        if self.with_scores and not ((-LONG_MAX / 2) < self.count < (LONG_MAX / 2)):
+            raise ServerError(b"ERR value is out of range")
+
+        if value is None:
+            return []
+
+        score_members = list(value.members)
+
+        result: list = []
+        if self.count < 0:
+            for _ in range(abs(self.count)):
+                score, member = random.choice(score_members)
+                if self.with_scores and self.client_context.protocol == RespProtocolVersion.RESP3:
+                    result.append([member, score])
+                elif self.with_scores:
+                    result.append(member)
+                    result.append(score)
+                else:
+                    result.append(member)
+        else:
+            for _ in range(self.count):
+                if not score_members:
+                    break
+
+                score, member = score_members.pop(random.randrange(len(score_members)))
+                if self.with_scores and self.client_context.protocol == RespProtocolVersion.RESP3:
+                    result.append([member, score])
+                elif self.with_scores:
+                    result.append(member)
+                    result.append(score)
+                else:
+                    result.append(member)
+        return result

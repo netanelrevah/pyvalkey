@@ -46,8 +46,7 @@ def convert_bytes_value_to_float(value: bytes) -> float:
     return float(value)
 
 
-decimal_context = decimal.Context()
-decimal_context.prec = 20
+decimal_context = decimal.Context(prec=20)
 
 
 def float_to_str(value: float) -> str:
@@ -55,12 +54,16 @@ def float_to_str(value: float) -> str:
     Convert the given float to a string,
     without resorting to scientific notation
     """
-    d1 = decimal_context.create_decimal(repr(value))
-    return format(d1, "f")
+    decimal_value = decimal_context.create_decimal(repr(value))
+    if decimal_value.is_nan():
+        return "nan"
+    if decimal_value.is_infinite():
+        return "inf" if decimal_value > 0 else "-inf"
+    return f"{decimal_value}"
 
 
 def convert_float_value_to_bytes(value: float) -> bytes:
-    return float_to_str(value).rstrip("0").rstrip(".").encode()
+    return float_to_str(value).lower().rstrip("0").rstrip(".").encode()
 
 
 def convert_bytes_value_as_int(value: bytes) -> int:

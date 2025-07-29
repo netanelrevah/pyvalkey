@@ -137,7 +137,7 @@ class ScoredSortedSet:
             self.add(*((member, score) if invert_tuples else (score, member)))
 
     def remove(self, member: bytes) -> None:
-        old_score = self.members_scores[member]
+        old_score = self.members_scores.pop(member)
         self.members.remove((old_score, member))
 
     def add(self, score: float, member: bytes) -> None:

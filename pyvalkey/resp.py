@@ -8,6 +8,8 @@ from enum import IntEnum
 from io import IOBase
 from typing import Any, AnyStr, BinaryIO, Self
 
+from pyvalkey.commands.utils import convert_float_value_to_bytes
+
 
 class RespProtocolVersion(IntEnum):
     RESP2 = 2
@@ -247,7 +249,7 @@ class Resp2Dumper(RespDumper):
 
     @classmethod
     def dumps_float(cls, value: float) -> bytes:
-        return f"{value:.17f}".rstrip("0").rstrip(".").encode()
+        return convert_float_value_to_bytes(value)
 
     @classmethod
     def dumps_bulk_string(cls, value: str | bytes) -> bytes:

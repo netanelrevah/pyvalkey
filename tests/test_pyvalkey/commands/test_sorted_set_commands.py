@@ -1,4 +1,12 @@
-from pyvalkey.commands.sorted_set_commands import SortedSetIntersectionCardinality, SortedSetUnion, SortedSetUnionStore
+import pytest
+
+from pyvalkey.commands.sorted_set_commands import (
+    SortedSetAdd,
+    SortedSetIntersectionCardinality,
+    SortedSetUnion,
+    SortedSetUnionStore,
+)
+from pyvalkey.database_objects.errors import ServerError
 
 
 class TestSortedSetIntersectionCardinality:
@@ -34,3 +42,14 @@ class TestSortedSetUnion:
             "weights": [2.0, 3.0],
             "with_scores": True,
         }
+
+
+class TestSortedSetAdd:
+    def test_parse(self):
+        with pytest.raises(ServerError) as e:
+            assert SortedSetAdd.parse([b"myzset", b"10", b"a", b"20", b"b", b"30", b"c", b"40"]) == {
+                "key": b"myzset",
+                "scores_members": [(10.0, b"a"), (20.0, b"b"), (30.0, b"c"), (40.0, b"d")],
+            }
+        assert isinstance(e.value, ServerError)
+        assert e.value.message == b"ERR syntax error"

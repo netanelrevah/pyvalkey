@@ -124,6 +124,10 @@ class ListValueParser(ValueParser):
     def parse(self, parameters: list[bytes]) -> list:
         list_parameter = []
         while parameters:
+            if isinstance(self.parameter_parser, TupleValueParser) and len(parameters) < len(
+                self.parameter_parser.parameter_parser_tuple
+            ):
+                break
             list_parameter.append(self.parameter_parser.parse(parameters))
         return list_parameter
 
@@ -153,8 +157,6 @@ class TupleValueParser(ValueParser):
 
     def parse(self, parameters: list[bytes]) -> tuple:
         tuple_parameter = []
-        if len(parameters) < len(self.parameter_parser_tuple):
-            raise ServerError(b"ERR syntax error")
         for parameter_parser in self.parameter_parser_tuple:
             tuple_parameter.append(parameter_parser.parse(parameters))
         return tuple(tuple_parameter)
@@ -274,15 +276,17 @@ class NamedParameterParser(ParameterParser):
         parameter_parser: ValueParser,
         is_optional: bool = False,
         length_field_name: str | None = None,
-        parse_error: bytes | None = None,
+        errors: dict[str, bytes] | None = None,
+        allow_empty: bool = True,
     ) -> NamedParameterParser:
         if isinstance(parameter_parser, ListValueParser | SetValueParser):
             return SequenceNamedParameterParser(
                 name,
                 parameter_parser,
                 length_field_name=length_field_name,
-                parse_error=parse_error,
                 is_optional=is_optional,
+                **(errors or {}),
+                allow_empty=allow_empty,
             )
         return NamedParameterParser(name, parameter_parser, is_optional=is_optional)
 
@@ -292,20 +296,30 @@ class SequenceNamedParameterParser(NamedParameterParser):
     length_field_name: str | None = None
     parse_error: bytes | None = None
 
+    when_length_field_less_then_parameters: bytes | None = None
+    when_length_field_more_then_parameters: bytes | None = None
+    allow_empty: bool = True
+
     def parse(self, parameters: list[bytes], context: ParameterParserContext | None = None) -> dict[str, Any]:
         if context is None:
             raise ValueError("Context must be provided for SequenceNamedParameterParser")
         if self.length_field_name is not None:
             length = context.parsed_parameters.get(self.length_field_name, 0)
             if length <= 0:
-                if self.parse_error is not None:
-                    raise ServerError(self.parse_error)
+                if self.when_length_field_less_then_parameters is not None:
+                    raise ServerError(self.when_length_field_less_then_parameters)
                 raise ServerError(f"ERR {self.length_field_name} should be greater than 0".encode())
+            if len(parameters) == 0:
+                raise ServerWrongNumberOfArgumentsError()
             if len(parameters) < length:
+                if self.when_length_field_more_then_parameters is not None:
+                    raise ServerError(self.when_length_field_more_then_parameters)
                 raise ServerWrongNumberOfArgumentsError()
             parameters = [parameters.pop(0) for _ in range(length)]
         elif len(context.left_parameter_parsers) > 0:
             parameters = [parameters.pop(0) for _ in range(len(parameters) - len(context.left_parameter_parsers))]
+        elif not self.allow_empty and len(parameters) == 0:
+            raise ServerWrongNumberOfArgumentsError()
         return {self.name: self.parameter_parser.parse(parameters)}
 
 
@@ -390,7 +404,12 @@ class ObjectParametersParser(ParameterParser):
             )
 
         if parameters and not self.allow_more_parameters:
-            if isinstance(self.parameters_parsers[-1], OptionalKeywordParametersGroup):
+            has_optional_keyword_parameters = False
+            for parameter_parser in self.parameters_parsers:
+                if isinstance(parameter_parser, OptionalKeywordParametersGroup):
+                    has_optional_keyword_parameters = True
+                    break
+            if has_optional_keyword_parameters:
                 raise ServerError(b"ERR syntax error")
 
             raise ServerWrongNumberOfArgumentsError()
@@ -427,6 +446,8 @@ class ObjectParametersParser(ParameterParser):
                     parameter_field_name,
                     ParametersParserCreator.create(parameter_field, resolved_hints[parameter_field.name]),
                     length_field_name=length_field_name,
+                    errors=parameter_field.metadata.get(ParameterMetadata.ERRORS, None),
+                    allow_empty=parameter_field.metadata.get(ParameterMetadata.SEQUENCE_ALLOW_EMPTY, True),
                 )
                 if isinstance(flag, dict):
                     for flag_key in flag.keys():
@@ -449,7 +470,8 @@ class ObjectParametersParser(ParameterParser):
                             ParametersParserCreator.create(parameter_field, resolved_hints[parameter_field.name]),
                             length_field_name=length_field_name,
                             is_optional=True,
-                            parse_error=parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR, None),
+                            errors=parameter_field.metadata.get(ParameterMetadata.ERRORS, None),
+                            allow_empty=parameter_field.metadata.get(ParameterMetadata.SEQUENCE_ALLOW_EMPTY, True),
                         )
                     )
                 else:
@@ -458,7 +480,8 @@ class ObjectParametersParser(ParameterParser):
                             parameter_field.name,
                             ParametersParserCreator.create(parameter_field, resolved_hints[parameter_field.name]),
                             length_field_name=length_field_name,
-                            parse_error=parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR, None),
+                            errors=parameter_field.metadata.get(ParameterMetadata.ERRORS, None),
+                            allow_empty=parameter_field.metadata.get(ParameterMetadata.SEQUENCE_ALLOW_EMPTY, True),
                         )
                     )
 
