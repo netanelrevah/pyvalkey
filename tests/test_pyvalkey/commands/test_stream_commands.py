@@ -3,7 +3,7 @@ from pyvalkey.commands.stream_commands import StreamGroupRead
 
 class TestStreamGroupRead:
     def test_parse(self):
-        assert StreamGroupRead.parse([b"g1", b"Alice", b"COUNT", b"1", b"STREAMS", b"x{t}", b">"]) == {
+        assert StreamGroupRead.parse([b"GROUP", b"g1", b"Alice", b"COUNT", b"1", b"STREAMS", b"x{t}", b">"]) == {
             "group": b"g1",
             "consumer": b"Alice",
             "count": 1,
