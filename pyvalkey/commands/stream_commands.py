@@ -651,3 +651,12 @@ class StreamGroupAcknoledge(Command):
 
     def execute(self) -> ValueType:
         return None
+
+
+@command(b"destroy", {b"write", b"stream", b"slow", b"blocking"}, parent_command=b"xgroup")
+class StreamGroupDestroy(Command):
+    key: bytes = positional_parameter()
+    group: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return None

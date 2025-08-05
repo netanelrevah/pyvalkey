@@ -383,7 +383,7 @@ class ObjectParametersParser(ParameterParser):
 
         for index, parameter_parser in enumerate(self.parameters_parsers):
             if parameter_parser.is_optional:
-                if len(parameters) == 0 or len(parameters) <= (non_optional_parameters - index):
+                if not parameters or len(parameters) <= (non_optional_parameters - index):
                     continue
 
                 if index + 1 < len(self.parameters_parsers):
