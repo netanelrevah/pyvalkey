@@ -5,6 +5,7 @@ from math import isinf, isnan
 from pyvalkey.commands.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
 from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
 from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue
@@ -92,7 +93,9 @@ class GetDelete(DatabaseCommand):
         return None
 
 
-@command(b"getex", {b"write", b"string", b"fast"})
+@command(
+    b"getex", {b"write", b"string", b"fast"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+)
 class GetExpire(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
     ex: int | None = keyword_parameter(flag=b"EX", default=None)
