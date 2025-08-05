@@ -18,6 +18,7 @@ from pyvalkey.commands.utils import (
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
+from pyvalkey.database_objects.stream import Stream
 from pyvalkey.utils.collections import SetMapping
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ def create_empty_keys_with_expiration() -> SortedSet:
     return SortedSet(key=operator.attrgetter("expiration"))
 
 
-KeyValueType = ScoredSortedSet | dict[bytes, bytes | int] | set[bytes] | list[bytes] | bytes | int
+KeyValueType = ScoredSortedSet | dict[bytes, bytes | int] | set[bytes] | list[bytes] | bytes | int | Stream
 
 
 KeyValueTypeVar = TypeVar("KeyValueTypeVar", bound=KeyValueType)
@@ -120,6 +121,8 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             return not value
         if isinstance(value, ScoredSortedSet):
             return len(value) == 0
+        if isinstance(value, Stream):
+            return False
         raise TypeError()
 
     def has_typed_key(self, key: bytes, type_check: Callable[[KeyValueTypeVar], bool] | None = None) -> bool:
@@ -460,6 +463,7 @@ class Database(DatabaseBase[KeyValueType]):
     set_database: TypedDatabase[set] = field(init=False)
     hash_database: TypedDatabase[dict[bytes, int | bytes]] = field(init=False)
     list_database: ListDatabase = field(init=False)
+    stream_database: TypedDatabase[Stream] = field(init=False)
 
     def has_key(self, key: bytes) -> bool:
         return self.has_typed_key(key)
@@ -476,16 +480,22 @@ class Database(DatabaseBase[KeyValueType]):
         self.hash_database = TypedDatabase(self.index, self.content, dict, dict, lambda value: not value)
         self.list_database = ListDatabase(self.index, self.content)
 
+        self.stream_database = TypedDatabase(self.index, self.content, Stream, Stream, lambda value: False)
+
     def replace_content(self, new_content: DatabaseContent) -> None:
-        self.content = new_content
-        self.string_database.content = self.content
-        self.bytes_database.content = self.content
-        self.int_database.content = self.content
-        self.sorted_set_database.content = self.content
-        self.set_database.content = self.content
-        self.hash_database.content = self.content
-        self.list_database.content = self.content
-        self.any_set_database.content = self.content
+        for database in (
+            self,
+            self.string_database,
+            self.bytes_database,
+            self.int_database,
+            self.sorted_set_database,
+            self.set_database,
+            self.hash_database,
+            self.list_database,
+            self.any_set_database,
+            self.stream_database,
+        ):
+            database.content = new_content
 
 
 class UnblockMessage(Enum):
@@ -510,6 +520,7 @@ class BlockingManagerBase:
         keys: list[bytes],
         timeout: int | float | None = None,
         in_multi: bool = False,
+        clear_queue: bool = True,
     ) -> bytes | None:
         if timeout is not None and timeout < 0:
             raise ServerError(b"ERR timeout is negative")
@@ -543,7 +554,8 @@ class BlockingManagerBase:
             return None
         finally:
             self.notifications.remove_all(client_context.current_client.blocking_queue)
-            client_context.current_client.blocking_queue = None
+            if clear_queue:
+                client_context.current_client.blocking_queue = None
 
     async def notify(self, key: bytes, in_multi: bool = False) -> None:
         if in_multi:
@@ -588,10 +600,19 @@ class SortedSetBlockingManager(BlockingManagerBase):
         return isinstance(value, ScoredSortedSet)
 
 
+class StreamBlockingManager(BlockingManagerBase):
+    def has_key(self, database: Database, key: bytes) -> bool:
+        return database.stream_database.has_key(key)
+
+    def is_instance(self, value: KeyValueTypeVar) -> bool:
+        return isinstance(value, Stream)
+
+
 @dataclass
 class BlockingManager:
     list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)
     sorted_set_blocking_manager: SortedSetBlockingManager = field(default_factory=SortedSetBlockingManager)
+    stream_blocking_manager: StreamBlockingManager = field(default_factory=StreamBlockingManager)
 
     async def notify_safely(
         self,
@@ -601,11 +622,13 @@ class BlockingManager:
     ) -> None:
         await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
         await self.sorted_set_blocking_manager.notify_safely(database, key, in_multi=in_multi)
+        await self.stream_blocking_manager.notify_safely(database, key, in_multi=in_multi)
 
     async def notify_safely_all(self, database: Database, in_multi: bool = False) -> None:
         for key in database.keys():
             await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
             await self.sorted_set_blocking_manager.notify_safely(database, key, in_multi=in_multi)
+            await self.stream_blocking_manager.notify_safely(database, key, in_multi=in_multi)
 
 
 @dataclass(unsafe_hash=True)

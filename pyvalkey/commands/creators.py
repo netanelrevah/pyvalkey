@@ -9,7 +9,13 @@ from pyvalkey.commands.dependencies import DependencyMetadata
 from pyvalkey.commands.scripting import ScriptingEngine
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import BlockingManager, Database, ListBlockingManager, SortedSetBlockingManager
+from pyvalkey.database_objects.databases import (
+    BlockingManager,
+    Database,
+    ListBlockingManager,
+    SortedSetBlockingManager,
+    StreamBlockingManager,
+)
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RespProtocolVersion
 
@@ -51,6 +57,10 @@ class CommandCreator:
             elif command_dependency_type == SortedSetBlockingManager:
                 command_kwargs[command_dependency.name] = (
                     client_context.server_context.blocking_manager.sorted_set_blocking_manager
+                )
+            elif command_dependency_type == StreamBlockingManager:
+                command_kwargs[command_dependency.name] = (
+                    client_context.server_context.blocking_manager.stream_blocking_manager
                 )
             elif command_dependency_type == ScriptingEngine:
                 command_kwargs[command_dependency.name] = client_context.scripting_manager

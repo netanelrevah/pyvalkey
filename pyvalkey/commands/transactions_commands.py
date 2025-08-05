@@ -5,7 +5,13 @@ from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.database_objects.databases import ClientWatchlist, Database, ListBlockingManager, SortedSetBlockingManager
+from pyvalkey.database_objects.databases import (
+    ClientWatchlist,
+    Database,
+    ListBlockingManager,
+    SortedSetBlockingManager,
+    StreamBlockingManager,
+)
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
@@ -51,6 +57,7 @@ class TransactionExecute(Command):
     client_context: ClientContext = dependency()
     list_blocking_manager: ListBlockingManager = dependency()
     sorted_set_blocking_manager: SortedSetBlockingManager = dependency()
+    stream_blocking_manager: StreamBlockingManager = dependency()
 
     _result: ValueType = field(default=None, init=False)
     _keys_to_notify: set[bytes] = field(default_factory=set, init=False)
@@ -85,6 +92,7 @@ class TransactionExecute(Command):
     async def after(self, _: bool = False) -> None:
         await self.list_blocking_manager.notify_lazy(self.database)
         await self.sorted_set_blocking_manager.notify_lazy(self.database)
+        await self.stream_blocking_manager.notify_lazy(self.database)
 
 
 @command(b"watch", {b"transaction", b"fast"}, flags={b"nomulti"})

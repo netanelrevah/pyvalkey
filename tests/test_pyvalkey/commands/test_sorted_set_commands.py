@@ -47,9 +47,6 @@ class TestSortedSetUnion:
 class TestSortedSetAdd:
     def test_parse(self):
         with pytest.raises(ServerError) as e:
-            assert SortedSetAdd.parse([b"myzset", b"10", b"a", b"20", b"b", b"30", b"c", b"40"]) == {
-                "key": b"myzset",
-                "scores_members": [(10.0, b"a"), (20.0, b"b"), (30.0, b"c"), (40.0, b"d")],
-            }
+            SortedSetAdd.parse([b"myzset", b"10", b"a", b"20", b"b", b"30", b"c", b"40"])
         assert isinstance(e.value, ServerError)
         assert e.value.message == b"ERR syntax error"

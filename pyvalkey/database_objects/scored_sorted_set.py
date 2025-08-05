@@ -44,8 +44,10 @@ class RangeLimit:
 
 class ScoredSortedSet:
     def __init__(self, members_and_scores: Iterable[tuple[bytes, float]] | None = None) -> None:
-        self.members = SortedSet({(score, member) for member, score in members_and_scores or []})
-        self.members_scores = SortedDict({member: score for score, member in self.members})
+        self.members: SortedSet[tuple[float, bytes]] = SortedSet(
+            {(score, member) for member, score in members_and_scores or []}
+        )
+        self.members_scores: SortedDict[bytes, float] = SortedDict({member: score for score, member in self.members})
 
     def _score_operation(
         self, old_score: float, new_score: float | None, operation: Callable[[float, float], float]

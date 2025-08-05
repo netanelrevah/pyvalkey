@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pyvalkey.commands.parsers import transform_command
+from pyvalkey.commands.parsers import CommandMetadata, transform_command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
@@ -46,9 +46,10 @@ class CommandsRouter:
         acl_categories: set[bytes],
         parent_command: bytes | None = None,
         flags: set[bytes] | None = None,
+        metadata: dict[CommandMetadata, Any] | None = None,
     ) -> Callable[[type[Command]], type[Command]]:
         def _command_wrapper(command_cls: type[Command]) -> type[Command]:
-            command_cls = transform_command(command_cls)
+            command_cls = transform_command(command_cls, metadata)
 
             if not acl_categories:
                 raise TypeError("command must have at least one acl_categories")

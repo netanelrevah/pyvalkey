@@ -213,7 +213,11 @@ class ValkeyClientProtocol(asyncio.Protocol):
             )
         except ServerWrongNumberOfArgumentsError:
             command_statistics.rejected_calls += 1
-            self.dump(RespError(b"ERR wrong number of arguments for '" + command[0].lower() + b"' command"))
+            self.dump(
+                RespError(
+                    b"ERR wrong number of arguments for '" + routed_command_cls.full_command_name.lower() + b"' command"
+                )
+            )
         except ServerWrongTypeError:
             command_statistics.failed_calls += 1
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))

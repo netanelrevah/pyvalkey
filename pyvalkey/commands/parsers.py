@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import MISSING, Field, dataclass, field, fields, is_dataclass
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, auto
 from types import UnionType
 from typing import (
     TYPE_CHECKING,
@@ -28,6 +28,7 @@ from pyvalkey.database_objects.errors import (
 if TYPE_CHECKING:
     from pyvalkey.commands.core import Command
 
+    ParameterObjectType = TypeVar("ParameterObjectType", bound=object)
     CommandType = TypeVar("CommandType", bound=Command)
 
 
@@ -373,6 +374,7 @@ class OptionalKeywordParametersGroup(ParameterParser):
 class ObjectParametersParser(ParameterParser):
     parameters_parsers: list[ParameterParser]
     allow_more_parameters: bool = False
+    parameters_left_error: bytes | None = None
 
     def parse(self, parameters: list[bytes], context: ParameterParserContext | None = None) -> Any:  # noqa: ANN401
         parsed_parameters: dict[str, Any] = {}
@@ -404,13 +406,16 @@ class ObjectParametersParser(ParameterParser):
             )
 
         if parameters and not self.allow_more_parameters:
-            has_optional_keyword_parameters = False
-            for parameter_parser in self.parameters_parsers:
-                if isinstance(parameter_parser, OptionalKeywordParametersGroup):
-                    has_optional_keyword_parameters = True
-                    break
-            if has_optional_keyword_parameters:
-                raise ServerError(b"ERR syntax error")
+            if self.parameters_left_error is not None:
+                raise ServerError(self.parameters_left_error)
+
+            # has_optional_keyword_parameters = False
+            # for parameter_parser in self.parameters_parsers:
+            #     if isinstance(parameter_parser, OptionalKeywordParametersGroup):
+            #         has_optional_keyword_parameters = True
+            #         break
+            # if has_optional_keyword_parameters:
+            #     raise ServerError(b"ERR syntax error")
 
             raise ServerWrongNumberOfArgumentsError()
 
@@ -488,11 +493,18 @@ class ObjectParametersParser(ParameterParser):
         if optional_keyword_parameters:
             parameters_parsers.append(OptionalKeywordParametersGroup(optional_keyword_parameters))
 
-        return cls(parameters_parsers, allow_more_parameters=allow_more_parameters)
+        parameters_left_error = None
+        if hasattr(object_cls, "__command_metadata__"):
+            command_metadata = getattr(object_cls, "__command_metadata__")
+            parameters_left_error = command_metadata.get(CommandMetadata.PARAMETERS_LEFT_ERROR, None)
+
+        return cls(
+            parameters_parsers, allow_more_parameters=allow_more_parameters, parameters_left_error=parameters_left_error
+        )
 
 
 @dataclass_transform()
-def move_mandatory_field_to_start(command_cls: type[CommandType]) -> list[str]:
+def move_mandatory_field_to_start(command_cls: type) -> list[str]:
     cls_annotations = getattr(command_cls, "__annotations__", {})
 
     original_order = []
@@ -522,10 +534,27 @@ def move_mandatory_field_to_start(command_cls: type[CommandType]) -> list[str]:
 
 
 @dataclass_transform()
-def transform_command(command_cls: type[CommandType]) -> type[CommandType]:
+def parameters_object(parameter_object_cls: type[ParameterObjectType]) -> type[ParameterObjectType]:
+    original_order = move_mandatory_field_to_start(parameter_object_cls)
+
+    parameter_object_cls = dataclass(parameter_object_cls)
+    setattr(parameter_object_cls, "__original_order__", original_order)
+
+    return parameter_object_cls
+
+
+class CommandMetadata(Enum):
+    PARAMETERS_LEFT_ERROR = auto()
+
+
+@dataclass_transform()
+def transform_command(
+    command_cls: type[CommandType], metadata: dict[CommandMetadata, Any] | None = None
+) -> type[CommandType]:
     original_order = move_mandatory_field_to_start(command_cls)
 
     command_cls = dataclass(command_cls)
+    setattr(command_cls, "__command_metadata__", metadata or {})
     setattr(command_cls, "__original_order__", original_order)
     setattr(command_cls, "parse", ObjectParametersParser.create(command_cls))
     setattr(command_cls, "create", CommandCreator.create(command_cls))

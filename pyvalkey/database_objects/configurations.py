@@ -116,6 +116,8 @@ class Configurations(ConfigurationBase):
     set_max_listpack_entries: int = configuration(default=128, type_="integer")
     set_max_intset_entries: int = configuration(default=512, type_="integer")
 
+    stream_node_max_entries: int = configuration(default=100, type_="integer")
+
     list_compress_depth: int = configuration(default=0, type_="integer")
     list_max_listpack_size: int = configuration(default=-2, type_="integer", alias=b"list-max-ziplist-size")
 
