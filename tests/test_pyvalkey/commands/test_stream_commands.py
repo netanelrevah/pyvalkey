@@ -1,9 +1,9 @@
-from pyvalkey.commands.stream_commands import StreamReadGroup
+from pyvalkey.commands.stream_commands import StreamGroupRead
 
 
-class TestStreamReadGroup:
+class TestStreamGroupRead:
     def test_parse(self):
-        assert StreamReadGroup.parse([b"g1", b"Alice", b"COUNT", b"1", b"STREAMS", b"x{t}", b">"]) == {
+        assert StreamGroupRead.parse([b"g1", b"Alice", b"COUNT", b"1", b"STREAMS", b"x{t}", b">"]) == {
             "group": b"g1",
             "consumer": b"Alice",
             "count": 1,

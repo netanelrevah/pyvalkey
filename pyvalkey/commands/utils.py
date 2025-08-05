@@ -4,8 +4,8 @@ from math import inf
 
 from pyvalkey.database_objects.errors import ServerError
 
-NUMERIC_REGEX = re.compile(b"^-?\d+(\.\d*)?$")
-INTEGER_REGEX = re.compile(b"^-?\d+$")
+NUMERIC_REGEX = re.compile(b"^-?\\d+(\.\\d*)?$")
+INTEGER_REGEX = re.compile(b"^-?\\d+$")
 FLOATING_POINT_REGEX = NUMERIC_REGEX
 
 

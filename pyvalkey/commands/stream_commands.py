@@ -623,16 +623,31 @@ class StreamGroupRead(Command):
         return None
 
 
-@command(b"xpending", {b"write", b"stream", b"slow", b"blocking"})
-class StreamGroupPending(Command):
-    key: bytes = positional_parameter()
-    group: bytes = positional_parameter()
-
+@parameters_object
+class ExtendedPendingParameters:
     minimum_idle_time: int | None = keyword_parameter(token=b"IDLE", default=None)
     start: bytes = positional_parameter()
     end: bytes = positional_parameter()
     count: int = positional_parameter()
     consumer: bytes | None = positional_parameter(default=None)
+
+
+@command(b"xpending", {b"write", b"stream", b"slow", b"blocking"})
+class StreamGroupPending(Command):
+    key: bytes = positional_parameter()
+    group: bytes = positional_parameter()
+
+    extended_parameters: ExtendedPendingParameters | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        return None
+
+
+@command(b"xack", {b"write", b"stream", b"slow", b"blocking"})
+class StreamGroupAcknoledge(Command):
+    key: bytes = positional_parameter()
+    group: bytes = positional_parameter()
+    ids: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         return None
