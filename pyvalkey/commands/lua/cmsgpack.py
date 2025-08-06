@@ -75,7 +75,7 @@ def short_string(value: Any) -> Any:  # noqa: ANN401
             return value[:20] + b"..."
     if isinstance(value, list):
         if len(value) > 20:  # noqa: PLR2004
-            return value[:20] + ["..."]
+            return [*value[:20], "..."]
     if isinstance(value, dict):
         if len(value) > 20:  # noqa: PLR2004
             return {k: v for k, v in list(value.items())[:20]}

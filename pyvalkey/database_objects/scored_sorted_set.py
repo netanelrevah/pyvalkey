@@ -15,7 +15,7 @@ from pyvalkey.database_objects.utils import flatten
 
 
 @functools.total_ordering
-class MaxBytes(bytes):
+class MaxBytes(bytes):  # noqa: PLW1641
     def less(self, other: Any) -> bool:  # noqa: ANN401
         if isinstance(other, bytes):
             return False
