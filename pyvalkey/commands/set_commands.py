@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.database_objects.databases import Database
@@ -124,7 +125,9 @@ class SetIntersection(DatabaseCommand):
         return apply_set_operation(self.database, set.intersection, self.keys)
 
 
-@command(b"sintercard", {b"read", b"set", b"fast"})
+@command(
+    b"sintercard", {b"read", b"set", b"fast"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+)
 class SetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
     keys: list[bytes] = positional_parameter(
