@@ -20,7 +20,7 @@ class DirectionMode(Enum):
     AFTER = b"AFTER"
 
 
-@command(b"blpop", {b"write", b"list", b"fast"})
+@command(b"blpop", {b"list", b"fast"}, flags={b"write"})
 class ListBlockingLeftPop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()

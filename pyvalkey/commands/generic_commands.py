@@ -68,6 +68,20 @@ class Delete(DatabaseCommand):
         return count
 
 
+@command(b"delifeq", {b"keyspace", b"write", b"slow"})
+class DeleteIdEqual(DatabaseCommand):
+    key: bytes = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        key_value = self.database.get_or_none(self.key)
+        if key_value is None or key_value.value != self.value:
+            return 0
+
+        self.database.pop(self.key)
+        return 1
+
+
 @command(b"dump", {b"keyspace", b"read", b"slow"})
 class Dump(DatabaseCommand):
     key: bytes = positional_parameter()

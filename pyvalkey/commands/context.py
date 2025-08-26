@@ -36,6 +36,8 @@ class ServerContext:
         self.information.server_context = self
 
     is_paused: bool = False
+    is_paused_for_write: bool = False
+
     pause_timeout: float = 0
 
     def num_of_blocked_clients(self) -> int:

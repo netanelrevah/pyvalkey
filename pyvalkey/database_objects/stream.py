@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import itertools
 import math
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import TypeVar
 
 from sortedcontainers import SortedDict
 
@@ -12,9 +16,80 @@ EntryData = dict[bytes, bytes]
 EntryType = tuple[EntryID, EntryData]
 
 
+@dataclass
+class PendingEntry:
+    consumer: Consumer
+
+    last_delivery: int = 0
+    times_delivered: int = 0
+
+
+GenericEntryData = TypeVar("GenericEntryData", bound=EntryData | PendingEntry)
+
+
+def range_entries(
+    entries: SortedDict[EntryID, GenericEntryData],
+    minimum_timestamp: int | None = None,
+    minimum_sequence: int | None = None,
+    maximum_timestamp: int | None = None,
+    maximum_sequence: int | None = None,
+    minimum_inclusive: bool = True,
+    maximum_inclusive: bool = True,
+    count: int | None = None,
+    is_reversed: bool = False,
+) -> Iterable[tuple[EntryID, GenericEntryData]]:
+    if minimum_timestamp is None and minimum_sequence is None:
+        minimum_timestamp = 0
+        minimum_sequence = 0
+    elif minimum_timestamp is None:
+        raise ValueError()
+    elif minimum_sequence is None:
+        minimum_sequence = 0 if minimum_inclusive else UINT64_MAX
+
+    if maximum_timestamp is None and maximum_sequence is None:
+        maximum_timestamp = UINT64_MAX
+        maximum_sequence = UINT64_MAX
+    elif maximum_timestamp is None:
+        raise ValueError()
+    elif maximum_sequence is None:
+        maximum_sequence = UINT64_MAX if maximum_inclusive else 0
+
+    iterator = entries.irange(
+        (minimum_timestamp, minimum_sequence),
+        (maximum_timestamp, maximum_sequence),
+        (minimum_inclusive, maximum_inclusive),
+        reverse=is_reversed,
+    )
+
+    for entry_id in itertools.islice(iterator, 0, count):
+        yield entry_id, entries[entry_id]
+
+
+@dataclass
+class Consumer:
+    name: bytes
+    last_seen_timestamp: int = 0
+    last_active_timestamp: int = 0
+
+    pending_entries: SortedDict[EntryID, PendingEntry] = field(default_factory=SortedDict)
+
+
+@dataclass
+class ConsumerGroup:
+    name: bytes
+    last_id: EntryID
+    read_entries: int = -1
+
+    consumers: dict[bytes, Consumer] = field(default_factory=dict)
+    pending_entries: SortedDict[EntryID, PendingEntry] = field(default_factory=SortedDict)
+
+
 class Stream:
+    consumer_groups: dict[bytes, ConsumerGroup]
+
     def __init__(self, entries: Iterable[EntryType] | None = None) -> None:
         self.entries: SortedDict[EntryID, EntryData] = SortedDict({key: data for key, data in entries or []})
+        self.consumer_groups: dict[bytes, ConsumerGroup] = {}
 
         self.added_entries = 0
         self.last_generated_entry_id: EntryID = (0, 0)
@@ -170,28 +245,14 @@ class Stream:
         count: int | None = None,
         is_reversed: bool = False,
     ) -> Iterable[EntryType]:
-        if minimum_timestamp is None and minimum_sequence is None:
-            minimum_timestamp = 0
-            minimum_sequence = 0
-        elif minimum_timestamp is None:
-            raise ValueError()
-        elif minimum_sequence is None:
-            minimum_sequence = 0 if minimum_inclusive else UINT64_MAX
-
-        if maximum_timestamp is None and maximum_sequence is None:
-            maximum_timestamp = UINT64_MAX
-            maximum_sequence = UINT64_MAX
-        elif maximum_timestamp is None:
-            raise ValueError()
-        elif maximum_sequence is None:
-            maximum_sequence = UINT64_MAX if maximum_inclusive else 0
-
-        iterator = self.entries.irange(
-            (minimum_timestamp, minimum_sequence),
-            (maximum_timestamp, maximum_sequence),
-            (minimum_inclusive, maximum_inclusive),
-            reverse=is_reversed,
+        yield from range_entries(
+            self.entries,
+            minimum_timestamp,
+            minimum_sequence,
+            maximum_timestamp,
+            maximum_sequence,
+            minimum_inclusive,
+            maximum_inclusive,
+            count,
+            is_reversed,
         )
-
-        for entry_id in itertools.islice(iterator, 0, count):
-            yield entry_id, self.entries[entry_id]

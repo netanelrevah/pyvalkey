@@ -702,15 +702,15 @@ class SortedSetRemove(DatabaseCommand):
     def execute(self) -> ValueType:
         value = self.database.sorted_set_database.get_value_or_empty(self.key)
 
-        removed_memebers = 0
+        removed_members = 0
         for member in self.members:
             try:
                 value.remove(member)
-                removed_memebers += 1
+                removed_members += 1
             except KeyError:
                 pass
 
-        return removed_memebers
+        return removed_members
 
 
 @command(b"zrank", {b"read", b"sortedset", b"fast"})
@@ -794,15 +794,15 @@ class SortedSetRemoveRangeByScore(DatabaseCommand):
         if isinstance(members, int):
             raise ValueError()
 
-        removed_memebers = 0
+        removed_members = 0
         for member in members:
             try:
                 value.remove(member)
-                removed_memebers += 1
+                removed_members += 1
             except KeyError:
                 pass
 
-        return removed_memebers
+        return removed_members
 
 
 @command(b"zremrangebyrank", {b"write", b"sortedset", b"fast"})
@@ -825,15 +825,15 @@ class SortedSetRemoveRangeByRank(DatabaseCommand):
         if isinstance(members, int):
             raise ValueError()
 
-        removed_memebers = 0
+        removed_members = 0
         for member in members:
             try:
                 value.remove(member)
-                removed_memebers += 1
+                removed_members += 1
             except KeyError:
                 pass
 
-        return removed_memebers
+        return removed_members
 
 
 @command(b"zremrangebylex", {b"write", b"sortedset", b"fast"})
@@ -856,15 +856,15 @@ class SortedSetRemoveRangeByLexical(DatabaseCommand):
         if isinstance(members, int):
             raise ValueError()
 
-        removed_memebers = 0
+        removed_members = 0
         for member in members:
             try:
                 value.remove(member)
-                removed_memebers += 1
+                removed_members += 1
             except KeyError:
                 pass
 
-        return removed_memebers
+        return removed_members
 
 
 def sorted_set_store_operation(

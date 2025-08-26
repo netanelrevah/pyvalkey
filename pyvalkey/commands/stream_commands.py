@@ -15,7 +15,14 @@ from pyvalkey.commands.router import command
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, StreamBlockingManager
 from pyvalkey.database_objects.errors import ServerError
-from pyvalkey.database_objects.stream import EntryID, Stream
+from pyvalkey.database_objects.stream import (
+    Consumer,
+    ConsumerGroup,
+    EntryID,
+    PendingEntry,
+    Stream,
+    range_entries,
+)
 from pyvalkey.resp import RESP_OK, ValueType
 
 
@@ -211,14 +218,20 @@ class StreamAdd(Command):
 class StreamGroupHelp(Command):
     def execute(self) -> ValueType:
         return [
-            b"CREATE",
-            b"Create a new stream group",
-            b"SETID",
-            b"Set the ID of the stream group",
-            b"GROUPS",
-            b"Get information about groups in the stream",
-            b"STREAM",
-            b"Get information about the stream itself",
+            b"CREATE <key> <groupname> <id|$> [option]",
+            b"    Create a new consumer group. Options are:",
+            b"    * MKSTREAM",
+            b"      Create the empty stream if it does not exist.",
+            b"    * ENTRIESREAD entries_read",
+            b"      Set the group's entries_read counter (internal use).",
+            b"CREATECONSUMER <key> <groupname> <consumer>",
+            b"    Create a new consumer in the specified group.",
+            b"DELCONSUMER <key> <groupname> <consumer>",
+            b"    Remove the specified consumer.",
+            b"DESTROY <key> <groupname>",
+            b"    Remove the specified group.",
+            b"SETID <key> <groupname> <id|$> [ENTRIESREAD entries_read]",
+            b"    Set the current group ID and entries_read counter.",
         ]
 
 
@@ -273,6 +286,51 @@ class StreamDelete(Command):
         return deleted_count
 
 
+def _parse_range(start: bytes, end: bytes) -> tuple[int | None, int | None, int | None, int | None, bool, bool]:
+    if start in {b"(-", b"+"}:
+        raise ServerError(b"ERR invalid start ID for the interval")
+    if end in {b"(+", b"-"}:
+        raise ServerError(b"ERR invalid end ID for the interval")
+
+    minimum_inclusive = not start.startswith(b"(")
+    maximum_inclusive = not end.startswith(b"(")
+
+    minimum_timestamp = None
+    minimum_sequence = None
+    if start != b"-":
+        minimum_entry = start.strip(b"(").split(b"-")
+        if len(minimum_entry) == 1:
+            minimum_timestamp = int(minimum_entry[0])
+        else:
+            minimum_timestamp = int(minimum_entry[0])
+            minimum_sequence = int(minimum_entry[1])
+
+    if not minimum_inclusive and minimum_sequence == UINT64_MAX and minimum_timestamp == UINT64_MAX:
+        raise ServerError(b"ERR invalid start ID for the interval")
+
+    maximum_timestamp = None
+    maximum_sequence = None
+    if end != b"+":
+        maximum_entry = end.strip(b"(").split(b"-")
+        if len(maximum_entry) == 1:
+            maximum_timestamp = int(maximum_entry[0])
+        else:
+            maximum_timestamp = int(maximum_entry[0])
+            maximum_sequence = int(maximum_entry[1])
+
+    if not maximum_inclusive and maximum_timestamp == 0 and maximum_sequence == 0:
+        raise ServerError(b"ERR invalid end ID for the interval")
+
+    return (
+        minimum_timestamp,
+        minimum_sequence,
+        maximum_timestamp,
+        maximum_sequence,
+        minimum_inclusive,
+        maximum_inclusive,
+    )
+
+
 @command(b"xrange", {b"stream", b"write", b"fast"})
 class StreamRange(Command):
     database: Database = dependency()
@@ -291,47 +349,8 @@ class StreamRange(Command):
         count: int | None = None,
         is_reversed: bool = False,
     ) -> ValueType:
-        if start in {b"(-", b"+"}:
-            raise ServerError(b"ERR invalid start ID for the interval")
-        if end in {b"(+", b"-"}:
-            raise ServerError(b"ERR invalid end ID for the interval")
-
-        minimum_inclusive = not start.startswith(b"(")
-        maximum_inclusive = not end.startswith(b"(")
-
-        minimum_timestamp = None
-        minimum_sequence = None
-        if start != b"-":
-            minimum_entry = start.strip(b"(").split(b"-")
-            if len(minimum_entry) == 1:
-                minimum_timestamp = int(minimum_entry[0])
-            else:
-                minimum_timestamp = int(minimum_entry[0])
-                minimum_sequence = int(minimum_entry[1])
-
-        if not minimum_inclusive and minimum_sequence == UINT64_MAX and minimum_timestamp == UINT64_MAX:
-            raise ServerError(b"ERR invalid start ID for the interval")
-
-        maximum_timestamp = None
-        maximum_sequence = None
-        if end != b"+":
-            maximum_entry = end.strip(b"(").split(b"-")
-            if len(maximum_entry) == 1:
-                maximum_timestamp = int(maximum_entry[0])
-            else:
-                maximum_timestamp = int(maximum_entry[0])
-                maximum_sequence = int(maximum_entry[1])
-
-        if not maximum_inclusive and maximum_timestamp == 0 and maximum_timestamp == 0:
-            raise ServerError(b"ERR invalid end ID for the interval")
-
         entries = value.range(
-            minimum_timestamp=minimum_timestamp,
-            minimum_sequence=minimum_sequence,
-            maximum_timestamp=maximum_timestamp,
-            maximum_sequence=maximum_sequence,
-            minimum_inclusive=minimum_inclusive,
-            maximum_inclusive=maximum_inclusive,
+            *_parse_range(start, end),
             count=count,
             is_reversed=is_reversed,
         )
@@ -362,26 +381,87 @@ class StreamReversedRange(Command):
 
 @command(b"create", {b"write", b"stream", b"slow"}, b"xgroup")
 class StreamGroupCreate(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
 
     stream_id: bytes = positional_parameter()
     make_stream: bool = keyword_parameter(flag=b"MKSTREAM", default=False)
+    entries_read: int = keyword_parameter(token=b"ENTRIESREAD", default=-1)
 
     def execute(self) -> ValueType:
-        return None
+        if self.make_stream:
+            value = self.database.stream_database.get_value_or_create(self.key)
+        else:
+            if not self.database.stream_database.has_key(self.key):
+                raise ServerError(
+                    b"ERR The XGROUP subcommand requires the key to exist. "
+                    b"Note that for CREATE you may want to use the MKSTREAM "
+                    b"option to create an empty stream automatically."
+                )
+            value = self.database.stream_database.get_value(self.key)
+
+        if self.group in value.consumer_groups:
+            raise ServerError(b"BUSYGROUP Consumer Group name already exists")
+
+        if self.stream_id == b"$":
+            entry_id = value.last_generated_entry_id
+        else:
+            entry_id = _parse_strict_entry_id(self.stream_id, sequence_fill=0)
+
+        if self.entries_read is not None and self.entries_read < -1:
+            raise ServerError(b"ERR value for ENTRIESREAD must be positive or -1")
+
+        value.consumer_groups[self.group] = ConsumerGroup(self.group, entry_id, self.entries_read)
+
+        return RESP_OK
 
 
 @command(b"setid", {b"write", b"stream", b"slow"}, b"xgroup")
 class StreamGroupSetId(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
-
     stream_id: bytes = positional_parameter()
     entries_read: bytes | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
-        return None
+        value = self.database.stream_database.get_value_or_none(self.key)
+        if value is None:
+            raise ServerError(b"ERR no such key")
+
+        if self.group not in value.consumer_groups:
+            raise ServerError(
+                f"-NOGROUP No such key '{self.key.decode()}' or consumer group '{self.group.decode()}'"
+                f" in XGROUP SETID command".encode()
+            )
+
+        group = value.consumer_groups[self.group]
+
+        if self.stream_id == b"-":
+            entry_id = (0, 0)
+        elif self.stream_id == b"$":
+            entry_id = value.last_generated_entry_id
+        else:
+            try:
+                entry_id = _parse_strict_entry_id(self.stream_id, sequence_fill=0)
+            except ValueError:
+                raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
+
+        group.last_id = entry_id
+
+        for entry_id, pending_entry in range_entries(
+            group.pending_entries, minimum_timestamp=entry_id[0], minimum_sequence=entry_id[1]
+        ):
+            for consumer in group.consumers.values():
+                if entry_id in consumer.pending_entries:
+                    consumer.pending_entries.pop(entry_id, None)
+
+            group.pending_entries.pop(entry_id, None)
+
+        return RESP_OK
 
 
 @command(b"groups", {b"stream", b"write", b"fast"}, b"xinfo")
@@ -389,7 +469,7 @@ class StreamInfoGroups(Command):
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        return 1
+        return b""
 
 
 @command(
@@ -445,6 +525,18 @@ class StreamSetId(Command):
             value.max_deleted_entry_id = max_deleted_entry_id
 
         return RESP_OK
+
+
+@command(b"consumers", {b"stream", b"write", b"fast"}, b"xinfo")
+class StreamInfoConsumers(Command):
+    database: Database = dependency()
+    configuration: Configurations = dependency()
+
+    key: bytes = positional_parameter()
+    group: bytes = keyword_parameter()
+
+    def execute(self) -> ValueType:
+        return None
 
 
 @command(b"stream", {b"stream", b"write", b"fast"}, b"xinfo")
@@ -611,16 +703,145 @@ class StreamRead(Command):
 
 @command(b"xreadgroup", {b"write", b"stream", b"slow", b"blocking"})
 class StreamGroupRead(Command):
+    database: Database = dependency()
+    blocking_manager: StreamBlockingManager = dependency()
+    client_context: ClientContext = dependency()
+
     group: bytes = keyword_parameter(token=b"GROUP")  # todo: should be positional
     consumer: bytes = positional_parameter()
 
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
-    block: int | None = keyword_parameter(flag=b"BLOCK", default=None)
+    block_milliseconds: int | None = keyword_parameter(flag=b"BLOCK", default=None)
     no_ack: bool = keyword_parameter(flag=b"NOACK", default=False)
     keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
 
+    _keys_to_ids: dict[bytes, EntryID | bytes] = field(default_factory=dict, init=False)
+    had_keys: bool = field(default=False, init=False)
+
+    _key_to_consumer_group: dict[bytes, ConsumerGroup] = field(default_factory=dict, init=False)
+    _key_to_consumer: dict[bytes, Consumer] = field(default_factory=dict, init=False)
+
+    async def before(self, in_multi: bool = False) -> None:
+        if len(self.keys_and_ids) % 2 != 0:
+            raise ServerError(b"ERR wrong number of arguments for 'xread' command")
+
+        keys = self.keys_and_ids[0 : len(self.keys_and_ids) // 2]
+        ids = self.keys_and_ids[len(self.keys_and_ids) // 2 :]
+
+        for key, id_ in zip(keys, ids):
+            if id_ in {b">"}:
+                self._keys_to_ids[key] = id_
+                continue
+
+            timestamp, sequence = _parse_entry_id(id_)
+
+            if timestamp is None:
+                raise ServerError(b"ERR wrong type of argument for 'xread' command")
+            if sequence is None:
+                sequence = 0
+
+            self._keys_to_ids[key] = (timestamp, sequence)
+
+        start_timestamp = time.time()
+        try:
+            self.client_context.current_client.blocking_queue = Queue()
+            while not self.block_milliseconds or time.time() < (start_timestamp + (self.block_milliseconds / 1000)):
+                for key, key_id in self._keys_to_ids.items():
+                    value = self.database.stream_database.get_value_or_none(key)
+                    if value is None or (value is not None and value.consumer_groups.get(self.group) is None):
+                        raise ServerError(
+                            f"-NOGROUP No such key '{key.decode()}' or consumer group '{self.group.decode()}'"
+                            f" in XREADGROUP with GROUP option".encode()
+                        )
+                    self._key_to_consumer_group[key] = value.consumer_groups[self.group]
+
+                    group = value.consumer_groups[self.group]
+                    consumer = group.consumers.get(self.consumer, None)
+                    if consumer is None:
+                        consumer = Consumer(self.consumer)
+                        group.consumers[self.consumer] = consumer
+                    self._key_to_consumer[key] = consumer
+
+                    if key_id == b">":
+                        key_id = group.last_id
+                    elif isinstance(key_id, bytes):
+                        raise ValueError()
+
+                    if value.after(key_id) is not None:
+                        self.had_keys = True
+                        continue
+
+                if self.had_keys or self.block_milliseconds is None:
+                    break
+
+                await asyncio.sleep(0.1)
+
+                timeout = None
+                if self.block_milliseconds is not None:
+                    timeout = (
+                        ((start_timestamp + (self.block_milliseconds / 1000)) - time.time())
+                        if self.block_milliseconds != 0
+                        else 0
+                    )
+
+                if timeout < 0:
+                    break
+
+                await self.blocking_manager.wait_for_lists(
+                    self.client_context,
+                    list(self._keys_to_ids.keys()),
+                    timeout,
+                    in_multi=self.block_milliseconds is None,
+                    clear_queue=False,
+                )
+
+        finally:
+            self.client_context.current_client.blocking_queue = None
+
     def execute(self) -> ValueType:
-        return None
+        if not self.had_keys:
+            return None
+
+        result = []
+        for key, stream_id in self._keys_to_ids.items():
+            value = self.database.stream_database.get_value_or_empty(key)
+
+            group = self._key_to_consumer_group[key]
+            consumer = self._key_to_consumer[key]
+
+            entries = []
+            if stream_id == b">":
+                for entry_id, entry_data in value.range(
+                    minimum_timestamp=group.last_id[0],
+                    minimum_sequence=group.last_id[1],
+                    count=self.count,
+                    minimum_inclusive=False,
+                ):
+                    if entry_id in group.pending_entries:
+                        continue
+
+                    if not self.no_ack:
+                        consumer.pending_entries[entry_id] = group.pending_entries[entry_id] = PendingEntry(
+                            consumer, last_delivery=int(time.time() * 1000), times_delivered=1
+                        )
+                    self._key_to_consumer_group[key].last_id = entry_id
+                    entries.append([_format_entry_id(entry_id), entry_data])
+            else:
+                for entry_id, pending_entry in range_entries(
+                    consumer.pending_entries,
+                    stream_id[0],
+                    stream_id[1],
+                    count=self.count,
+                    minimum_inclusive=False,
+                ):
+                    pending_entry = consumer.pending_entries[entry_id]
+                    pending_entry.times_delivered += 1
+                    pending_entry.last_delivery = int(time.time() * 1000)
+                    entries.append([_format_entry_id(entry_id), value.entries.get(entry_id, {})])
+
+            result.append([key, entries])
+
+        return result
 
 
 @parameters_object
@@ -634,29 +855,113 @@ class ExtendedPendingParameters:
 
 @command(b"xpending", {b"write", b"stream", b"slow", b"blocking"})
 class StreamGroupPending(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
 
     extended_parameters: ExtendedPendingParameters | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
-        return None
+        value = self.database.stream_database.get_value_or_none(self.key)
+        if value is None or value.consumer_groups.get(self.group) is None:
+            raise ServerError(
+                f"-NOGROUP No such key '{self.key.decode()}' or consumer group '{self.group.decode()}'".encode()
+            )
+        group = value.consumer_groups[self.group]
+
+        if self.extended_parameters is None:
+            return [
+                len(group.pending_entries),
+                _format_entry_id(group.pending_entries.peekitem(0)[0]) if group.pending_entries else None,
+                _format_entry_id(group.pending_entries.peekitem()[0]) if group.pending_entries else None,
+                [[consumer_name, len(consumer.pending_entries)] for consumer_name, consumer in group.consumers.items()],
+            ]
+
+        pending_entries = group.pending_entries
+        if self.extended_parameters.consumer is not None:
+            consumer = group.consumers.get(self.extended_parameters.consumer)
+            if consumer is None:
+                return []
+            pending_entries = consumer.pending_entries
+
+        result = []
+        for entry_id, entry_data in range_entries(
+            pending_entries,
+            *_parse_range(self.extended_parameters.start, self.extended_parameters.end),
+            count=self.extended_parameters.count,
+            is_reversed=False,
+        ):
+            if (
+                self.extended_parameters.minimum_idle_time is not None
+                and int(time.time() * 1000) - entry_data.last_delivery < self.extended_parameters.minimum_idle_time
+            ):
+                continue
+
+            result.append(
+                [
+                    _format_entry_id(entry_id),
+                    entry_data.consumer.name,
+                    int(time.time() * 1000) - entry_data.last_delivery,
+                    entry_data.times_delivered,
+                ]
+            )
+
+        return result
 
 
 @command(b"xack", {b"write", b"stream", b"slow", b"blocking"})
-class StreamGroupAcknoledge(Command):
+class StreamGroupAcknowledge(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
     ids: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return None
+        value = self.database.stream_database.get_value_or_none(self.key)
+        if value is None or value.consumer_groups.get(self.group) is None:
+            return 0
+        group = value.consumer_groups[self.group]
+
+        if not group.pending_entries:
+            return 0
+
+        parsed_ids: set[EntryID] = set()
+
+        for stream_id in self.ids:
+            try:
+                parsed_ids.add(_parse_strict_entry_id(stream_id, sequence_fill=0))
+            except ValueError:
+                raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
+
+        deleted_count = 0
+        for parsed_stream_id in parsed_ids:
+            deleted = group.pending_entries.pop(parsed_stream_id, None)
+            if deleted is not None:
+                group.consumers[deleted.consumer.name].pending_entries.pop(parsed_stream_id, None)
+                deleted_count += 1
+
+        return deleted_count
 
 
 @command(b"destroy", {b"write", b"stream", b"slow", b"blocking"}, parent_command=b"xgroup")
 class StreamGroupDestroy(Command):
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return None
+
+
+@command(b"xautoclaim", {b"write", b"stream", b"slow", b"blocking"})
+class StreamGroupAutoClaim(Command):
+    key: bytes = positional_parameter()
+    group: bytes = keyword_parameter()
+    consumer: bytes = positional_parameter()
+    start: bytes = positional_parameter()
+    end: bytes = positional_parameter()
+    count: int | None = keyword_parameter(flag=b"COUNT", default=None)
 
     def execute(self) -> ValueType:
         return None

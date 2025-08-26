@@ -15,6 +15,7 @@ from types import FrameType
 from typing import cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.router import CommandsRouter
 from pyvalkey.commands.transactions_commands import (
     TransactionDiscard,
@@ -141,6 +142,14 @@ class ValkeyClientProtocol(asyncio.Protocol):
         except RespFatalError:
             self.cancel()
 
+    def _is_paused(self, routed_command_cls: type[Command]) -> bool:
+        if self.server_context.is_paused:
+            return True
+        if self.server_context.is_paused_for_write:
+            if b"write" in routed_command_cls.flags:
+                return True
+        return False
+
     async def handle(self, command: list[bytes]) -> None:
         if not command:
             return
@@ -168,6 +177,12 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 )
             )
             return
+
+        if self.server_context.pause_timeout:
+            while self._is_paused(routed_command_cls) or time.time() < self.server_context.pause_timeout:
+                time.sleep(0.1)
+            self.server_context.pause_timeout = 0
+
         try:
             routed_command = routed_command_cls.create(parameters, self.client_context)
             if self.configurations.maxmemory > 0:
@@ -197,11 +212,6 @@ class ValkeyClientProtocol(asyncio.Protocol):
             command_statistics.calls += 1
 
             self.current_client.last_command = routed_command.full_command_name
-
-            if self.server_context.pause_timeout:
-                while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
-                    time.sleep(0.1)
-                self.server_context.pause_timeout = 0
         except RouterKeyError:
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True

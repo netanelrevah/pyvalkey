@@ -38,7 +38,7 @@ def test_all(s: Valkey):
 
 
 def test_regression(s: Valkey):
-    run_tests(s, tags="sort list hash incr zset string set")
+    run_tests(s, tags="sort list hash incr zset string set stream")
 
 
 def test_sort(s: Valkey):

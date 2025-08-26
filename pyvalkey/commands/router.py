@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -54,11 +55,18 @@ class CommandsRouter:
             if not acl_categories:
                 raise TypeError("command must have at least one acl_categories")
 
-            for flag in flags or []:
+            _flags = flags or set()
+            if b"write" in acl_categories:
+                warnings.warn(
+                    "Using 'write' in acl_categories is deprecated, use 'write' flag instead.", DeprecationWarning
+                )
+                _flags.add(b"write")
+
+            for flag in _flags:
                 if flag in [b"write"]:
                     acl_categories.add(b"write")
 
-            setattr(command_cls, "flags", set(flags or []))
+            setattr(command_cls, "flags", set(_flags or []))
 
             full_command_name = parent_command + b"|" + command_name if parent_command else command_name
 

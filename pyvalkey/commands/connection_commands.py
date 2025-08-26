@@ -112,10 +112,20 @@ class ClientKill(Command):
 class ClientPause(Command):
     server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
+    pause_all: bool = keyword_parameter(flag=b"ALL", default=False)
+    pause_write: bool = keyword_parameter(flag=b"WRITE", default=False)
 
     def execute(self) -> ValueType:
+        if self.pause_write and self.pause_all:
+            raise ServerError(b"ERR Syntax error")
+        elif not self.pause_write:
+            self.pause_all = True
+
         self.server_context.pause_timeout = time.time() + self.timeout_seconds
-        self.server_context.is_paused = True
+        if self.pause_write:
+            self.server_context.is_paused_for_write = True
+        else:
+            self.server_context.is_paused = True
         return RESP_OK
 
 
@@ -126,6 +136,7 @@ class ClientUnpause(Command):
 
     def execute(self) -> ValueType:
         self.server_context.is_paused = False
+        self.server_context.is_paused_for_write = False
         return RESP_OK
 
 
