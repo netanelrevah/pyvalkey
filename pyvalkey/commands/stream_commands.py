@@ -24,6 +24,7 @@ from pyvalkey.database_objects.stream import (
     range_entries,
 )
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.enums import BytesEnum
 
 
 @overload
@@ -586,6 +587,12 @@ def _decrease_entry_id(entry_id: EntryID) -> EntryID:
     return timestamp, sequence
 
 
+class StreamSpecialIds(BytesEnum):
+    LAST_ENTRY = b"$"
+    PREV_ENTRY = b"+"
+    NEXT_ENTRY = b">"
+
+
 @command(b"xread", {b"stream"})
 class StreamRead(Command):
     database: Database = dependency()
@@ -786,6 +793,8 @@ class StreamGroupRead(Command):
 
                 if timeout < 0:
                     break
+
+                break
 
                 await self.blocking_manager.wait_for_lists(
                     self.client_context,
