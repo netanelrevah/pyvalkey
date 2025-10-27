@@ -1,19 +1,18 @@
-import asyncio
 import math
 import time
-from asyncio import Queue
 from dataclasses import field
-from typing import cast, overload
+from typing import cast
 
-from pyvalkey.commands.consts import UINT64_MAX
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata, parameters_object
 from pyvalkey.commands.router import command
+from pyvalkey.commands.utils import _format_entry_id, _parse_entry_id, _parse_strict_entry_id
+from pyvalkey.consts import UINT64_MAX
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, StreamBlockingManager
+from pyvalkey.database_objects.databases import Database, StreamBlockingManager, StreamWaitingContext
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.stream import (
     Consumer,
@@ -24,33 +23,6 @@ from pyvalkey.database_objects.stream import (
     range_entries,
 )
 from pyvalkey.resp import RESP_OK, ValueType
-from pyvalkey.utils.enums import BytesEnum
-
-
-@overload
-def _parse_strict_entry_id(stream_id: bytes) -> tuple[int, int | None]: ...
-@overload
-def _parse_strict_entry_id(stream_id: bytes, sequence_fill: int) -> tuple[int, int]: ...
-def _parse_strict_entry_id(stream_id: bytes, sequence_fill: int | None = None) -> tuple[int, int | None]:
-    if b"-" not in stream_id:
-        return int(stream_id), sequence_fill
-    timestamp, sequence = stream_id.split(b"-")
-    return int(timestamp), int(sequence)
-
-
-def _parse_entry_id(stream_id: bytes) -> tuple[int | None, int | None]:
-    if stream_id == b"*":
-        return None, None
-    if b"-" not in stream_id:
-        return int(stream_id), None
-    timestamp, sequence = stream_id.split(b"-")
-    if sequence == b"*":
-        return int(timestamp), None
-    return int(timestamp), int(sequence)
-
-
-def _format_entry_id(entry_id: EntryID) -> bytes:
-    return f"{entry_id[0]}-{entry_id[1]}".encode()
 
 
 @parameters_object
@@ -156,6 +128,8 @@ class StreamAdd(Command):
     stream_id: bytes = positional_parameter()
     field_value: list[tuple[bytes, bytes]] = positional_parameter(sequence_allow_empty=False)
 
+    _entry_id: EntryID | None = field(init=False, default=None)
+
     def execute(self) -> ValueType:
         if self.minimum_id is not None and self.maximum_length is not None:
             raise ServerError(b"ERR syntax error, MAXLEN and MINID options at the same time are not compatible")
@@ -192,27 +166,28 @@ class StreamAdd(Command):
             if last_entry_timestamp >= UINT64_MAX and last_entry_sequence >= UINT64_MAX:
                 raise ServerError(b"ERR The stream has exhausted the last possible ID, unable to add more items")
 
-        entry_id = value.generate_entry_id(entry_timestamp=entry_timestamp, entry_sequence=entry_sequence)
+        self._entry_id = value.generate_entry_id(entry_timestamp=entry_timestamp, entry_sequence=entry_sequence)
         if (
             entry_sequence is None
-            and entry_id[0] == value.last_generated_entry_id[0]
+            and self._entry_id[0] == value.last_generated_entry_id[0]
             and value.last_generated_entry_id[1] == UINT64_MAX
-        ) or entry_id <= value.last_generated_entry_id:
+        ) or self._entry_id <= value.last_generated_entry_id:
             raise ServerError(b"ERR The ID specified in XADD is equal or smaller than the target stream top item")
         try:
             value.add(
                 self.field_value,
-                entry_id,
+                self._entry_id,
             )
         except ValueError:
             raise ServerError(b"ERR Elements are too large to be stored")
 
         StreamTrim.trim(value, self.maximum_length, self.minimum_id, self.configuration.stream_node_max_entries)
 
-        return _format_entry_id(entry_id)
+        return _format_entry_id(self._entry_id)
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify(self.key, in_multi=in_multi)
+        if self._entry_id is not None:
+            await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
 @command(b"help", {b"stream", b"write", b"fast"}, parent_command=b"xgroup")
@@ -266,6 +241,7 @@ class StreamLength(Command):
 @command(b"xdel", {b"stream", b"write", b"fast"})
 class StreamDelete(Command):
     database: Database = dependency()
+    blocking_manager: StreamBlockingManager = dependency()
 
     key: bytes = positional_parameter()
     ids: list[bytes] = positional_parameter()
@@ -285,6 +261,9 @@ class StreamDelete(Command):
                 deleted_count += 1
 
         return deleted_count
+
+    async def after(self, in_multi: bool = False) -> None:
+        await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
 def _parse_range(start: bytes, end: bytes) -> tuple[int | None, int | None, int | None, int | None, bool, bool]:
@@ -573,26 +552,6 @@ class StreamInfoStream(Command):
         ]
 
 
-def _decrease_entry_id(entry_id: EntryID) -> EntryID:
-    timestamp, sequence = entry_id
-
-    if sequence == 0:
-        if timestamp == 0:
-            raise ValueError("Cannot decrease entry ID below 0-0")
-        timestamp -= 1
-        sequence = UINT64_MAX
-    else:
-        sequence -= 1
-
-    return timestamp, sequence
-
-
-class StreamSpecialIds(BytesEnum):
-    LAST_ENTRY = b"$"
-    PREV_ENTRY = b"+"
-    NEXT_ENTRY = b">"
-
-
 @command(b"xread", {b"stream"})
 class StreamRead(Command):
     database: Database = dependency()
@@ -603,91 +562,30 @@ class StreamRead(Command):
     block_milliseconds: int | None = keyword_parameter(flag=b"BLOCK", default=None)
     keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
 
-    _keys_to_ids: dict[bytes, EntryID | bytes] = field(default_factory=dict, init=False)
-
-    had_keys: bool = field(default=False, init=False)
+    _keys_to_minimum_id: dict[bytes, EntryID] | None = field(default_factory=dict, init=False)
 
     async def before(self, in_multi: bool = False) -> None:
         if len(self.keys_and_ids) % 2 != 0:
-            raise ServerError(b"ERR wrong number of arguments for 'xread' command")
+            raise ServerError(
+                b"ERR Unbalanced 'xread' list of streams: for each stream key an ID or '$' must be specified."
+            )
 
         keys = self.keys_and_ids[0 : len(self.keys_and_ids) // 2]
         ids = self.keys_and_ids[len(self.keys_and_ids) // 2 :]
 
-        for key, id_ in zip(keys, ids):
-            if id_ in {b"$", b"+"}:
-                self._keys_to_ids[key] = id_
-                continue
-
-            timestamp, sequence = _parse_entry_id(id_)
-
-            if timestamp is None:
-                raise ServerError(b"ERR wrong type of argument for 'xread' command")
-            if sequence is None:
-                sequence = 0
-
-            self._keys_to_ids[key] = (timestamp, sequence)
-
-        start_timestamp = time.time()
-        try:
-            self.client_context.current_client.blocking_queue = Queue()
-            while not self.block_milliseconds or time.time() < (start_timestamp + (self.block_milliseconds / 1000)):
-                for key, key_id in self._keys_to_ids.items():
-                    value = self.database.stream_database.get_value_or_empty(key)
-
-                    if key_id == b"$":
-                        if value.entries:
-                            self._keys_to_ids[key] = value.entries.peekitem(-1)[0]
-                        else:
-                            self._keys_to_ids[key] = (0, 0)
-                        continue
-                    elif key_id == b"+":
-                        if value.entries:
-                            self._keys_to_ids[key] = _decrease_entry_id(value.entries.peekitem()[0])
-                            self.had_keys = True
-                        else:
-                            self._keys_to_ids[key] = (0, 0)
-                        continue
-                    elif isinstance(key_id, bytes):
-                        raise ValueError()
-
-                    if value.after(key_id) is not None:
-                        self.had_keys = True
-                        continue
-
-                if self.had_keys or self.block_milliseconds is None:
-                    break
-
-                await asyncio.sleep(0.1)
-
-                timeout = None
-                if self.block_milliseconds is not None:
-                    timeout = (
-                        ((start_timestamp + (self.block_milliseconds / 1000)) - time.time())
-                        if self.block_milliseconds != 0
-                        else 0
-                    )
-
-                if timeout < 0:
-                    break
-
-                await self.blocking_manager.wait_for_lists(
-                    self.client_context,
-                    list(self._keys_to_ids.keys()),
-                    timeout,
-                    in_multi=self.block_milliseconds is None,
-                    clear_queue=False,
-                )
-
-        finally:
-            self.client_context.current_client.blocking_queue = None
+        self._keys_to_minimum_id = await self.blocking_manager.wait_for_stream(
+            self.client_context,
+            {key: id_ for key, id_ in zip(keys, ids)},
+            block_milliseconds=self.block_milliseconds,
+            in_multi=in_multi,
+        )
 
     def execute(self) -> ValueType:
-        if not self.had_keys:
+        if self._keys_to_minimum_id is None:
             return None
 
         result = []
-        for key, entry_id in self._keys_to_ids.items():
+        for key, entry_id in self._keys_to_minimum_id.items():
             value = self.database.stream_database.get_value_or_empty(key)
 
             entries = [
@@ -722,104 +620,49 @@ class StreamGroupRead(Command):
     no_ack: bool = keyword_parameter(flag=b"NOACK", default=False)
     keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
 
-    _keys_to_ids: dict[bytes, EntryID | bytes] = field(default_factory=dict, init=False)
-    had_keys: bool = field(default=False, init=False)
+    _keys_to_minimum_id: dict[bytes, EntryID] | None = field(default_factory=dict, init=False)
 
     _key_to_consumer_group: dict[bytes, ConsumerGroup] = field(default_factory=dict, init=False)
     _key_to_consumer: dict[bytes, Consumer] = field(default_factory=dict, init=False)
 
+    _key_to_history_only: dict[bytes, bool] = field(default_factory=dict, init=False)
+
     async def before(self, in_multi: bool = False) -> None:
         if len(self.keys_and_ids) % 2 != 0:
-            raise ServerError(b"ERR wrong number of arguments for 'xread' command")
+            raise ServerError(
+                b"ERR Unbalanced 'xreadgroup' list of streams: for each stream key an ID or '>' must be specified."
+            )
 
         keys = self.keys_and_ids[0 : len(self.keys_and_ids) // 2]
         ids = self.keys_and_ids[len(self.keys_and_ids) // 2 :]
 
-        for key, id_ in zip(keys, ids):
-            if id_ in {b">"}:
-                self._keys_to_ids[key] = id_
-                continue
-
-            timestamp, sequence = _parse_entry_id(id_)
-
-            if timestamp is None:
-                raise ServerError(b"ERR wrong type of argument for 'xread' command")
-            if sequence is None:
-                sequence = 0
-
-            self._keys_to_ids[key] = (timestamp, sequence)
-
-        start_timestamp = time.time()
-        try:
-            self.client_context.current_client.blocking_queue = Queue()
-            while not self.block_milliseconds or time.time() < (start_timestamp + (self.block_milliseconds / 1000)):
-                for key, key_id in self._keys_to_ids.items():
-                    value = self.database.stream_database.get_value_or_none(key)
-                    if value is None or (value is not None and value.consumer_groups.get(self.group) is None):
-                        raise ServerError(
-                            f"-NOGROUP No such key '{key.decode()}' or consumer group '{self.group.decode()}'"
-                            f" in XREADGROUP with GROUP option".encode()
-                        )
-                    self._key_to_consumer_group[key] = value.consumer_groups[self.group]
-
-                    group = value.consumer_groups[self.group]
-                    consumer = group.consumers.get(self.consumer, None)
-                    if consumer is None:
-                        consumer = Consumer(self.consumer)
-                        group.consumers[self.consumer] = consumer
-                    self._key_to_consumer[key] = consumer
-
-                    if key_id == b">":
-                        key_id = group.last_id
-                    elif isinstance(key_id, bytes):
-                        raise ValueError()
-
-                    if value.after(key_id) is not None:
-                        self.had_keys = True
-                        continue
-
-                if self.had_keys or self.block_milliseconds is None:
-                    break
-
-                await asyncio.sleep(0.1)
-
-                timeout = None
-                if self.block_milliseconds is not None:
-                    timeout = (
-                        ((start_timestamp + (self.block_milliseconds / 1000)) - time.time())
-                        if self.block_milliseconds != 0
-                        else 0
-                    )
-
-                if timeout < 0:
-                    break
-
-                break
-
-                await self.blocking_manager.wait_for_lists(
-                    self.client_context,
-                    list(self._keys_to_ids.keys()),
-                    timeout,
-                    in_multi=self.block_milliseconds is None,
-                    clear_queue=False,
-                )
-
-        finally:
-            self.client_context.current_client.blocking_queue = None
+        self._keys_to_minimum_id = await self.blocking_manager.wait_for_group(
+            self.client_context,
+            self.group,
+            self.consumer,
+            {key: id_ for key, id_ in zip(keys, ids)},
+            self.block_milliseconds,
+            in_multi=in_multi,
+            waiting_context=StreamWaitingContext(
+                key_to_consumer_group=self._key_to_consumer_group,
+                key_to_consumer=self._key_to_consumer,
+                key_to_history_only=self._key_to_history_only,
+            ),
+        )
 
     def execute(self) -> ValueType:
-        if not self.had_keys:
+        if self._keys_to_minimum_id is None:
             return None
 
         result = []
-        for key, stream_id in self._keys_to_ids.items():
+        for key, stream_id in self._keys_to_minimum_id.items():
             value = self.database.stream_database.get_value_or_empty(key)
 
             group = self._key_to_consumer_group[key]
             consumer = self._key_to_consumer[key]
 
             entries = []
-            if stream_id == b">":
+            if not self._key_to_history_only[key]:
                 for entry_id, entry_data in value.range(
                     minimum_timestamp=group.last_id[0],
                     minimum_sequence=group.last_id[1],

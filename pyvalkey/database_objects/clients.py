@@ -8,6 +8,12 @@ from pyvalkey.database_objects.utils import to_bytes
 
 
 @dataclass
+class BlockingContext:
+    queue: Queue
+    command: bytes
+
+
+@dataclass
 class Client:
     client_id: int
     host: bytes

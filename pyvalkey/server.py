@@ -26,7 +26,7 @@ from pyvalkey.commands.transactions_commands import (
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, UnblockMessage
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     RouterKeyError,
@@ -34,6 +34,7 @@ from pyvalkey.database_objects.errors import (
     ServerWrongNumberOfArgumentsError,
     ServerWrongTypeError,
 )
+from pyvalkey.enums import UnblockMessage
 from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 
 logger = logging.getLogger(__name__)

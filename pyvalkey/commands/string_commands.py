@@ -1,14 +1,16 @@
 import time
+from dataclasses import field
 from enum import Enum
 from math import isinf, isnan
 
-from pyvalkey.commands.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
 from pyvalkey.commands.core import DatabaseCommand
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
-from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue
+from pyvalkey.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
+from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue, StreamBlockingManager
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -334,6 +336,8 @@ class ExistenceMode(Enum):
 
 @command(b"set", {b"write", b"string", b"slow"})
 class Set(DatabaseCommand):
+    blocking_manager: StreamBlockingManager = dependency()
+
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
     existence_mode: ExistenceMode | None = keyword_parameter(
@@ -345,6 +349,8 @@ class Set(DatabaseCommand):
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
     get: bool = keyword_parameter(flag=b"GET", default=False)
+
+    _is_key_updated: bool = field(init=False, default=False)
 
     def get_one_and_only_token(self) -> str | None:
         fields_names = ["ex", "px", "exat", "pxat"]
@@ -388,8 +394,13 @@ class Set(DatabaseCommand):
 
         self.database.pop(self.key, None)
         self.database.string_database.set_key_value(KeyValue.of_string(self.key, self.value, expiration=expiration))
+        self._is_key_updated = True
 
         return RESP_OK if not self.get else previous_value
+
+    async def after(self, in_multi: bool = False) -> None:
+        if self._is_key_updated:
+            await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)
 
 
 @command(b"setex", {b"write", b"string", b"slow"})

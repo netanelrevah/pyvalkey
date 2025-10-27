@@ -1,7 +1,6 @@
 from dataclasses import field
 from enum import Enum
 
-from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -9,6 +8,7 @@ from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
+from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import Database, ListBlockingManager
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information

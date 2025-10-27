@@ -17,9 +17,9 @@ from typing import (
     get_type_hints,
 )
 
-from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.creators import CommandCreator
 from pyvalkey.commands.parameters import ParameterMetadata
+from pyvalkey.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.database_objects.errors import (
     ServerError,
     ServerWrongNumberOfArgumentsError,

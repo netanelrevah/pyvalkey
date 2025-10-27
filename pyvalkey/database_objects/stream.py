@@ -9,7 +9,7 @@ from typing import TypeVar
 
 from sortedcontainers import SortedDict
 
-from pyvalkey.commands.consts import UINT64_MAX
+from pyvalkey.consts import UINT64_MAX
 
 EntryID = tuple[int, int]
 EntryData = dict[bytes, bytes]
@@ -233,6 +233,18 @@ class Stream:
 
         entry_id = next(iterator, None)
         return None if entry_id is None else (entry_id, self.entries[entry_id])
+
+    def after_non_pending(self, minimum_entry_id: EntryID, group: ConsumerGroup) -> EntryType | None:
+        iterator = self.entries.irange(
+            (minimum_entry_id[0], minimum_entry_id[1]),  # Start after the given entry ID
+            inclusive=(False, True),
+        )
+
+        for entry_id in iterator:
+            if entry_id not in group.pending_entries:
+                return entry_id, self.entries[entry_id]
+
+        return None
 
     def range(
         self,

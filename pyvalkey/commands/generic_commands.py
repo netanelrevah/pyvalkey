@@ -2,23 +2,26 @@ import fnmatch
 import json
 import random
 import time
+from dataclasses import field
 from typing import Any
 
-from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import is_integer
+from pyvalkey.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import (
     BlockingManager,
     Database,
     KeyValue,
+    StreamBlockingManager,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
+from pyvalkey.database_objects.stream import Stream
 from pyvalkey.listpack import listpack
 from pyvalkey.resp import RESP_OK, ValueType
 
@@ -58,14 +61,25 @@ class Copy(Command):
 
 @command(b"del", {b"keyspace", b"write", b"slow"})
 class Delete(DatabaseCommand):
+    blocking_manager: StreamBlockingManager = dependency()
     keys: list[bytes] = positional_parameter()
+
+    _stream_keys: list[bytes] = field(default_factory=list, init=False)
 
     def execute(self) -> ValueType:
         count = 0
         for key in self.keys:
-            if self.database.pop(key, None) is not None:
+            value = self.database.pop(key, None)
+            if value is not None:
                 count += 1
+                if isinstance(value.value, Stream):
+                    self._stream_keys.append(key)
+
         return count
+
+    async def after(self, in_multi: bool = False) -> None:
+        for key in self._stream_keys:
+            await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
 
 
 @command(b"delifeq", {b"keyspace", b"write", b"slow"})

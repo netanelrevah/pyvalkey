@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import time
+from asyncio import Queue
 from unittest.mock import Mock
 
 import pytest
 
+from pyvalkey.commands.generic_commands import Delete
 from pyvalkey.commands.stream_commands import (
     ExtendedPendingParameters,
     MaxLength,
@@ -30,7 +32,7 @@ class BaseStreamTest:
         self.content = DatabaseContent()
         self.database = Database(0, self.content)
         self.blocking_manager = StreamBlockingManager()
-        self.client_context = Mock()
+        self.client_context = Mock(database=self.database, transaction_context=None)
         self.configurations = Configurations()
 
 
@@ -358,6 +360,32 @@ class TestStreamGroupRead(BaseStreamTest):
             ]
         ]
 
+    @pytest.mark.asyncio
+    async def test_execute_stream_deleted_while_blocking(self):
+        my_stream = Stream()
+        self.content.data[b"mystream"] = KeyValue(b"mystream", my_stream)
+        my_stream.consumer_groups[b"mygroup"] = ConsumerGroup(b"mygroup", (0, 0))
+
+        my_stream.entries[(666, 0)] = {b"f": b"v"}
+
+        queue = Queue()
+        self.client_context.current_client.blocking_queue = queue
+        self.blocking_manager.notifications.add_multiple([b"mystream"], queue)
+
+        command = Delete(
+            database=self.database,
+            keys=[b"mystream"],
+            blocking_manager=self.blocking_manager,
+        )
+
+        command.execute()
+        await command.after()
+
+        (key, entry_id) = queue.get_nowait()
+
+        assert key == b"mystream"
+        assert entry_id == "deleted"
+
 
 class TestStreamGroupPending(BaseStreamTest):
     def test_execute(self):
@@ -456,7 +484,7 @@ class TestStreamGroupSetId(BaseStreamTest):
         command = StreamGroupRead(
             database=self.database,
             blocking_manager=StreamBlockingManager(),
-            client_context=Mock(),
+            client_context=self.client_context,
             group=b"g1",
             consumer=b"c1",
             keys_and_ids=[b"events", b">"],
@@ -483,7 +511,7 @@ class TestStreamGroupSetId(BaseStreamTest):
         command = StreamGroupRead(
             database=self.database,
             blocking_manager=StreamBlockingManager(),
-            client_context=Mock(),
+            client_context=self.client_context,
             group=b"g1",
             consumer=b"c2",
             keys_and_ids=[b"events", b">"],

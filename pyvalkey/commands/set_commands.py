@@ -4,11 +4,11 @@ import functools
 import random
 from collections.abc import Callable
 
-from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
+from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType

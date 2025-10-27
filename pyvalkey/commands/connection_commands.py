@@ -13,8 +13,8 @@ from pyvalkey.commands.parameters import (
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import UnblockMessage
 from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.enums import UnblockMessage
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
 
 

@@ -9,7 +9,6 @@ from enum import Enum
 from itertools import zip_longest
 from typing import Protocol
 
-from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -21,6 +20,7 @@ from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
+from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import (
     Database,
     SortedSetBlockingManager,
