@@ -57,8 +57,7 @@ class Information:
 
     def commands_statistics_info(self) -> bytes:
         info = [b"# Commandstats"]
-        for command_statistics in self.commands_statistics.values():
-            info.append(str(command_statistics).encode())
+        info.extend([str(command_statistics).encode() for command_statistics in self.commands_statistics.values()])
         return b"\r\n".join(info)
 
     def server(self) -> bytes:
@@ -73,6 +72,9 @@ class Information:
         info = [
             b"# Clients",
             b"blocked_clients:" + to_bytes(self.server_context.num_of_blocked_clients()),
+            b"total_blocking_keys:" + to_bytes(self.server_context.blocking_manager.total_key_blocking()),
+            b"total_blocking_keys_on_nokey:" + to_bytes(self.server_context.num_of_blocked_client_for_no_key()),
+            b"paused_reason:none",
         ]
         return b"\r\n".join(info)
 

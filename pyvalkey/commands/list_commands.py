@@ -34,7 +34,7 @@ class ListBlockingLeftPop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, b"blpop", self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -60,7 +60,7 @@ class ListBlockingRightPop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, b"brpop", self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -93,7 +93,7 @@ class ListBlockingMultiplePop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -147,7 +147,7 @@ class ListBlockingRightPopLeftPush(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, [self.source], self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, [self.source], self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -182,7 +182,7 @@ class ListBlockingMove(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, [self.source], self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, [self.source], self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:

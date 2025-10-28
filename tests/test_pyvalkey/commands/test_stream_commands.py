@@ -15,6 +15,7 @@ from pyvalkey.commands.stream_commands import (
     StreamGroupRead,
     StreamGroupSetId,
 )
+from pyvalkey.database_objects.clients import BlockingContext
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue, StreamBlockingManager
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, PendingEntry, Stream
@@ -369,7 +370,7 @@ class TestStreamGroupRead(BaseStreamTest):
         my_stream.entries[(666, 0)] = {b"f": b"v"}
 
         queue = Queue()
-        self.client_context.current_client.blocking_queue = queue
+        self.client_context.current_client.blocking_context = BlockingContext(command=b"xreadgroup", queue=queue)
         self.blocking_manager.notifications.add_multiple([b"mystream"], queue)
 
         command = Delete(

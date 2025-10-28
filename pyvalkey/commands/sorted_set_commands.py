@@ -281,7 +281,7 @@ class SortedSetBlockingPopMaximum(DatabaseCommand):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -311,7 +311,7 @@ class SortedSetBlockingPopMinimum(DatabaseCommand):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -448,7 +448,7 @@ class SortedSetBlockingMultiplePop(Command):
             raise ServerError(b"ERR count should be greater than 0")
 
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -665,11 +665,7 @@ class SortedSetMultipleMemberScore(DatabaseCommand):
 
         value = self.database.sorted_set_database.get_value_or_empty(self.key)
 
-        result = []
-        for member in self.members:
-            result.append(value.members_scores.get(member, None))
-
-        return result
+        return [value.members_scores.get(member, None) for member in self.members]
 
 
 @command(b"zincrby", {b"read", b"sortedset", b"fast"})

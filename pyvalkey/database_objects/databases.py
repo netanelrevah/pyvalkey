@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 import random
 import time
-from asyncio import Queue, wait_for
+from asyncio import wait_for
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
@@ -14,6 +14,7 @@ from sortedcontainers import SortedSet
 
 from pyvalkey.commands.utils import _decrease_entry_id, _format_entry_id, _parse_strict_entry_id, is_integer
 from pyvalkey.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
+from pyvalkey.database_objects.clients import BlockingContext
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, EntryID, Stream
@@ -499,7 +500,7 @@ class Database(DatabaseBase[KeyValueType]):
 
 @dataclass
 class BlockingManagerBase:
-    notifications: SetMapping[bytes, Queue] = field(default_factory=SetMapping)
+    notifications: SetMapping[bytes, BlockingContext] = field(default_factory=SetMapping)
     lazy_notification_keys: list[bytes] = field(default_factory=list)
 
     def has_key(self, database: Database, key: bytes) -> bool:
@@ -511,6 +512,7 @@ class BlockingManagerBase:
     async def wait_for_lists(
         self,
         client_context: ClientContext,
+        command: bytes,
         keys: list[bytes],
         timeout: int | float | None = None,
         *,
@@ -528,38 +530,42 @@ class BlockingManagerBase:
         if in_multi:
             return None
 
-        client_context.current_client.blocking_queue = Queue()
-        self.notifications.add_multiple(keys, client_context.current_client.blocking_queue)
+        client_context.current_client.blocking_context = BlockingContext(command)
+        self.notifications.add_multiple(keys, client_context.current_client.blocking_context)
 
         try:
             while True:
                 print(f"{client_context.current_client.client_id} waiting queue for keys {keys}")
-                key = await wait_for(client_context.current_client.blocking_queue.get(), timeout=timeout or None)
-                if key == UnblockMessage.ERROR:
+                message: bytes | UnblockMessage = await wait_for(
+                    client_context.current_client.blocking_context.queue.get(), timeout=timeout or None
+                )
+                if message == UnblockMessage.ERROR:
                     print(f"{client_context.current_client.client_id} got unblock error from queue")
                     raise ServerError(b"UNBLOCKED client unblocked via CLIENT UNBLOCK")
-                if key == UnblockMessage.TIMEOUT:
+                if message == UnblockMessage.TIMEOUT:
                     print(f"{client_context.current_client.client_id} got unblock timeout from queue")
                     raise TimeoutError()
-                print(f"{client_context.current_client.client_id} got '{key.decode()}' from queue")
-                if self.has_key(client_context.database, key):
-                    return key
-                print(f"{client_context.current_client.client_id} key '{key.decode()}' not in database, continue...")
+                print(f"{client_context.current_client.client_id} got '{message.decode()}' from queue")
+                if self.has_key(client_context.database, message):
+                    return message
+                print(
+                    f"{client_context.current_client.client_id} key '{message.decode()}' not in database, continue..."
+                )
         except TimeoutError:
             return None
         finally:
-            self.notifications.remove_all(client_context.current_client.blocking_queue)
+            self.notifications.remove_all(client_context.current_client.blocking_context)
             if clear_queue:
-                client_context.current_client.blocking_queue = None
+                client_context.current_client.blocking_context = None
 
     async def notify(self, key: bytes, in_multi: bool = False) -> None:
         if in_multi:
             print(f"adding '{key.decode()}' to lazy notification keys")
             self.lazy_notification_keys.append(key)
             return
-        for queue in self.notifications.iter_values(key):
+        for blocking_context in self.notifications.iter_values(key):
             print(f"putting '{key.decode()}' into queue")
-            await queue.put(key)
+            await blocking_context.queue.put(key)
 
     async def notify_safely(self, database: Database, key: bytes, in_multi: bool = False) -> None:
         try:
@@ -574,9 +580,9 @@ class BlockingManagerBase:
             if key not in database.content.data or not self.is_instance(database.content.data[key].value):
                 print(f"lazy key '{key.decode()}' not found, continue...")
                 continue
-            for queue in self.notifications.iter_values(key):
+            for blocking_context in self.notifications.iter_values(key):
                 print(f"putting '{key.decode()}' into queue")
-                await queue.put(key)
+                await blocking_context.queue.put(key)
 
 
 class ListBlockingManager(BlockingManagerBase):
@@ -618,7 +624,7 @@ class StreamWaitingContext:
 
 @dataclass
 class StreamBlockingManager:
-    notifications: SetMapping[bytes, Queue[bytes | UnblockMessage]] = field(default_factory=SetMapping)
+    notifications: SetMapping[bytes, BlockingContext] = field(default_factory=SetMapping)
     lazy_notification_keys: OrderedDict[bytes, LazyNotification] = field(default_factory=OrderedDict)
 
     def has_key(self, database: Database, key: bytes) -> bool:
@@ -693,8 +699,8 @@ class StreamBlockingManager:
         if in_multi or block_milliseconds is None:
             return None
 
-        client_context.current_client.blocking_queue = Queue()
-        self.notifications.add_multiple(keys_to_ids.keys(), client_context.current_client.blocking_queue)
+        client_context.current_client.blocking_context = BlockingContext(b"xreadgroup")
+        self.notifications.add_multiple(keys_to_ids.keys(), client_context.current_client.blocking_context)
 
         deadline = (time.time_ns() + (block_milliseconds * 1_000_000)) if block_milliseconds != 0 else None
         try:
@@ -713,7 +719,9 @@ class StreamBlockingManager:
                 )
 
                 try:
-                    queue_item = await wait_for(client_context.current_client.blocking_queue.get(), timeout=timeout)
+                    queue_item = await wait_for(
+                        client_context.current_client.blocking_context.queue.get(), timeout=timeout
+                    )
 
                     if queue_item == UnblockMessage.ERROR:
                         print(f"{client_context.current_client.client_id} got unblock error from queue")
@@ -739,8 +747,8 @@ class StreamBlockingManager:
                         time.sleep(0.001)
                     continue
         finally:
-            self.notifications.remove_all(client_context.current_client.blocking_queue)
-            client_context.current_client.blocking_queue = None
+            self.notifications.remove_all(client_context.current_client.blocking_context)
+            client_context.current_client.blocking_context = None
 
         return None
 
@@ -802,8 +810,8 @@ class StreamBlockingManager:
         if in_multi or block_milliseconds is None:
             return None
 
-        client_context.current_client.blocking_queue = Queue()
-        self.notifications.add_multiple(keys_to_ids.keys(), client_context.current_client.blocking_queue)
+        client_context.current_client.blocking_context = BlockingContext(b"xread")
+        self.notifications.add_multiple(keys_to_ids.keys(), client_context.current_client.blocking_context)
 
         deadline = (time.time_ns() + (block_milliseconds * 1_000_000)) if block_milliseconds != 0 else None
         try:
@@ -819,7 +827,9 @@ class StreamBlockingManager:
                 print(f"{client_id} waiting queue for keys {keys_to_ids.keys()} with timeout {timeout}")
 
                 try:
-                    queue_item = await wait_for(client_context.current_client.blocking_queue.get(), timeout=timeout)
+                    queue_item = await wait_for(
+                        client_context.current_client.blocking_context.queue.get(), timeout=timeout
+                    )
 
                     if queue_item == UnblockMessage.ERROR:
                         print(f"{client_id} got unblock error from queue")
@@ -843,8 +853,8 @@ class StreamBlockingManager:
                         time.sleep(0.001)
                     continue
         finally:
-            self.notifications.remove_all(client_context.current_client.blocking_queue)
-            client_context.current_client.blocking_queue = None
+            self.notifications.remove_all(client_context.current_client.blocking_context)
+            client_context.current_client.blocking_context = None
 
         return None
 
@@ -861,9 +871,9 @@ class StreamBlockingManager:
                 print(f"adding deleted '{key.decode()}' to lazy notification keys")
                 self.lazy_notification_keys[key] = LazyNotification(key, deleted=True, created_in_transaction=True)
             return
-        for queue in self.notifications.iter_values(key):
+        for blocking_context in self.notifications.iter_values(key):
             print(f"putting stream '{key.decode()}' into queue")
-            await queue.put(key)
+            await blocking_context.queue.put(key)
 
     async def notify(self, key: bytes, in_multi: bool = False) -> None:
         if in_multi:
@@ -874,9 +884,9 @@ class StreamBlockingManager:
                 print(f"adding '{key.decode()}' to lazy notification keys")
                 self.lazy_notification_keys[key] = LazyNotification(key, deleted=False, created_in_transaction=in_multi)
             return
-        for queue in self.notifications.iter_values(key):
+        for blocking_context in self.notifications.iter_values(key):
             print(f"putting '{key.decode()}' into queue")
-            await queue.put(key)
+            await blocking_context.queue.put(key)
 
     async def notify_safely(self, database: Database, key: bytes, in_multi: bool = False) -> None:
         try:
@@ -894,9 +904,9 @@ class StreamBlockingManager:
             ):
                 print(f"lazy key '{key.decode()}' not found, continue...")
                 continue
-            for queue in self.notifications.iter_values(key):
+            for blocking_context in self.notifications.iter_values(key):
                 print(f"putting '{key.decode()}' into queue")
-                await queue.put(key)
+                await blocking_context.queue.put(key)
 
 
 @dataclass
@@ -919,6 +929,27 @@ class BlockingManager:
         for key in database.keys():
             await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
             await self.stream_blocking_manager.notify_safely(database, key, in_multi=in_multi)
+
+    def total_key_blocking(self) -> int:
+        return len(
+            self.list_blocking_manager.notifications.mapping.keys()
+            | self.sorted_set_blocking_manager.notifications.mapping.keys()
+            | self.stream_blocking_manager.notifications.mapping.keys()
+        )
+
+    def total_key_blocking_on_no_keys(self) -> int:
+        total_number = 0
+
+        for blocking_contexts in self.stream_blocking_manager.notifications.mapping.values():
+            has_xreadgroup = False
+            for blocking_context in blocking_contexts:
+                if blocking_context.command == b"xreadgroup":
+                    has_xreadgroup = True
+                    break
+            if has_xreadgroup:
+                total_number += 1
+
+        return total_number
 
 
 @dataclass(unsafe_hash=True)

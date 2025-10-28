@@ -100,8 +100,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
     def connection_lost(self, exception: Exception | None) -> None:
         print(f"{self.current_client.client_id} connection lost")
-        if self.client_context.current_client.blocking_queue is not None:
-            self.client_context.current_client.blocking_queue.put_nowait(UnblockMessage.ERROR)
+        if self.client_context.current_client.blocking_context is not None:
+            self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
         del self.clients[self.current_client.client_id]
 
     def dump(self, value: ValueType) -> None:

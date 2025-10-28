@@ -175,10 +175,10 @@ class ClientUnblock(Command):
             return
 
         client = self.server_context.clients[self.client_id]
-        if client.blocking_queue is None:
+        if client.blocking_context is None:
             return
 
-        await client.blocking_queue.put(
+        await client.blocking_context.queue.put(
             UnblockMessage.ERROR if self.unblock_option == UnblockOption.error else UnblockMessage.TIMEOUT
         )
 

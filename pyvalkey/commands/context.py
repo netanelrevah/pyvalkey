@@ -41,7 +41,14 @@ class ServerContext:
     pause_timeout: float = 0
 
     def num_of_blocked_clients(self) -> int:
-        return sum(1 for client in self.clients.values() if client.blocking_queue is not None)
+        return sum(1 for client in self.clients.values() if client.blocking_context is not None)
+
+    def num_of_blocked_client_for_no_key(self) -> int:
+        return sum(
+            1
+            for client in self.clients.values()
+            if client.blocking_context is not None and client.blocking_context.command in {b"xreadgroup"}
+        )
 
     def get_or_create_database(self, index: int) -> Database:
         if index not in self.databases:

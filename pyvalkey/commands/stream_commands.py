@@ -799,15 +799,43 @@ class StreamGroupAcknowledge(Command):
 
 @command(b"destroy", {b"write", b"stream", b"slow", b"blocking"}, parent_command=b"xgroup")
 class StreamGroupDestroy(Command):
+    database: Database = dependency()
+    blocking_manager: StreamBlockingManager = dependency()
+
     key: bytes = positional_parameter()
     group: bytes = positional_parameter()
+
+    had_group: bool = field(default=False, init=False)
+
+    def execute(self) -> ValueType:
+        value = self.database.stream_database.get_value_or_none(self.key)
+
+        if value is None or value.consumer_groups.pop(self.group, None) is None:
+            return 0
+
+        self.had_group = True
+        return 1
+
+    async def after(self, in_multi: bool = False) -> None:
+        if self.had_group:
+            await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)
+
+
+@command(b"xautoclaim", {b"write", b"stream", b"slow", b"blocking"})
+class StreamGroupAutoClaim(Command):
+    key: bytes = positional_parameter()
+    group: bytes = keyword_parameter()
+    consumer: bytes = positional_parameter()
+    start: bytes = positional_parameter()
+    end: bytes = positional_parameter()
+    count: int | None = keyword_parameter(flag=b"COUNT", default=None)
 
     def execute(self) -> ValueType:
         return None
 
 
-@command(b"xautoclaim", {b"write", b"stream", b"slow", b"blocking"})
-class StreamGroupAutoClaim(Command):
+@command(b"xclaim", {b"write", b"stream", b"slow", b"blocking"})
+class StreamGroupClaim(Command):
     key: bytes = positional_parameter()
     group: bytes = keyword_parameter()
     consumer: bytes = positional_parameter()
