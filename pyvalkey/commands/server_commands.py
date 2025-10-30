@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import field, fields
 from os import urandom
 
@@ -241,6 +242,7 @@ class ConfigResetStatistics(Command):
     def execute(self) -> ValueType:
         self.information.commands_statistics = {}
         self.information.rdb_changes_since_last_save = 0
+        self.information.error_statistics = Counter()
         return RESP_OK
 
 

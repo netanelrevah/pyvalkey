@@ -203,6 +203,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
             if self.current_user:
                 self.current_user.check_permissions(routed_command)
 
+            command_statistics.calls += 1
             await routed_command.before()
             start = time.time()
             result = routed_command.execute()
@@ -210,8 +211,6 @@ class ValkeyClientProtocol(asyncio.Protocol):
             if not isinstance(result, RespError):
                 await routed_command.after()
             self.dump(result)
-            command_statistics.calls += 1
-
             self.current_client.last_command = routed_command.full_command_name
         except RouterKeyError:
             if self.client_context.transaction_context is not None:
@@ -222,6 +221,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
                     f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
                 )
             )
+            self.server_context.information.error_statistics[b"ERR"] += 1
         except ServerWrongNumberOfArgumentsError:
             command_statistics.rejected_calls += 1
             self.dump(
@@ -229,9 +229,11 @@ class ValkeyClientProtocol(asyncio.Protocol):
                     b"ERR wrong number of arguments for '" + routed_command_cls.full_command_name.lower() + b"' command"
                 )
             )
+            self.server_context.information.error_statistics[b"ERR"] += 1
         except ServerWrongTypeError:
             command_statistics.failed_calls += 1
             self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
+            self.server_context.information.error_statistics[b"WRONGTYPE"] += 1
         except CommandPermissionError as e:
             command_statistics.rejected_calls += 1
             if not self.current_user:
@@ -245,14 +247,17 @@ class ValkeyClientProtocol(asyncio.Protocol):
                     + b"' command"
                 )
             )
+            self.server_context.information.error_statistics[b"NOPERM"] += 1
         except ServerError as e:
             command_statistics.failed_calls += 1
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
             self.dump(RespError(e.message))
+            self.server_context.information.error_statistics[e.message.split()[0].upper()] += 1
         except Exception as e:
             print_exc()
             self.dump(RespError(b"ERR internal"))
+            self.server_context.information.error_statistics[b"ERR"] += 1
             raise e
 
 
