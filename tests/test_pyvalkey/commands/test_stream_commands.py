@@ -73,7 +73,6 @@ class TestStreamGroupRead(BaseStreamTest):
         await command.before()
         result = command.execute()
 
-        timestamp = now_ms()
         assert result == [
             [
                 b"mystream",
