@@ -12,6 +12,7 @@ from pyvalkey.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
 from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue, StreamBlockingManager
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.times import now_ms
 
 
 def increment_by_int(database: Database, key: bytes, increment: int = 1) -> int:

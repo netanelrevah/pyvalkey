@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
-
 import pytest
 
+from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.generic_commands import Delete
 from pyvalkey.commands.stream_commands import (
     ExtendedPendingParameters,
@@ -14,17 +13,19 @@ from pyvalkey.commands.stream_commands import (
     StreamGroupRead,
     StreamGroupSetId,
 )
-from pyvalkey.database_objects.clients import BlockingContext
+from pyvalkey.database_objects.clients import BlockingContext, Client
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue, StreamBlockingManager
+from pyvalkey.database_objects.information import Information
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, PendingEntry, Stream
+from pyvalkey.utils.times import now_ms
 
 
 class BaseStreamTest:
     content: DatabaseContent
     database: Database
     blocking_manager: StreamBlockingManager
-    client_context: Mock
+    client_context: ClientContext
     configurations: Configurations
 
     @pytest.fixture(autouse=True, scope="function")
@@ -32,7 +33,11 @@ class BaseStreamTest:
         self.content = DatabaseContent()
         self.database = Database(0, self.content)
         self.blocking_manager = StreamBlockingManager()
-        self.client_context = Mock(database=self.database, transaction_context=None)
+
+        information = Information()
+        server_context = ServerContext({0: self.database}, None, None, None, None, information, self.blocking_manager)
+        information.server_context = server_context
+        self.client_context = ClientContext(server_context, Client(0, b"localhost", 1234), None, 0, None)
         self.configurations = Configurations()
 
 
@@ -57,6 +62,7 @@ class TestStreamGroupRead(BaseStreamTest):
         my_stream.entries[(1, 0)] = {b"a": b"1"}
         my_stream.entries[(2, 0)] = {b"b": b"2"}
 
+        self.client_context.current_client.command_time_snapshot = now_ms()
         command = StreamGroupRead(
             database=self.database,
             blocking_manager=self.blocking_manager,
@@ -354,7 +360,7 @@ class TestStreamGroupRead(BaseStreamTest):
             [
                 b"mystream",
                 [
-                    [b"1-0", {}],
+                    [b"1-0", {b"field1": b"A"}],
                     [b"2-0", {b"field1": b"B"}],
                 ],
             ]
@@ -402,16 +408,16 @@ class TestStreamGroupPending(BaseStreamTest):
         consumer_1 = my_group.consumers[b"consumer-1"] = Consumer(b"consumer-1")
         consumer_2 = my_group.consumers[b"consumer-2"] = Consumer(b"consumer-2")
 
-        consumer_1.pending_entries[(0, 1)] = my_group.pending_entries[(1, 0)] = PendingEntry(
+        consumer_1.pending_entries[(1, 0)] = my_group.pending_entries[(1, 0)] = PendingEntry(
             consumer=consumer_1, times_delivered=1, last_delivery=now_ms()
         )
-        consumer_1.pending_entries[(0, 2)] = my_group.pending_entries[(2, 0)] = PendingEntry(
+        consumer_1.pending_entries[(2, 0)] = my_group.pending_entries[(2, 0)] = PendingEntry(
             consumer=consumer_1, times_delivered=1, last_delivery=now_ms()
         )
-        consumer_2.pending_entries[(0, 3)] = my_group.pending_entries[(3, 0)] = PendingEntry(
+        consumer_2.pending_entries[(3, 0)] = my_group.pending_entries[(3, 0)] = PendingEntry(
             consumer=consumer_2, times_delivered=1, last_delivery=now_ms()
         )
-        consumer_2.pending_entries[(0, 4)] = my_group.pending_entries[(4, 0)] = PendingEntry(
+        consumer_2.pending_entries[(4, 0)] = my_group.pending_entries[(4, 0)] = PendingEntry(
             consumer=consumer_2, times_delivered=1, last_delivery=now_ms()
         )
 
@@ -428,26 +434,26 @@ class TestStreamGroupPending(BaseStreamTest):
             [
                 b"1-0",
                 b"consumer-1",
-                now_ms() - consumer_1.pending_entries[(0, 1)].last_delivery,
-                consumer_1.pending_entries[(0, 1)].times_delivered,
+                now_ms() - consumer_1.pending_entries[(1, 0)].last_delivery,
+                consumer_1.pending_entries[(1, 0)].times_delivered,
             ],
             [
                 b"2-0",
                 b"consumer-1",
-                now_ms() - consumer_1.pending_entries[(0, 2)].last_delivery,
-                consumer_1.pending_entries[(0, 2)].times_delivered,
+                now_ms() - consumer_1.pending_entries[(2, 0)].last_delivery,
+                consumer_1.pending_entries[(2, 0)].times_delivered,
             ],
             [
                 b"3-0",
                 b"consumer-2",
-                now_ms() - consumer_2.pending_entries[(0, 3)].last_delivery,
-                consumer_2.pending_entries[(0, 3)].times_delivered,
+                now_ms() - consumer_2.pending_entries[(3, 0)].last_delivery,
+                consumer_2.pending_entries[(3, 0)].times_delivered,
             ],
             [
                 b"4-0",
                 b"consumer-2",
-                now_ms() - consumer_2.pending_entries[(0, 4)].last_delivery,
-                consumer_2.pending_entries[(0, 4)].times_delivered,
+                now_ms() - consumer_2.pending_entries[(4, 0)].last_delivery,
+                consumer_2.pending_entries[(4, 0)].times_delivered,
             ],
         ]
 
@@ -538,7 +544,7 @@ class TestStreamGroupClaim(BaseStreamTest):
         assert StreamGroupClaim.parse([b"mystream", b"mygroup", b"consumer2", b"10", b"1761858400248-0"]) == {
             "key": b"mystream",
             "group": b"mygroup",
-            "consumer": b"consumer2",
+            "consumer_name": b"consumer2",
             "minimum_idle_time": 10,
             "entry_ids": [b"1761858400248-0"],
         }

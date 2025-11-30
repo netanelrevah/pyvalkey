@@ -6,6 +6,7 @@ from pyvalkey.commands.list_commands import ListBlockingLeftPop
 from pyvalkey.commands.string_commands import ExistenceMode, Get, GetExpire, LongestCommonSubsequence, Set
 from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue
 from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.utils.times import now_ms
 
 
 class TestListBlockingLeftPop:
