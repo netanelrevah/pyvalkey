@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 import functools
 import random
 from collections.abc import Callable
 
-from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
+from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
@@ -33,7 +36,7 @@ class SetMove(DatabaseCommand):
 @command(b"smismember", {b"read", b"set", b"slow"})
 class SetAreMembers(DatabaseCommand):
     key: bytes = positional_parameter()
-    members: list[bytes] = positional_parameter()
+    members: list[bytes] = positional_parameter(sequence_allow_empty=False)
 
     def execute(self) -> ValueType:
         a_set = self.database.set_database.get_value_or_empty(self.key)
@@ -124,17 +127,22 @@ class SetIntersection(DatabaseCommand):
         return apply_set_operation(self.database, set.intersection, self.keys)
 
 
-@command(b"sintercard", {b"read", b"set", b"fast"})
+@command(
+    b"sintercard", {b"read", b"set", b"fast"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+)
 class SetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
-    keys: list[bytes] = positional_parameter(length_field_name="numkeys")
+    keys: list[bytes] = positional_parameter(
+        length_field_name="numkeys",
+        errors={
+            "when_length_field_more_then_parameters": b"ERR Number of keys can't be greater than number of args",
+        },
+    )
     limit: int = keyword_parameter(token=b"LIMIT", default=0, parse_error=b"ERR LIMIT can't be negative")
 
     def execute(self) -> ValueType:
         if self.limit < 0:
             raise ServerError(b"ERR LIMIT can't be negative")
-        if self.numkeys > len(self.keys):
-            raise ServerError(b"ERR Number of keys can't be greater than number of args")
 
         result_set: set[bytes] = set(self.database.set_database.get_value_or_empty(self.keys[0]))
         for key in self.keys[1:]:

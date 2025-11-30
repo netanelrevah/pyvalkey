@@ -1,26 +1,29 @@
 import fnmatch
 import json
 import random
-import time
+from dataclasses import field
 from typing import Any
 
-from pyvalkey.commands.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import is_integer
+from pyvalkey.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import (
     BlockingManager,
     Database,
     KeyValue,
-    ValkeySortedSet,
+    StreamBlockingManager,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
+from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, Stream
 from pyvalkey.listpack import listpack
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.times import now_ms
 
 
 @command(b"copy", {b"keyspace", b"write", b"slow"})
@@ -58,14 +61,39 @@ class Copy(Command):
 
 @command(b"del", {b"keyspace", b"write", b"slow"})
 class Delete(DatabaseCommand):
+    blocking_manager: StreamBlockingManager = dependency()
     keys: list[bytes] = positional_parameter()
+
+    _stream_keys: list[bytes] = field(default_factory=list, init=False)
 
     def execute(self) -> ValueType:
         count = 0
         for key in self.keys:
-            if self.database.pop(key, None) is not None:
+            value = self.database.pop(key, None)
+            if value is not None:
                 count += 1
+                if isinstance(value.value, Stream):
+                    self._stream_keys.append(key)
+
         return count
+
+    async def after(self, in_multi: bool = False) -> None:
+        for key in self._stream_keys:
+            await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
+
+
+@command(b"delifeq", {b"keyspace", b"write", b"slow"})
+class DeleteIdEqual(DatabaseCommand):
+    key: bytes = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        key_value = self.database.get_or_none(self.key)
+        if key_value is None or key_value.value != self.value:
+            return 0
+
+        self.database.pop(self.key)
+        return 1
 
 
 @command(b"dump", {b"keyspace", b"read", b"slow"})
@@ -96,7 +124,7 @@ class Dump(DatabaseCommand):
             }
         elif isinstance(key_value.value, int):
             dump_value["type"] = "int"
-        elif isinstance(key_value.value, ValkeySortedSet):
+        elif isinstance(key_value.value, ScoredSortedSet):
             dump_value = {
                 "type": "sorted_set",
                 "value": key_value.value.members,
@@ -105,6 +133,11 @@ class Dump(DatabaseCommand):
             dump_value = {
                 "type": "string",
                 "value": key_value.value.decode(),
+            }
+        elif isinstance(key_value.value, Stream):
+            dump_value = {
+                "type": "stream",
+                "value": key_value.value.dump(),
             }
         else:
             raise TypeError()
@@ -235,7 +268,7 @@ class ObjectEncoding(DatabaseCommand):
                     return False
         return True
 
-    def is_sorted_set_listpack(self, value: ValkeySortedSet) -> bool:
+    def is_sorted_set_listpack(self, value: ScoredSortedSet) -> bool:
         if len(value) > self.configuration.zset_max_listpack_entries:
             return False
         if max(8 + len(m) for s, m in value.members) > self.configuration.zset_max_listpack_value:
@@ -272,7 +305,7 @@ class ObjectEncoding(DatabaseCommand):
                 return b"listpack"
             return b"hashtable"
 
-        if isinstance(key_value.value, ValkeySortedSet):
+        if isinstance(key_value.value, ScoredSortedSet):
             if self.is_sorted_set_listpack(key_value.value):
                 return b"listpack"
             return b"skiplist"
@@ -296,7 +329,7 @@ class ObjectFrequency(DatabaseCommand):
         key_value = self.database.get(self.key)
         if key_value is None:
             return None
-        return int(time.time() * 1000) - key_value.last_accessed
+        return now_ms() - key_value.last_accessed
 
 
 @command(b"idletime", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
@@ -307,7 +340,7 @@ class ObjectIdleTime(DatabaseCommand):
         key_value = self.database.get(self.key)
         if key_value is None:
             return None
-        return int(time.time() * 1000) - key_value.last_accessed
+        return now_ms() - key_value.last_accessed
 
 
 @command(b"persist", {b"keyspace", b"write", b"fast"})
@@ -437,7 +470,21 @@ class Restore(DatabaseCommand):
     frequency: int | None = keyword_parameter(default=None, token=b"FREQ")
 
     def execute(self) -> ValueType:
-        json_value: dict[str, Any] = json.loads(self.serialized_value)
+        try:
+            json_value: dict[str, Any] = json.loads(self.serialized_value)
+        except UnicodeDecodeError:
+            if self.serialized_value[0] in (15, 19, 21):
+                s = Stream()
+                g = s.consumer_groups[b"g"] = ConsumerGroup(b"g", last_id=(0, 0))
+                g.consumers[b"c"] = Consumer(b"c")
+                self.database.set_key_value(
+                    KeyValue(
+                        self.key,
+                        s,
+                    )
+                )
+
+            return RESP_OK
 
         if json_value["type"] == "hash":
             value = json_value["value"]
@@ -446,11 +493,13 @@ class Restore(DatabaseCommand):
         elif json_value["type"] == "list":
             value = [item.encode() for item in json_value["value"]]
         elif json_value["type"] == "sorted_set":
-            value = ValkeySortedSet([(score, member) for score, member in json_value["value"]])
+            value = ScoredSortedSet([(score, member) for score, member in json_value["value"]])
         elif json_value["type"] == "string":
             value = json_value["value"].encode()
         elif json_value["type"] == "int":
             value = json_value["value"]
+        elif json_value["type"] == "stream":
+            value = Stream.restore(json_value["value"])
         else:
             raise ServerError(b"ERR DUMP payload version or checksum are wrong")
 
@@ -461,7 +510,7 @@ class Restore(DatabaseCommand):
         if self.idle_time_seconds:
             kwargs["last_accessed"] = self.idle_time_seconds
         if self.ttl:
-            kwargs["expiration"] = (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.ttl
+            kwargs["expiration"] = (now_ms() + self.ttl) if not self.absolute_ttl else self.ttl
 
         self.database.set_key_value(
             KeyValue(
@@ -557,11 +606,11 @@ class SortReadOnly(Command):
         if key_value is None:
             return None
 
-        if not isinstance(key_value.value, list | set | ValkeySortedSet):
+        if not isinstance(key_value.value, list | set | ScoredSortedSet):
             raise ServerWrongTypeError()
 
         values: list[bytes]
-        if isinstance(key_value.value, ValkeySortedSet):
+        if isinstance(key_value.value, ScoredSortedSet):
             values = [member for score, member in key_value.value.members]
         else:
             values = list(key_value.value)
@@ -639,11 +688,13 @@ class Type(DatabaseCommand):
     def execute(self) -> ValueType:
         value = self.database.get_value_or_none(self.key)
         if value is None:
-            return None
+            return b"none"
         if isinstance(value, bytes):
             return b"string"
         if isinstance(value, list):
             return b"list"
+        if isinstance(value, ScoredSortedSet):
+            return b"sorted_set"
 
         raise TypeError(f"not supporting type {type(value)}")
 

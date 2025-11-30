@@ -6,7 +6,7 @@ from typing import Any
 
 
 class ParameterMetadata(Enum):
-    SERVER_PARAMETER = auto()
+    COMMAND_PARAMETER = auto()
     VALUES_MAPPING = auto()
     TOKEN = auto()
     MULTI_TOKEN = auto()
@@ -14,6 +14,8 @@ class ParameterMetadata(Enum):
     PARSE_ERROR = auto()
     SKIP_FIRST = auto()
     LENGTH_FIELD_NAME = auto()
+    ERRORS = auto()
+    SEQUENCE_ALLOW_EMPTY = auto()
 
 
 def server_parameter(
@@ -26,10 +28,14 @@ def server_parameter(
     multi_token: bool = False,
     skip_first: bool = False,
     length_field_name: str | None = None,
+    errors: dict[str, bytes] | None = None,
+    sequence_allow_empty: bool = True,
 ) -> Any:  # noqa: ANN401
     metadata: dict[ParameterMetadata, Any] = {
-        ParameterMetadata.SERVER_PARAMETER: True,
+        ParameterMetadata.COMMAND_PARAMETER: True,
         ParameterMetadata.PARSE_ERROR: parse_error,
+        ParameterMetadata.ERRORS: errors,
+        ParameterMetadata.SEQUENCE_ALLOW_EMPTY: sequence_allow_empty,
     }
     if length_field_name is not None:
         metadata[ParameterMetadata.LENGTH_FIELD_NAME] = length_field_name
@@ -64,6 +70,8 @@ def positional_parameter(
     key_mode: bytes | None = None,
     parse_error: bytes | None = None,
     length_field_name: str | None = None,
+    errors: dict[str, bytes] | None = None,
+    sequence_allow_empty: bool = True,
 ) -> Any:  # noqa: ANN401
     return server_parameter(
         values_mapping=values_mapping,
@@ -71,6 +79,8 @@ def positional_parameter(
         key_mode=key_mode,
         parse_error=parse_error,
         length_field_name=length_field_name,
+        errors=errors,
+        sequence_allow_empty=sequence_allow_empty,
     )
 
 
@@ -83,6 +93,9 @@ def keyword_parameter(
     multi_token: bool = False,
     skip_first: bool = False,
     parse_error: bytes | None = None,
+    length_field_name: str | None = None,
+    errors: dict[str, bytes] | None = None,
+    sequence_allow_empty: bool = True,
 ) -> Any:  # noqa: ANN401
     return server_parameter(
         values_mapping=values_mapping,
@@ -93,4 +106,7 @@ def keyword_parameter(
         key_mode=key_mode,
         skip_first=skip_first,
         parse_error=parse_error,
+        length_field_name=length_field_name,
+        errors=errors,
+        sequence_allow_empty=sequence_allow_empty,
     )

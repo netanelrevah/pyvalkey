@@ -15,25 +15,21 @@ from types import FrameType
 from typing import cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
+from pyvalkey.commands.core import Command
+from pyvalkey.commands.executors import CommandExecutor
 from pyvalkey.commands.router import CommandsRouter
-from pyvalkey.commands.transactions_commands import (
-    TransactionDiscard,
-    TransactionExecute,
-    TransactionStart,
-    TransactionWatch,
-)
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, UnblockMessage
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
-    CommandPermissionError,
     RouterKeyError,
     ServerError,
     ServerWrongNumberOfArgumentsError,
-    ServerWrongTypeError,
 )
+from pyvalkey.enums import UnblockMessage
 from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
+from pyvalkey.utils.times import now_f_s
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +94,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
     def connection_lost(self, exception: Exception | None) -> None:
         print(f"{self.current_client.client_id} connection lost")
-        if self.client_context.current_client.blocking_queue is not None:
-            self.client_context.current_client.blocking_queue.put_nowait(UnblockMessage.ERROR)
+        if self.client_context.current_client.blocking_context is not None:
+            self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
         del self.clients[self.current_client.client_id]
 
     def dump(self, value: ValueType) -> None:
@@ -141,6 +137,14 @@ class ValkeyClientProtocol(asyncio.Protocol):
         except RespFatalError:
             self.cancel()
 
+    def _is_paused(self, routed_command_cls: type[Command]) -> bool:
+        if self.server_context.is_paused:
+            return True
+        if self.server_context.is_paused_for_write:
+            if b"write" in routed_command_cls.flags:
+                return True
+        return False
+
     async def handle(self, command: list[bytes]) -> None:
         if not command:
             return
@@ -150,14 +154,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
             return
 
         self.server_context.information.total_commands_processed += 1
+        self.current_client.command_time_snapshot = time.time_ns() // 1_000_000
 
         print(self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command])
 
         try:
             routed_command_cls, parameters = self.router.route(command)
-            command_statistics = self.server_context.information.get_command_statistics(
-                routed_command_cls.full_command_name
-            )
+
         except RouterKeyError:
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
@@ -168,77 +171,54 @@ class ValkeyClientProtocol(asyncio.Protocol):
                 )
             )
             return
+
+        if self.server_context.pause_timeout:
+            while self._is_paused(routed_command_cls) or now_f_s() < self.server_context.pause_timeout:
+                time.sleep(0.1)
+            self.server_context.pause_timeout = 0
+
+        command_statistics = self.server_context.information.get_command_statistics(
+            routed_command_cls.full_command_name
+        )
+
         try:
             routed_command = routed_command_cls.create(parameters, self.client_context)
-            if self.configurations.maxmemory > 0:
-                if b"denyoom" in routed_command.flags:
-                    raise ServerError(b"ERR OOM command not allowed when used memory > 'maxmemory'.")
-
-            if self.client_context.transaction_context is not None:
-                if b"nomulti" in routed_command.flags:
-                    raise ServerError(b"ERR Command not allowed inside a transaction")
-                if not isinstance(
-                    routed_command, (TransactionExecute | TransactionDiscard | TransactionStart | TransactionWatch)
-                ):
-                    self.client_context.transaction_context.commands.append(routed_command)
-                    self.dump("QUEUED")
-                    return
-
-            if self.current_user:
-                self.current_user.check_permissions(routed_command)
-
-            await routed_command.before()
-            start = time.time()
-            result = routed_command.execute()
-            command_statistics.microseconds += int(time.time() - start) * 1000000
-            if not isinstance(result, RespError):
-                await routed_command.after()
-            self.dump(result)
-            command_statistics.calls += 1
-
-            self.current_client.last_command = routed_command.full_command_name
-
-            if self.server_context.pause_timeout:
-                while self.server_context.is_paused and time.time() < self.server_context.pause_timeout:
-                    time.sleep(0.1)
-                self.server_context.pause_timeout = 0
-        except RouterKeyError:
-            if self.client_context.transaction_context is not None:
-                self.client_context.transaction_context.is_aborted = True
-            self.dump(
-                RespError(
-                    f"ERR unknown command '{command[0].decode()}', "
-                    f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
-                )
-            )
         except ServerWrongNumberOfArgumentsError:
             command_statistics.rejected_calls += 1
-            self.dump(RespError(b"ERR wrong number of arguments for '" + command[0].lower() + b"' command"))
-        except ServerWrongTypeError:
-            command_statistics.failed_calls += 1
-            self.dump(RespError(b"WRONGTYPE Operation against a key holding the wrong kind of value"))
-        except CommandPermissionError as e:
-            command_statistics.rejected_calls += 1
-            if not self.current_user:
-                raise e
             self.dump(
                 RespError(
-                    b"NOPERM User "
-                    + self.current_user.name
-                    + b" has no permissions to run the '"
-                    + e.command_name
-                    + b"' command"
+                    b"ERR wrong number of arguments for '" + routed_command_cls.full_command_name.lower() + b"' command"
                 )
             )
+            self.server_context.information.error_statistics[b"ERR"] += 1
+            return
         except ServerError as e:
             command_statistics.failed_calls += 1
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
             self.dump(RespError(e.message))
+            self.server_context.information.error_statistics[e.message.split()[0].upper()] += 1
+            return
         except Exception as e:
             print_exc()
             self.dump(RespError(b"ERR internal"))
+            self.server_context.information.error_statistics[b"ERR"] += 1
             raise e
+
+        command_executor = CommandExecutor(routed_command, self.client_context)
+        try:
+            result = await command_executor.execute()
+            self.dump(result)
+        except Exception as e:
+            self.dump(RespError(b"ERR internal"))
+            raise e
+
+        while self.client_context.propagated_commands:
+            command_executor = CommandExecutor(self.client_context.propagated_commands.pop(0), self.client_context)
+            try:
+                await command_executor.execute()
+            except Exception as e:
+                raise e
 
 
 HANDLED_SIGNALS: tuple[signal.Signals, ...] = (

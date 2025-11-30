@@ -2,7 +2,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from pyvalkey.commands.set_commands import SetIntersectionCardinality, SetRandomMember
+from pyvalkey.commands.set_commands import SetAreMembers, SetIntersectionCardinality, SetRandomMember
+from pyvalkey.commands.string_commands import SetMultiple
 from pyvalkey.database_objects.databases import Database, KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongNumberOfArgumentsError
 
@@ -40,13 +41,13 @@ class TestSetIntersectionCardinality:
             SetIntersectionCardinality.parse([b"a", b"s"])
         assert e.value.message == b"ERR numkeys should be greater than 0"
 
-        # with pytest.raises(ServerError) as e:
-        #     SetIntersectionCardinality.parse([b"2", b"s"])
-        # assert e.value.message == b"ERR Number of keys can't be greater than number of args"
-        #
-        # with pytest.raises(ServerError) as e:
-        #     SetIntersectionCardinality.parse([b"3", b"s", b"s2"])
-        # assert e.value.message == b"ERR Number of keys can't be greater than number of args"
+        with pytest.raises(ServerError) as e:
+            SetIntersectionCardinality.parse([b"2", b"s"])
+        assert e.value.message == b"ERR Number of keys can't be greater than number of args"
+
+        with pytest.raises(ServerError) as e:
+            SetIntersectionCardinality.parse([b"3", b"s", b"s2"])
+        assert e.value.message == b"ERR Number of keys can't be greater than number of args"
 
         with pytest.raises(ServerError) as e:
             SetIntersectionCardinality.parse([b"1", b"s", b"s2"])
@@ -80,3 +81,15 @@ class TestSetRandomMember:
         command = SetRandomMember(database=database, key=b"ss", count=100)
 
         assert command.execute() == [b"a"]
+
+
+class TestSetMultiple:
+    def test_parse(self):
+        with pytest.raises(expected_exception=ServerWrongNumberOfArgumentsError):
+            assert SetMultiple.parse([b"a", b"1", b"b"])
+
+
+class TestSetAreMembers:
+    def test_parse(self):
+        with pytest.raises(expected_exception=ServerWrongNumberOfArgumentsError):
+            assert SetAreMembers.parse([b"zmscoretest"])

@@ -1,4 +1,3 @@
-import time
 from dataclasses import field
 from enum import Enum
 from hashlib import sha256
@@ -13,9 +12,10 @@ from pyvalkey.commands.parameters import (
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import UnblockMessage
 from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.enums import UnblockMessage
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
+from pyvalkey.utils.times import now_f_s
 
 
 @command(b"auth", {b"fast", b"connection"})
@@ -112,10 +112,20 @@ class ClientKill(Command):
 class ClientPause(Command):
     server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
+    pause_all: bool = keyword_parameter(flag=b"ALL", default=False)
+    pause_write: bool = keyword_parameter(flag=b"WRITE", default=False)
 
     def execute(self) -> ValueType:
-        self.server_context.pause_timeout = time.time() + self.timeout_seconds
-        self.server_context.is_paused = True
+        if self.pause_write and self.pause_all:
+            raise ServerError(b"ERR Syntax error")
+        elif not self.pause_write:
+            self.pause_all = True
+
+        self.server_context.pause_timeout = now_f_s() + self.timeout_seconds
+        if self.pause_write:
+            self.server_context.is_paused_for_write = True
+        else:
+            self.server_context.is_paused = True
         return RESP_OK
 
 
@@ -126,6 +136,7 @@ class ClientUnpause(Command):
 
     def execute(self) -> ValueType:
         self.server_context.is_paused = False
+        self.server_context.is_paused_for_write = False
         return RESP_OK
 
 
@@ -164,10 +175,10 @@ class ClientUnblock(Command):
             return
 
         client = self.server_context.clients[self.client_id]
-        if client.blocking_queue is None:
+        if client.blocking_context is None:
             return
 
-        await client.blocking_queue.put(
+        await client.blocking_context.queue.put(
             UnblockMessage.ERROR if self.unblock_option == UnblockOption.error else UnblockMessage.TIMEOUT
         )
 

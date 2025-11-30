@@ -1,6 +1,6 @@
-import time
+from unittest.mock import Mock
 
-from _pytest.python_api import raises
+from pytest import raises
 
 from pyvalkey.commands.list_commands import ListBlockingLeftPop
 from pyvalkey.commands.string_commands import ExistenceMode, Get, GetExpire, LongestCommonSubsequence, Set
@@ -50,9 +50,13 @@ class TestSet:
         }
 
     def test_execute(self):
+        blocking_manager_mock = Mock()
+
+        ###
+
         database = Database(0)
 
-        assert Set(database, b"0", b"0").execute() == b"OK"
+        assert Set(database, blocking_manager_mock, b"0", b"0").execute() == b"OK"
 
         assert database.content.data[b"0"] == KeyValue(b"0", 0)
 
@@ -60,7 +64,7 @@ class TestSet:
 
         database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
 
-        assert Set(database, b"foo", b"new_value", condition=b"initial_value").execute() == b"OK"
+        assert Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value").execute() == b"OK"
 
         assert database.content.data[b"foo"] == KeyValue(b"foo", b"new_value")
 
@@ -68,7 +72,10 @@ class TestSet:
 
         database = Database(0)
 
-        assert Set(database, b"foo", b"new_value", condition=b"initial_value", get=True).execute() is None
+        assert (
+            Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value", get=True).execute()
+            is None
+        )
 
         assert database.content.data == {}
 
@@ -76,7 +83,10 @@ class TestSet:
 
         database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
 
-        assert Set(database, b"foo", b"new_value", condition=b"initial_value", get=True).execute() == b"initial_value"
+        assert (
+            Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value", get=True).execute()
+            == b"initial_value"
+        )
 
         assert database.content.data[b"foo"].value == KeyValue(b"foo", b"new_value").value
         assert database.content.data[b"foo"].key == KeyValue(b"foo", b"new_value").key
@@ -93,7 +103,7 @@ class TestGetExpire:
     def test_execute(self):
         database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", 1)}))
 
-        now_milliseconds = int(time.time() * 1000)
+        now_milliseconds = now_ms()
 
         assert GetExpire(database, b"foo", pxat=now_milliseconds + 10000).execute() == 1
 

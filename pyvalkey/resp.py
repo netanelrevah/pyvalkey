@@ -8,6 +8,8 @@ from enum import IntEnum
 from io import IOBase
 from typing import Any, AnyStr, BinaryIO, Self
 
+from pyvalkey.commands.utils import convert_float_value_to_bytes
+
 
 class RespProtocolVersion(IntEnum):
     RESP2 = 2
@@ -247,7 +249,7 @@ class Resp2Dumper(RespDumper):
 
     @classmethod
     def dumps_float(cls, value: float) -> bytes:
-        return cls.dumps_bulk_string(f"{value:.17f}".rstrip("0").rstrip("."))
+        return convert_float_value_to_bytes(value)
 
     @classmethod
     def dumps_bulk_string(cls, value: str | bytes) -> bytes:
@@ -281,7 +283,7 @@ class Resp2Dumper(RespDumper):
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.writer.write(self.dumps_float(value))
+            self.writer.write(self.dumps_bulk_string(self.dumps_float(value)))
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
@@ -301,6 +303,9 @@ class Resp2Dumper(RespDumper):
             self.writer.write(b"*-1\r\n")
         elif value is None:
             self.writer.write(b"$-1\r\n")
+        else:
+            self.writer.write(b"\r\n")
+            raise ValueError(type(value))
 
 
 @dataclass
@@ -334,7 +339,7 @@ class Resp3Dumper(RespDumper):
         elif isinstance(value, int):
             self.writer.write(f":{value}\r\n".encode())
         elif isinstance(value, float):
-            self.writer.write(Resp2Dumper.dumps_float(value))
+            self.writer.write(b"," + Resp2Dumper.dumps_float(value) + b"\r\n")
         elif isinstance(value, RespSimpleString):
             self.dump_string(value)
         elif isinstance(value, RespError):
@@ -351,6 +356,9 @@ class Resp3Dumper(RespDumper):
             self.writer.write(b"_\r\n")
         elif value is None:
             self.writer.write(b"_\r\n")
+        else:
+            self.writer.write(b"\r\n")
+            raise ValueError(type(value))
 
 
 def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: RespProtocolVersion) -> None:
@@ -360,6 +368,7 @@ def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: Resp
     elif protocol == RespProtocolVersion.RESP3:
         dumper = Resp3Dumper(stream)
     else:
+        stream.write(b"\r\n")
         raise ValueError(protocol)
 
     dumper.dump(value)

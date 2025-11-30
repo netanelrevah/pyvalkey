@@ -1,7 +1,6 @@
 from dataclasses import field
 from enum import Enum
 
-from pyvalkey.commands.consts import LONG_MAX
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -9,6 +8,7 @@ from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
+from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import Database, ListBlockingManager
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
@@ -20,7 +20,7 @@ class DirectionMode(Enum):
     AFTER = b"AFTER"
 
 
-@command(b"blpop", {b"write", b"list", b"fast"})
+@command(b"blpop", {b"list", b"fast"}, flags={b"write"})
 class ListBlockingLeftPop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -34,7 +34,7 @@ class ListBlockingLeftPop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, b"blpop", self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -60,7 +60,7 @@ class ListBlockingRightPop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, b"brpop", self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -93,7 +93,7 @@ class ListBlockingMultiplePop(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, self.keys, self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, self.keys, self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -147,7 +147,7 @@ class ListBlockingRightPopLeftPush(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, [self.source], self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, [self.source], self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:
@@ -182,7 +182,7 @@ class ListBlockingMove(Command):
 
     async def before(self, in_multi: bool = False) -> None:
         self._key = await self.blocking_manager.wait_for_lists(
-            self.client_context, [self.source], self.timeout, in_multi=in_multi
+            self.client_context, self.full_command_name, [self.source], self.timeout, in_multi=in_multi
         )
 
     def execute(self) -> ValueType:

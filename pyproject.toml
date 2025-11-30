@@ -31,6 +31,8 @@ dev = [
     "valkey>=6.1.0",
     "lupa>=2.4",
     "u-msgpack-python>=2.8.0",
+    "pytest-asyncio>=1.2.0",
+    "ty>=0.0.1a23",
 ]
 
 [tool.pytest.ini_options]
@@ -49,7 +51,23 @@ markers = [
 target-version = "py311"
 line-length = 120
 
-lint.select = ["ANN", "I", "N", "UP", "PGH", "RUF", "F", "FA", "PL", "E"]
+lint.select = [
+    "ANN",
+    "E",
+    "F",
+    "FA",
+    # "FBT",
+    "FURB",
+    "I",
+    "N",
+    "PGH",
+    "PERF",
+    "PL",
+    "RUF",
+    # "TRY",
+    "UP",
+    "YTT",
+]
 lint.ignore = [
     "E731",
     "RUF009",

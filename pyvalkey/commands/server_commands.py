@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from collections import Counter
+from dataclasses import field, fields
 from os import urandom
 
 from pyvalkey.commands.context import ClientContext, ServerContext
@@ -10,7 +11,7 @@ from pyvalkey.commands.parameters import ParameterMetadata, keyword_parameter, p
 from pyvalkey.commands.router import CommandsRouter, command
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
 from pyvalkey.database_objects.configurations import ConfigurationError, Configurations
-from pyvalkey.database_objects.databases import BlockingManager, Database
+from pyvalkey.database_objects.databases import BlockingManager, Database, StreamBlockingManager
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType
@@ -193,12 +194,12 @@ class CommandGetKeys(Command):
         parsed_command = command_cls.parse(parameters)
 
         keys = []
-        for field in fields(command_cls):
-            if ParameterMetadata.KEY_MODE in field.metadata:
-                if isinstance(parsed_command[field.name], list):
-                    keys.extend(parsed_command[field.name])
+        for cls_field in fields(command_cls):
+            if ParameterMetadata.KEY_MODE in cls_field.metadata:
+                if isinstance(parsed_command[cls_field.name], list):
+                    keys.extend(parsed_command[cls_field.name])
                 else:
-                    keys.append(parsed_command[field.name])
+                    keys.append(parsed_command[cls_field.name])
 
         if not keys:
             return RespError(b"The command has no key arguments")
@@ -241,6 +242,7 @@ class ConfigResetStatistics(Command):
     def execute(self) -> ValueType:
         self.information.commands_statistics = {}
         self.information.rdb_changes_since_last_save = 0
+        self.information.error_statistics = Counter()
         return RESP_OK
 
 
@@ -281,23 +283,36 @@ def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
 @command(b"flushall", {b"keyspace", b"write", b"slow", b"dangerous"})
 class FlushAllDatabases(Command):
     server_context: ServerContext = dependency()
+    blocking_manager: StreamBlockingManager = dependency()
 
     def execute(self) -> ValueType:
         touch_all_databases_watched_keys(self.server_context.databases)
         self.server_context.databases.clear()
         return RESP_OK
 
+    async def after(self, in_multi: bool = False) -> None:
+        for key in self.blocking_manager.notifications.mapping.keys():
+            await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
+
 
 @command(b"flushdb", {b"keyspace", b"write", b"slow", b"dangerous"})
 class FlushDatabase(Command):
+    blocking_manager: StreamBlockingManager = dependency()
     client_context: ClientContext = dependency()
+
+    _flushed_keys: set[bytes] = field(default_factory=set, init=False)
 
     def execute(self) -> ValueType:
         if self.client_context.current_database in self.client_context.server_context.databases:
+            self._flushed_keys.update(self.client_context.database.keys())
             for key in self.client_context.database.keys():
                 self.client_context.database.touch_watched_key(key)
             self.client_context.server_context.databases.pop(self.client_context.current_database)
         return RESP_OK
+
+    async def after(self, in_multi: bool = False) -> None:
+        for key in self._flushed_keys:
+            await self.blocking_manager.notify(key, in_multi=in_multi)
 
 
 @command(b"info", {b"slow", b"dangerous"})
@@ -330,10 +345,7 @@ class SwapDb(Command):
         if self.index1 == self.index2:
             return RESP_OK
 
-        if self.index1 not in self.server_context.databases:
-            raise ServerError(b"ERR DB index is out of range")
-
-        database1 = self.server_context.databases[self.index1]
+        database1 = self.server_context.get_or_create_database(self.index1)
         database1.touch_all_database_watched_keys()
         if self.index2 not in self.server_context.databases:
             new_database = self.server_context.get_or_create_database(self.index2)

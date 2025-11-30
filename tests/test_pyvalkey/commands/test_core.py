@@ -34,19 +34,19 @@ class ListCommand(Command):
 
 @Parametrization.autodetect_parameters()
 @Parametrization.case(
-    name="",
+    name="BytesCommand with two parameters",
     parameters=[b"a", b"b"],
     command_cls=BytesCommand,
     expected_kwargs={"a": b"a", "b": b"b"},
 )
 @Parametrization.case(
-    name="",
+    name="ByteIntCommand with three parameters",
     parameters=[b"a", b"1", b"2"],
     command_cls=ByteIntCommand,
     expected_kwargs={"a": b"a", "b": 2, "c": True},
 )
 @Parametrization.case(
-    name="",
+    name="ListCommand with three parameters",
     parameters=[b"a", b"1", b"2"],
     command_cls=ListCommand,
     expected_kwargs={"a": b"a", "d": [1, 2]},
@@ -64,29 +64,29 @@ class ListCommand(Command):
     expected_kwargs={"key": b"zset", "start": b"(1", "stop": b"5", "range_mode": RangeMode.BY_SCORE, "rev": True},
 )
 @Parametrization.case(
-    name="",
+    name="SortedSetAdd with two members",
     parameters=b"myzset 2 two 3 three".split(),
     command_cls=SortedSetAdd,
-    expected_kwargs={"key": b"myzset", "scores_members": [(b"2", b"two"), (b"3", b"three")]},
+    expected_kwargs={"key": b"myzset", "scores_members": [(2.0, b"two"), (3.0, b"three")]},
 )
 @Parametrization.case(
-    name="",
+    name="SortedSetAdd with NX flag",
     parameters=b"myzset NX 2 two 3 three".split(),
     command_cls=SortedSetAdd,
     expected_kwargs={
         "key": b"myzset",
-        "scores_members": [(b"2", b"two"), (b"3", b"three")],
+        "scores_members": [(2.0, b"two"), (3.0, b"three")],
         "add_mode": AddMode.INSERT_ONLY,
     },
 )
 @Parametrization.case(
-    name="",
+    name="Copy command",
     parameters=b"a b".split(),
     command_cls=Copy,
     expected_kwargs={"source": b"a", "destination": b"b"},
 )
 @Parametrization.case(
-    name="",
+    name="ClientKill with client ID",
     parameters=b"ID 1".split(),
     command_cls=ClientKill,
     expected_kwargs={"client_id": 1},

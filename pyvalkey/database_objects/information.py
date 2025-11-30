@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,7 @@ class Information:
     total_commands_processed: int = 0
     rdb_changes_since_last_save: int = 0
     commands_statistics: dict[bytes, CommandStatistics] = field(default_factory=dict)
+    error_statistics: Counter[bytes] = field(default_factory=Counter)
 
     _server_context: ServerContext | None = None
 
@@ -57,9 +59,8 @@ class Information:
 
     def commands_statistics_info(self) -> bytes:
         info = [b"# Commandstats"]
-        for command_statistics in self.commands_statistics.values():
-            info.append(str(command_statistics).encode())
-        return b"\r\n".join(info)
+        info.extend([str(command_statistics).encode() for command_statistics in self.commands_statistics.values()])
+        return b"\r\n".join(info) + b"\r\n"
 
     def server(self) -> bytes:
         info = [
@@ -73,8 +74,16 @@ class Information:
         info = [
             b"# Clients",
             b"blocked_clients:" + to_bytes(self.server_context.num_of_blocked_clients()),
+            b"total_blocking_keys:" + to_bytes(self.server_context.blocking_manager.total_key_blocking()),
+            b"total_blocking_keys_on_nokey:" + to_bytes(self.server_context.num_of_blocked_client_for_no_key()),
         ]
-        return b"\r\n".join(info)
+        return b"\r\n".join(info) + b"\r\n"
+
+    def errorstats(self) -> bytes:
+        info = [b"# Errorstats"]
+        for error_type, count in self.error_statistics.items():
+            info.append(b"errorstat_" + error_type + b":count=" + to_bytes(count))
+        return b"\r\n".join(info) + b"\r\n"
 
     def cluster(self) -> bytes:
         info = [
@@ -94,6 +103,7 @@ class Information:
         info = [
             b"# Stats",
             b"total_commands_processed:" + to_bytes(self.total_commands_processed),
+            b"total_error_replies:" + to_bytes(self.error_statistics.total()),
         ]
         return b"\r\n".join(info)
 
@@ -124,6 +134,8 @@ class Information:
             info.append(self.stats())
         if sections and b"commandstats" in sections:
             info.append(self.commands_statistics_info())
+        if not sections or b"all" in sections or b"errorstats" in sections:
+            info.append(self.errorstats())
         if not sections or b"all" in sections or b"cluster" in sections:
             info.append(self.cluster())
         if not sections or b"all" in sections or b"keyspace" in sections:

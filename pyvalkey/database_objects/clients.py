@@ -1,10 +1,17 @@
 import itertools
 from asyncio import Queue
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Self
 
 from pyvalkey.database_objects.utils import to_bytes
+from pyvalkey.enums import UnblockMessage
+
+
+@dataclass(unsafe_hash=True)
+class BlockingContext:
+    command: bytes
+    queue: Queue[bytes | UnblockMessage] = field(default_factory=Queue)
 
 
 @dataclass
@@ -25,7 +32,9 @@ class Client:
 
     last_command: bytes = b""
 
-    blocking_queue: Queue | None = None
+    command_time_snapshot: int = 0
+
+    blocking_context: BlockingContext | None = None
 
     @property
     def address(self) -> bytes:
