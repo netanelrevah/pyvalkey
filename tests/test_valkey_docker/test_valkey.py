@@ -7,7 +7,7 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
     try:
         client = docker.from_env()
 
-        image, logs = client.images.build(path=".", rm=True)
+        image, _ = client.images.build(path=".", rm=True)
 
         log_file_name = f"{'-'.join(tags.split())}.docker.log"
 
@@ -95,3 +95,7 @@ def test_type_zset(s: Valkey):
 
 def test_type_stream(s: Valkey):
     run_tests(s, tags="stream")
+
+
+def test_quit(s: Valkey):
+    run_tests(s, tags="quit")
