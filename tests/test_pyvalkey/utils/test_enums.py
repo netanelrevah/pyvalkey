@@ -61,7 +61,7 @@ class TestBytesEnum:
 
 class TestBytesEnumErrorHandling:
     def test_too_many_arguments_raises_typeerror(self):
-        with pytest.raises(TypeError, match="too many arguments for bytes()"):
+        with pytest.raises(TypeError, match="too many arguments for bytes\(\)"):
 
             class BadEnum(BytesEnum):
                 MEMBER = "a", "b", "c", "d"
