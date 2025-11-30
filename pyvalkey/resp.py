@@ -303,6 +303,9 @@ class Resp2Dumper(RespDumper):
             self.writer.write(b"*-1\r\n")
         elif value is None:
             self.writer.write(b"$-1\r\n")
+        else:
+            self.writer.write(b"\r\n")
+            raise ValueError(type(value))
 
 
 @dataclass
@@ -353,6 +356,9 @@ class Resp3Dumper(RespDumper):
             self.writer.write(b"_\r\n")
         elif value is None:
             self.writer.write(b"_\r\n")
+        else:
+            self.writer.write(b"\r\n")
+            raise ValueError(type(value))
 
 
 def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: RespProtocolVersion) -> None:
@@ -362,6 +368,7 @@ def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: Resp
     elif protocol == RespProtocolVersion.RESP3:
         dumper = Resp3Dumper(stream)
     else:
+        stream.write(b"\r\n")
         raise ValueError(protocol)
 
     dumper.dump(value)

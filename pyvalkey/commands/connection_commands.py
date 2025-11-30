@@ -1,4 +1,3 @@
-import time
 from dataclasses import field
 from enum import Enum
 from hashlib import sha256
@@ -16,6 +15,7 @@ from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.enums import UnblockMessage
 from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
+from pyvalkey.utils.times import now_f_s
 
 
 @command(b"auth", {b"fast", b"connection"})
@@ -121,7 +121,7 @@ class ClientPause(Command):
         elif not self.pause_write:
             self.pause_all = True
 
-        self.server_context.pause_timeout = time.time() + self.timeout_seconds
+        self.server_context.pause_timeout = now_f_s() + self.timeout_seconds
         if self.pause_write:
             self.server_context.is_paused_for_write = True
         else:

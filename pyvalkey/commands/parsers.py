@@ -157,10 +157,7 @@ class TupleValueParser(ValueParser):
     parameter_parser_tuple: tuple[ValueParser, ...]
 
     def parse(self, parameters: list[bytes]) -> tuple:
-        tuple_parameter = []
-        for parameter_parser in self.parameter_parser_tuple:
-            tuple_parameter.append(parameter_parser.parse(parameters))
-        return tuple(tuple_parameter)
+        return tuple(parameter_parser.parse(parameters) for parameter_parser in self.parameter_parser_tuple)
 
     @classmethod
     def create(cls, tuple_types: tuple[Any, ...], parse_error: bytes | None = None) -> Self:
@@ -318,7 +315,17 @@ class SequenceNamedParameterParser(NamedParameterParser):
                 raise ServerWrongNumberOfArgumentsError()
             parameters = [parameters.pop(0) for _ in range(length)]
         elif len(context.left_parameter_parsers) > 0:
-            parameters = [parameters.pop(0) for _ in range(len(parameters) - len(context.left_parameter_parsers))]
+            first_parameter_parser = context.left_parameter_parsers[0]
+            if isinstance(first_parameter_parser, OptionalKeywordParametersGroup):
+                new_parameters = []
+                while parameters:
+                    top_parameter = parameters[0].upper()
+                    if top_parameter in first_parameter_parser.parameters_parsers_map:
+                        break
+                    new_parameters.append(parameters.pop(0))
+                parameters = new_parameters
+            else:
+                parameters = [parameters.pop(0) for _ in range(len(parameters) - len(context.left_parameter_parsers))]
         elif not self.allow_empty and len(parameters) == 0:
             raise ServerWrongNumberOfArgumentsError()
         return {self.name: self.parameter_parser.parse(parameters)}

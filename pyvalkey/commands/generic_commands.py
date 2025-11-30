@@ -1,7 +1,6 @@
 import fnmatch
 import json
 import random
-import time
 from dataclasses import field
 from typing import Any
 
@@ -21,9 +20,10 @@ from pyvalkey.database_objects.databases import (
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
-from pyvalkey.database_objects.stream import Stream
+from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, Stream
 from pyvalkey.listpack import listpack
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.times import now_ms
 
 
 @command(b"copy", {b"keyspace", b"write", b"slow"})
@@ -133,6 +133,11 @@ class Dump(DatabaseCommand):
             dump_value = {
                 "type": "string",
                 "value": key_value.value.decode(),
+            }
+        elif isinstance(key_value.value, Stream):
+            dump_value = {
+                "type": "stream",
+                "value": key_value.value.dump(),
             }
         else:
             raise TypeError()
@@ -324,7 +329,7 @@ class ObjectFrequency(DatabaseCommand):
         key_value = self.database.get(self.key)
         if key_value is None:
             return None
-        return int(time.time() * 1000) - key_value.last_accessed
+        return now_ms() - key_value.last_accessed
 
 
 @command(b"idletime", {b"read", b"keyspace", b"slow"}, parent_command=b"object")
@@ -335,7 +340,7 @@ class ObjectIdleTime(DatabaseCommand):
         key_value = self.database.get(self.key)
         if key_value is None:
             return None
-        return int(time.time() * 1000) - key_value.last_accessed
+        return now_ms() - key_value.last_accessed
 
 
 @command(b"persist", {b"keyspace", b"write", b"fast"})
@@ -465,7 +470,21 @@ class Restore(DatabaseCommand):
     frequency: int | None = keyword_parameter(default=None, token=b"FREQ")
 
     def execute(self) -> ValueType:
-        json_value: dict[str, Any] = json.loads(self.serialized_value)
+        try:
+            json_value: dict[str, Any] = json.loads(self.serialized_value)
+        except UnicodeDecodeError:
+            if self.serialized_value[0] in (15, 19, 21):
+                s = Stream()
+                g = s.consumer_groups[b"g"] = ConsumerGroup(b"g", last_id=(0, 0))
+                g.consumers[b"c"] = Consumer(b"c")
+                self.database.set_key_value(
+                    KeyValue(
+                        self.key,
+                        s,
+                    )
+                )
+
+            return RESP_OK
 
         if json_value["type"] == "hash":
             value = json_value["value"]
@@ -479,6 +498,8 @@ class Restore(DatabaseCommand):
             value = json_value["value"].encode()
         elif json_value["type"] == "int":
             value = json_value["value"]
+        elif json_value["type"] == "stream":
+            value = Stream.restore(json_value["value"])
         else:
             raise ServerError(b"ERR DUMP payload version or checksum are wrong")
 
@@ -489,7 +510,7 @@ class Restore(DatabaseCommand):
         if self.idle_time_seconds:
             kwargs["last_accessed"] = self.idle_time_seconds
         if self.ttl:
-            kwargs["expiration"] = (int(time.time() * 1000) + self.ttl) if not self.absolute_ttl else self.ttl
+            kwargs["expiration"] = (now_ms() + self.ttl) if not self.absolute_ttl else self.ttl
 
         self.database.set_key_value(
             KeyValue(

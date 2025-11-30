@@ -87,6 +87,8 @@ class ClientContext:
 
     protocol: RespProtocolVersion = RespProtocolVersion.RESP2
 
+    propagated_commands: list[Command] = field(default_factory=list)
+
     @property
     def database(self) -> Database:
         return self.server_context.get_or_create_database(self.current_database)

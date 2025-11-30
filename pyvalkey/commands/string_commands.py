@@ -1,4 +1,3 @@
-import time
 from dataclasses import field
 from enum import Enum
 from math import isinf, isnan
@@ -371,7 +370,7 @@ class Set(DatabaseCommand):
         if token_name := self.get_one_and_only_token():
             token_value = getattr(self, token_name)
             if token_name in ["ex", "px"]:
-                expiration = int(time.time() * 1000) + token_value * (1000 if token_name == "ex" else 1)
+                expiration = now_ms() + token_value * (1000 if token_name == "ex" else 1)
             if token_name in ["exat", "pxat"]:
                 expiration = token_value * (1000 if token_name == "exat" else 1)
 

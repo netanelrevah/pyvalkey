@@ -32,6 +32,8 @@ class Client:
 
     last_command: bytes = b""
 
+    command_time_snapshot: int = 0
+
     blocking_context: BlockingContext | None = None
 
     @property

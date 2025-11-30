@@ -20,6 +20,7 @@ from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, EntryID, Stream
 from pyvalkey.enums import StreamSpecialIds, UnblockMessage
 from pyvalkey.utils.collections import SetMapping
+from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
@@ -40,7 +41,7 @@ class KeyValue(Generic[KeyValueTypeVar]):
     key: bytes
     value: KeyValueTypeVar
     expiration: int | None = field(default=None)
-    last_accessed: int = field(default_factory=lambda: int(time.time() * 1000))
+    last_accessed: int = field(default_factory=lambda: now_ms())
     lfu_counter: int = LFU_INITIAL_VALUE
 
     def increase_frequency(self, lfu_log_factor: int) -> None:
@@ -104,7 +105,7 @@ class DatabaseContent:
         if not self.key_with_expiration:
             return 0
 
-        return sum(key_value.expiration - int(time.time() * 1000) for key_value in self.key_with_expiration) // len(
+        return sum(key_value.expiration - now_ms() for key_value in self.key_with_expiration) // len(
             self.key_with_expiration
         )
 
@@ -132,7 +133,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             return False
 
         if key_value.expiration is not None:
-            if int(time.time() * 1000) > key_value.expiration:
+            if now_ms() > key_value.expiration:
                 self.content.clear_key(key_value)
                 return False
 
@@ -143,7 +144,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         if type_check is not None and not type_check(key_value.value):
             raise ServerWrongTypeError()
 
-        key_value.last_accessed = int(time.time() * 1000)
+        key_value.last_accessed = now_ms()
 
         return True
 
@@ -314,7 +315,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         except KeyError:
             return False
 
-        key_value.expiration = int(time.time() * 1000) + expiration_milliseconds
+        key_value.expiration = now_ms() + expiration_milliseconds
         self.content.key_with_expiration.add(key_value)
         return True
 
@@ -342,7 +343,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             raise KeyError()
         if key_value.expiration is None:
             return None
-        return key_value.expiration - int(time.time() * 1000)
+        return key_value.expiration - now_ms()
 
 
 @dataclass
@@ -763,16 +764,17 @@ class StreamBlockingManager:
             value = database.stream_database.get_value_or_empty(key)
 
             if id_ == StreamSpecialIds.NEW_ENTRY_ID:
-                if value.entries:
-                    waiting_context.keys_to_minimum_id[key] = value.entries.peekitem(-1)[0]
-                    keys_to_ids[key] = _format_entry_id(value.entries.peekitem(-1)[0])
+                if len(value) > 0:
+                    last_entry_id = value.last_id
+                    waiting_context.keys_to_minimum_id[key] = last_entry_id
+                    keys_to_ids[key] = _format_entry_id(last_entry_id)
                 else:
                     waiting_context.keys_to_minimum_id[key] = (0, 0)
                     keys_to_ids[key] = _format_entry_id((0, 0))
                 continue
             if id_ == StreamSpecialIds.LAST_ENTRY_ID:
-                if value.entries:
-                    waiting_context.keys_to_minimum_id[key] = _decrease_entry_id(value.entries.peekitem()[0])
+                if len(value) > 0:
+                    waiting_context.keys_to_minimum_id[key] = _decrease_entry_id(value.last_id)
                     had_keys = True
                 else:
                     waiting_context.keys_to_minimum_id[key] = (0, 0)

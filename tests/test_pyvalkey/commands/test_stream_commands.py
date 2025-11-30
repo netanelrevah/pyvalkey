@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-from asyncio import Queue
 from unittest.mock import Mock
 
 import pytest
@@ -11,6 +9,7 @@ from pyvalkey.commands.stream_commands import (
     ExtendedPendingParameters,
     MaxLength,
     StreamAdd,
+    StreamGroupClaim,
     StreamGroupPending,
     StreamGroupRead,
     StreamGroupSetId,
@@ -69,7 +68,7 @@ class TestStreamGroupRead(BaseStreamTest):
         await command.before()
         result = command.execute()
 
-        timestamp = int(time.time() * 1000)
+        timestamp = now_ms()
         assert result == [
             [
                 b"mystream",
@@ -369,9 +368,10 @@ class TestStreamGroupRead(BaseStreamTest):
 
         my_stream.entries[(666, 0)] = {b"f": b"v"}
 
-        queue = Queue()
-        self.client_context.current_client.blocking_context = BlockingContext(command=b"xreadgroup", queue=queue)
-        self.blocking_manager.notifications.add_multiple([b"mystream"], queue)
+        self.client_context.current_client.blocking_context = BlockingContext(command=b"xreadgroup")
+        self.blocking_manager.notifications.add_multiple(
+            [b"mystream"], self.client_context.current_client.blocking_context
+        )
 
         command = Delete(
             database=self.database,
@@ -382,10 +382,9 @@ class TestStreamGroupRead(BaseStreamTest):
         command.execute()
         await command.after()
 
-        (key, entry_id) = queue.get_nowait()
+        key = self.client_context.current_client.blocking_context.queue.get_nowait()
 
         assert key == b"mystream"
-        assert entry_id == "deleted"
 
 
 class TestStreamGroupPending(BaseStreamTest):
@@ -404,16 +403,16 @@ class TestStreamGroupPending(BaseStreamTest):
         consumer_2 = my_group.consumers[b"consumer-2"] = Consumer(b"consumer-2")
 
         consumer_1.pending_entries[(0, 1)] = my_group.pending_entries[(1, 0)] = PendingEntry(
-            consumer=consumer_1, times_delivered=1, last_delivery=int(time.time() * 1000)
+            consumer=consumer_1, times_delivered=1, last_delivery=now_ms()
         )
         consumer_1.pending_entries[(0, 2)] = my_group.pending_entries[(2, 0)] = PendingEntry(
-            consumer=consumer_1, times_delivered=1, last_delivery=int(time.time() * 1000)
+            consumer=consumer_1, times_delivered=1, last_delivery=now_ms()
         )
         consumer_2.pending_entries[(0, 3)] = my_group.pending_entries[(3, 0)] = PendingEntry(
-            consumer=consumer_2, times_delivered=1, last_delivery=int(time.time() * 1000)
+            consumer=consumer_2, times_delivered=1, last_delivery=now_ms()
         )
         consumer_2.pending_entries[(0, 4)] = my_group.pending_entries[(4, 0)] = PendingEntry(
-            consumer=consumer_2, times_delivered=1, last_delivery=int(time.time() * 1000)
+            consumer=consumer_2, times_delivered=1, last_delivery=now_ms()
         )
 
         ###
@@ -429,25 +428,25 @@ class TestStreamGroupPending(BaseStreamTest):
             [
                 b"1-0",
                 b"consumer-1",
-                int(time.time() * 1000) - consumer_1.pending_entries[(0, 1)].last_delivery,
+                now_ms() - consumer_1.pending_entries[(0, 1)].last_delivery,
                 consumer_1.pending_entries[(0, 1)].times_delivered,
             ],
             [
                 b"2-0",
                 b"consumer-1",
-                int(time.time() * 1000) - consumer_1.pending_entries[(0, 2)].last_delivery,
+                now_ms() - consumer_1.pending_entries[(0, 2)].last_delivery,
                 consumer_1.pending_entries[(0, 2)].times_delivered,
             ],
             [
                 b"3-0",
                 b"consumer-2",
-                int(time.time() * 1000) - consumer_2.pending_entries[(0, 3)].last_delivery,
+                now_ms() - consumer_2.pending_entries[(0, 3)].last_delivery,
                 consumer_2.pending_entries[(0, 3)].times_delivered,
             ],
             [
                 b"4-0",
                 b"consumer-2",
-                int(time.time() * 1000) - consumer_2.pending_entries[(0, 4)].last_delivery,
+                now_ms() - consumer_2.pending_entries[(0, 4)].last_delivery,
                 consumer_2.pending_entries[(0, 4)].times_delivered,
             ],
         ]
@@ -532,3 +531,14 @@ class TestStreamGroupSetId(BaseStreamTest):
                 ],
             ],
         ]
+
+
+class TestStreamGroupClaim(BaseStreamTest):
+    def test_parse(self):
+        assert StreamGroupClaim.parse([b"mystream", b"mygroup", b"consumer2", b"10", b"1761858400248-0"]) == {
+            "key": b"mystream",
+            "group": b"mygroup",
+            "consumer": b"consumer2",
+            "minimum_idle_time": 10,
+            "entry_ids": [b"1761858400248-0"],
+        }
