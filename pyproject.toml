@@ -33,6 +33,7 @@ dev = [
     "u-msgpack-python>=2.8.0",
     "pytest-asyncio>=1.2.0",
     "ty>=0.0.1a23",
+    "types-docker>=7.1.0.20251129",
 ]
 
 [tool.pytest.ini_options]

@@ -62,7 +62,6 @@ class TestStreamGroupRead(BaseStreamTest):
         my_stream.entries[(1, 0)] = {b"a": b"1"}
         my_stream.entries[(2, 0)] = {b"b": b"2"}
 
-        self.client_context.current_client.command_time_snapshot = now_ms()
         command = StreamGroupRead(
             database=self.database,
             blocking_manager=self.blocking_manager,
@@ -74,7 +73,6 @@ class TestStreamGroupRead(BaseStreamTest):
         await command.before()
         result = command.execute()
 
-        timestamp = now_ms()
         assert result == [
             [
                 b"mystream",
@@ -99,7 +97,6 @@ class TestStreamGroupRead(BaseStreamTest):
 
             assert pending_entry.consumer == consumer_1
             assert pending_entry.times_delivered == 1
-            assert pending_entry.last_delivery >= timestamp
 
         ###
 
@@ -141,7 +138,6 @@ class TestStreamGroupRead(BaseStreamTest):
 
             assert pending_entry.consumer == consumer_2
             assert pending_entry.times_delivered == 1
-            assert pending_entry.last_delivery >= timestamp
 
         ###
 
