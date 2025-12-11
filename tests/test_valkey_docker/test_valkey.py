@@ -99,3 +99,7 @@ def test_type_stream(s: Valkey):
 
 def test_quit(s: Valkey):
     run_tests(s, tags="quit")
+
+
+def test_pubsub(s: Valkey):
+    run_tests(s, tags="pubsub")

@@ -1,3 +1,4 @@
+import asyncio
 import itertools
 from asyncio import Queue
 from collections.abc import Iterable
@@ -5,7 +6,8 @@ from dataclasses import dataclass, field
 from typing import Self
 
 from pyvalkey.database_objects.utils import to_bytes
-from pyvalkey.enums import UnblockMessage
+from pyvalkey.enums import ReplyMode, UnblockMessage
+from pyvalkey.resp import ValueType
 
 
 @dataclass(unsafe_hash=True)
@@ -25,7 +27,7 @@ class Client:
     is_replica: bool = False
 
     is_killed: bool = False
-    reply_mode: str = "on"
+    reply_mode: ReplyMode = ReplyMode.ON
 
     library_name: bytes = b""
     library_version: bytes = b""
@@ -35,6 +37,7 @@ class Client:
     command_time_snapshot: int = 0
 
     blocking_context: BlockingContext | None = None
+    push_message_queue: asyncio.Queue[ValueType] = field(default_factory=Queue)
 
     @property
     def address(self) -> bytes:

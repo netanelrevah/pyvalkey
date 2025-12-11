@@ -27,8 +27,8 @@ from pyvalkey.database_objects.errors import (
     ServerError,
     ServerWrongNumberOfArgumentsError,
 )
-from pyvalkey.enums import UnblockMessage
-from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
+from pyvalkey.enums import ReplyMode, UnblockMessage
+from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 from pyvalkey.utils.times import now_f_s
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
     _resp_query_parser: RespParser = field(default_factory=RespParser)
 
     parser_task: asyncio.Task | None = None
+    pubsub_task: asyncio.Task | None = None
+    command_handling_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     @property
     def configurations(self) -> Configurations:
@@ -91,31 +93,45 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self._client_context = ClientContext.create(self.server_context, host.encode(), port, self.router)
 
         self.parser_task = asyncio.create_task(self.parse())
+        self.pubsub_task = asyncio.create_task(self.pubsub())
 
     def connection_lost(self, exception: Exception | None) -> None:
         print(f"{self.current_client.client_id} connection lost")
+        self.client_context.subscriptions.unsubscribe_all()
         if self.client_context.current_client.blocking_context is not None:
             self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
         del self.clients[self.current_client.client_id]
 
-    def dump(self, value: ValueType) -> None:
+    async def pubsub(self) -> None:
+        try:
+            while True:
+                message = await self.current_client.push_message_queue.get()
+                async with self.command_handling_lock:
+                    self.dump(message, push_message=True)
+        except asyncio.CancelledError:
+            pass
+
+    def dump(self, value: ValueType, push_message: bool = False) -> None:
         dumped = BytesIO()
         dump(value, dumped, self.client_context.protocol)
-        print(self.current_client.client_id, "result", dumped.getvalue()[:103])
 
-        if self.current_client.reply_mode == "skip":
-            self.current_client.reply_mode = "on"
-            return
+        print(f"{self.current_client.client_id} reply:{self.current_client.reply_mode} {dumped.getvalue()[:103]!r}")
 
-        if self.current_client.reply_mode == "off":
-            return
+        if not push_message:
+            if self.current_client.reply_mode == ReplyMode.SKIP:
+                self.current_client.reply_mode = ReplyMode.ON
+                return
+
+            if self.current_client.reply_mode == ReplyMode.OFF:
+                return
 
         dump(value, self.transport, self.client_context.protocol)
 
     async def parse(self) -> None:
         try:
             async for query in self._resp_query_parser:
-                await self.handle(query)
+                async with self.command_handling_lock:
+                    await self.handle(query)
                 await asyncio.sleep(0)
         except RespSyntaxError as e:
             if self.client_context.transaction_context is not None:
@@ -208,7 +224,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
         command_executor = CommandExecutor(routed_command, self.client_context)
         try:
             result = await command_executor.execute()
-            self.dump(result)
+            if result is not DoNotReply:
+                self.dump(result, self.client_context.subscriptions.active_subscriptions > 0)
+
         except Exception as e:
             self.dump(RespError(b"ERR internal"))
             raise e
@@ -242,6 +260,8 @@ class ValkeyServer:
     force_exit: bool = False
     server: asyncio.Server | None = None
 
+    _database_cleanup_task: asyncio.Task | None = None
+
     async def serve(self) -> None:
         with self.capture_signals():
             await self._serve()
@@ -259,10 +279,18 @@ class ValkeyServer:
         self.server = await loop.create_server(
             lambda: ValkeyClientProtocol(self.context, self.router), self.host, self.port
         )
+        self._database_cleanup_task = asyncio.create_task(self.cleanup_databases())
 
     async def main_loop(self) -> None:
         while not self.should_exit:
             await asyncio.sleep(0.1)
+
+    async def cleanup_databases(self) -> None:
+        while not self.should_exit:
+            for database in self.context.databases.values():
+                for key in database.content.key_with_expiration[:10]:
+                    database.get_or_none(key.key)
+            await asyncio.sleep(1.0)
 
     def run(self) -> None:
         return asyncio.run(self.serve())
@@ -289,6 +317,10 @@ class ValkeyServer:
             signal.raise_signal(captured_signal)
 
     async def _shutdown(self) -> None:
+        if self._database_cleanup_task:
+            self._database_cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._database_cleanup_task
         if self.server:
             self.server.close()
 
