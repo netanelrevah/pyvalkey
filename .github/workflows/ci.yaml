@@ -26,6 +26,8 @@ jobs:
         run: sudo apt-get install tcl8.6 tclx
       - working-directory: ./valkey
         run: ./runtest --host localhost --port 6379 --verbose --dump-logs --tags "-needs:debug"
+        env:
+          VALKEY_BIN_DIR: ./venv/Scripts/
         timeout-minutes: 5
 
   valkey-py:
