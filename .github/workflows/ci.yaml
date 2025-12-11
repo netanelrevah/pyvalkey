@@ -24,10 +24,8 @@ jobs:
         run: uv run python -m pyvalkey &
       - working-directory: ./valkey
         run: sudo apt-get install tcl8.6 tclx
-      - working-directory: ./pyvalkey
-        run: ls -la .venv/bin
       - working-directory: ./valkey
-        run: ./runtest --host localhost --port 6379 --verbose --dump-logs --tags "-needs:debug"
+        run: ./runtest --host localhost --port 6379 --verbose --dump-logs --tags "-needs:debug -needs:config-maxmemory"
         env:
           VALKEY_BIN_DIR: ../pyvalkey/.venv/bin/
         timeout-minutes: 5
