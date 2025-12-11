@@ -8,7 +8,7 @@ from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyVa
 class TestTimeToLive:
     def test_execute(self):
         database = Database(
-            0, DatabaseContent({b"mykey{t}": KeyValue(b"mykey{t}", b"foo", int(time.time() + 100) * 1000)})
+            0, None, None, DatabaseContent({b"mykey{t}": KeyValue(b"mykey{t}", b"foo", int(time.time() + 100) * 1000)})
         )
 
         command = TimeToLive(database, b"mykey{t}")
@@ -26,13 +26,15 @@ class TestKeys:
 
 class TestObjectEncoding:
     def test_execute(self):
-        database = Database(0, DatabaseContent({b"hash1": KeyValue(b"hash1", {b"k1": b"v1"})}))
+        database = Database(0, None, None, DatabaseContent({b"hash1": KeyValue(b"hash1", {b"k1": b"v1"})}))
         configurations = Configurations()
 
         assert ObjectEncoding(database, configurations, b"hash1").execute() == b"listpack"
 
         database = Database(
             0,
+            None,
+            None,
             DatabaseContent(
                 {
                     b"hash1": KeyValue(

@@ -75,7 +75,7 @@ class TestSetRandomMember:
         assert command.count == 100
 
     def test_execute(self):
-        database = Database(0)
+        database = Database(0, None, None)
         database.set_database.set_key_value(KeyValue(b"ss", {b"a"}))
 
         command = SetRandomMember(database=database, key=b"ss", count=100)

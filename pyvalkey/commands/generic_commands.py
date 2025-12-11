@@ -62,7 +62,6 @@ class Copy(Command):
 
 @command(b"del", {b"keyspace", b"write", b"slow"})
 class Delete(DatabaseCommand):
-    client_context: ClientContext = dependency()
     notifications: NotificationsManager = dependency()
 
     blocking_manager: StreamBlockingManager = dependency()
