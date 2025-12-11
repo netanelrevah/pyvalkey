@@ -67,7 +67,9 @@ class TestSet:
 
         assert Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value").execute() == b"OK"
 
-        assert database.content.data[b"foo"] == KeyValue(b"foo", b"new_value")
+        assert database.content.data[b"foo"] == KeyValue(
+            b"foo", b"new_value", last_accessed=database.content.data[b"foo"].last_accessed
+        )
 
         ###
 
