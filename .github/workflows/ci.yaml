@@ -29,7 +29,7 @@ jobs:
       - working-directory: ./valkey
         run: ./runtest --host localhost --port 6379 --verbose --dump-logs --tags "-needs:debug"
         env:
-          VALKEY_BIN_DIR: ../pyvalkey/venv/Scripts/
+          VALKEY_BIN_DIR: ../pyvalkey/.venv/Scripts/
         timeout-minutes: 5
 
   valkey-py:
