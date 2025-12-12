@@ -4,19 +4,15 @@ from collections.abc import Callable
 from dataclasses import Field, dataclass, fields
 from typing import TYPE_CHECKING, Self, get_type_hints
 
+from pyvalkey.blocking import BlockingManager, ListBlockingManager, SortedSetBlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.dependencies import DependencyMetadata
 from pyvalkey.commands.scripting import ScriptingEngine
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import (
-    BlockingManager,
-    Database,
-    ListBlockingManager,
-    SortedSetBlockingManager,
-    StreamBlockingManager,
-)
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.information import Information
+from pyvalkey.notifications import ClientSubscriptions, NotificationsManager, SubscriptionsManager
 from pyvalkey.resp import RespProtocolVersion
 
 if TYPE_CHECKING:
@@ -64,6 +60,12 @@ class CommandCreator:
                 )
             elif command_dependency_type == ScriptingEngine:
                 command_kwargs[command_dependency.name] = client_context.scripting_manager
+            elif command_dependency_type == NotificationsManager:
+                command_kwargs[command_dependency.name] = client_context.notifications_manager
+            elif command_dependency_type == ClientSubscriptions:
+                command_kwargs[command_dependency.name] = client_context.subscriptions
+            elif command_dependency_type == SubscriptionsManager:
+                command_kwargs[command_dependency.name] = client_context.server_context.subscriptions_manager
             else:
                 raise TypeError()
 

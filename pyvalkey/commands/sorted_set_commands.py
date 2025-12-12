@@ -9,6 +9,7 @@ from enum import Enum
 from itertools import zip_longest
 from typing import Protocol
 
+from pyvalkey.blocking import SortedSetBlockingManager
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -21,13 +22,11 @@ from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.consts import LONG_MAX
-from pyvalkey.database_objects.databases import (
-    Database,
-    SortedSetBlockingManager,
-)
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError, ServerWrongNumberOfArgumentsError
 from pyvalkey.database_objects.scored_sorted_set import MAX_BYTES, RangeLimit, ScoredSortedSet
 from pyvalkey.database_objects.utils import flatten
+from pyvalkey.enums import NotificationType
 from pyvalkey.resp import ArrayNone, RespProtocolVersion, ValueType
 
 
@@ -389,7 +388,10 @@ class SortedSetAdd(DatabaseCommand):
             return None
         if self.return_changed_elements:
             return changed_elements
-        return len(value) - length_before
+        added = len(value) - length_before
+        if added:
+            self.database.notify(NotificationType.ZSET, b"zadd", self.key)
+        return added
 
     async def after(self, in_multi: bool = False) -> None:
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
@@ -692,6 +694,8 @@ class SortedSetIncrementBy(DatabaseCommand):
 
 @command(b"zrem", {b"read", b"sortedset", b"fast"})
 class SortedSetRemove(DatabaseCommand):
+    client_context: ClientContext = dependency()
+
     key: bytes = positional_parameter()
     members: list[bytes] = positional_parameter()
 
@@ -705,6 +709,11 @@ class SortedSetRemove(DatabaseCommand):
                 removed_members += 1
             except KeyError:
                 pass
+
+        if removed_members:
+            self.database.notify(NotificationType.ZSET, b"zrem", self.key)
+            if len(value) == 0:
+                self.database.notify(NotificationType.GENERIC, b"del", self.key)
 
         return removed_members
 

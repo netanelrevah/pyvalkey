@@ -16,7 +16,7 @@ from pyvalkey.database_objects.errors import (
     ServerWrongNumberOfArgumentsError,
     ServerWrongTypeError,
 )
-from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
+from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespProtocolVersion, ValueType
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
@@ -102,10 +102,13 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
         scripting_manager._client_context.server_context,
         scripting_manager._client_context.current_client,
         scripting_manager._client_context.scripting_manager,
+        scripting_manager._client_context.subscriptions,
         scripting_manager._client_context.current_database,
         scripting_manager._client_context.current_user,
         scripting_manager._client_context.transaction_context,
         scripting_manager._client_context.client_watchlist,
+        scripting_manager._client_context.protocol,
+        scripting_manager._client_context.propagated_commands,
     )
 
     try:
@@ -127,6 +130,8 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
 
     print("redis.call", scripting_manager._client_context.current_client.client_id, "result", result, type(result))
 
+    if result is DoNotReply:
+        return None
     if result == RESP_OK:
         return scripting_manager.lua_runtime.table(ok="OK")
     if result is None:

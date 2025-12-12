@@ -16,3 +16,43 @@ class StreamSpecialIds(BytesEnum):
 class UnblockMessage(Enum):
     TIMEOUT = auto()
     ERROR = auto()
+
+
+class ReplyMode(BytesEnum):
+    ON = b"ON"
+    OFF = b"OFF"
+    SKIP = b"SKIP"
+
+
+class NotificationType(BytesEnum):
+    ALL = b"A"
+    GENERIC = b"g"
+    STRING = b"$"
+    LIST = b"l"
+    SET = b"s"
+    HASH = b"h"
+    ZSET = b"z"
+    EXPIRED = b"x"
+    EVICTED = b"e"
+    STREAM = b"t"
+    MODULE = b"d"
+    NEW = b"n"
+    KEYSPACE = b"K"
+    KEYEVENT = b"E"
+    KEY_MISS = b"m"
+    LOADED = b"loaded"
+
+
+NOTIFICATION_TYPE_ORDER = b"Ag$lshzxetdnKEm"
+
+
+NOTIFICATION_TYPE_ALL = {
+    NotificationType.GENERIC,
+    NotificationType.STRING,
+    NotificationType.LIST,
+    NotificationType.SET,
+    NotificationType.HASH,
+    NotificationType.EVICTED,
+    NotificationType.STRING,
+    NotificationType.MODULE,
+}

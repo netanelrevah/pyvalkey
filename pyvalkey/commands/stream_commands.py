@@ -2,6 +2,7 @@ import math
 from dataclasses import field
 from typing import cast
 
+from pyvalkey.blocking import StreamBlockingManager, StreamWaitingContext
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -11,7 +12,7 @@ from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import _format_entry_id, _parse_entry_id, _parse_strict_entry_id
 from pyvalkey.consts import LONG_MAX, UINT64_MAX
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, StreamBlockingManager, StreamWaitingContext
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.stream import (
     Consumer,
@@ -21,6 +22,7 @@ from pyvalkey.database_objects.stream import (
     Stream,
     range_entries,
 )
+from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
 from pyvalkey.utils.times import now_ms
 
@@ -180,6 +182,8 @@ class StreamAdd(Command):
             raise ServerError(b"ERR Elements are too large to be stored")
 
         StreamTrim.trim(value, self.maximum_length, self.minimum_id, self.configuration.stream_node_max_entries)
+
+        self.database.notify(NotificationType.STREAM, b"xadd", self.key)
 
         return _format_entry_id(self._entry_id)
 
@@ -394,6 +398,8 @@ class StreamGroupCreate(Command):
 
         value.consumer_groups[self.group] = ConsumerGroup(self.group, entry_id, self.entries_read)
 
+        self.database.notify(NotificationType.STREAM, b"xgroup-create", self.key)
+
         return RESP_OK
 
 
@@ -434,15 +440,6 @@ class StreamGroupSetId(Command):
 
         group.last_id = entry_id
         group.read_entries = self.entries_read
-
-        # for entry_id, pending_entry in range_entries(
-        #     group.pending_entries, minimum_timestamp=entry_id[0], minimum_sequence=entry_id[1]
-        # ):
-        #     for consumer in group.consumers.values():
-        #         if entry_id in consumer.pending_entries:
-        #             consumer.pending_entries.pop(entry_id, None)
-        #
-        #     group.pending_entries.pop(entry_id, None)
 
         return RESP_OK
 
@@ -1085,6 +1082,7 @@ class StreamGroupClaim(Command):
         if consumer is None:
             consumer = Consumer(self.consumer_name)
             group.consumers[self.consumer_name] = consumer
+            self.database.notify(NotificationType.STREAM, b"xgroup-createconsumer", self.key)
 
         consumer.last_seen_timestamp = self.client_context.current_client.command_time_snapshot
 
@@ -1140,4 +1138,42 @@ class StreamGroupCreateConsumer(Command):
 
         group.consumers[self.consumer] = Consumer(self.consumer)
 
+        self.database.notify(NotificationType.STREAM, b"xgroup-createconsumer", self.key)
+
         return 1
+
+
+@command(b"delconsumer", {b"write", b"stream", b"slow", b"blocking"}, parent_command=b"xgroup")
+class StreamGroupDeleteConsumer(Command):
+    database: Database = dependency()
+    blocking_manager: StreamBlockingManager = dependency()
+
+    key: bytes = positional_parameter()
+    group: bytes = positional_parameter()
+    consumer: bytes = positional_parameter()
+
+    removed_pending_count: int = field(default=0, init=False)
+
+    def execute(self) -> ValueType:
+        value = self.database.stream_database.get_value_or_none(self.key)
+
+        if value is None or value.consumer_groups.get(self.group) is None:
+            return 0
+
+        group = value.consumer_groups[self.group]
+
+        consumer = group.consumers.pop(self.consumer, None)
+        if consumer is None:
+            return 0
+
+        for entry_id in consumer.pending_entries.keys():
+            group.pending_entries.pop(entry_id, None)
+            self.removed_pending_count += 1
+
+        self.database.notifications_manager.notify(NotificationType.STREAM, b"xgroup-delconsumer", self.key)
+
+        return self.removed_pending_count
+
+    async def after(self, in_multi: bool = False) -> None:
+        if self.removed_pending_count > 0:
+            await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)

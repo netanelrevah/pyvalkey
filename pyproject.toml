@@ -3,7 +3,6 @@ name = "pyvalkey"
 version = "0.0.5"
 description = "pyvalkey: Python implemented Valkey server"
 readme = "README.md"
-license = "MIT License"
 authors = [
     { name = "Netanel Revah", email = "netanelrevah@outlook.com" },
 ]
@@ -19,6 +18,18 @@ lua = [
     "u-msgpack-python>=2.8.0",
 ]
 
+[tool.uv.build-backend]
+module-name = "pyvalkey"
+module-root = ""
+
+[project.scripts]
+valkey-server = "pyvalkey:main"
+
+[build-system]
+requires = ["uv_build>=0.8.5,<0.9.0"]
+build-backend = "uv_build"
+
+
 [dependency-groups]
 dev = [
     "docker>=7.1.0",
@@ -33,7 +44,10 @@ dev = [
     "u-msgpack-python>=2.8.0",
     "pytest-asyncio>=1.2.0",
     "ty>=0.0.1a23",
+    "types-docker>=7.1.0.20251129",
 ]
+
+
 
 [tool.pytest.ini_options]
 addopts = [
@@ -89,4 +103,9 @@ module = [
     "umsgpack"
 ]
 ignore_missing_imports = true
+
+[tool.uv.workspace]
+members = [
+    "a",
+]
 

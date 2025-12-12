@@ -13,8 +13,9 @@ from pyvalkey.commands.router import command
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.errors import ServerError
-from pyvalkey.enums import UnblockMessage
-from pyvalkey.resp import RESP_OK, RespError, RespProtocolVersion, ValueType
+from pyvalkey.enums import ReplyMode, UnblockMessage
+from pyvalkey.notifications import ClientSubscriptions
+from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespProtocolVersion, ValueType
 from pyvalkey.utils.times import now_f_s
 
 
@@ -140,20 +141,19 @@ class ClientUnpause(Command):
         return RESP_OK
 
 
-class ReplyMode(Enum):
-    ON = b"ON"
-    OFF = b"OFF"
-    SKIP = b"SKIP"
-
-
 @command(b"reply", {b"slow", b"connection"}, b"client")
 class ClientReply(Command):
+    client_context: ClientContext = dependency()
+
     mode: ReplyMode = positional_parameter()
 
     def execute(self) -> ValueType:
-        if self.mode == ReplyMode.ON:
-            return RESP_OK
-        return None
+        self.client_context.current_client.reply_mode = self.mode
+
+        if self.mode == ReplyMode.OFF:
+            return DoNotReply
+
+        return RESP_OK
 
 
 class UnblockOption(Enum):
@@ -239,9 +239,16 @@ class Hello(Command):
 
 @command(b"ping", {b"fast", b"connection"})
 class Ping(Command):
+    client_context: ClientContext = dependency()
+    subscriptions: ClientSubscriptions = dependency()
+
     message: bytes | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
+        if self.client_context.protocol == RespProtocolVersion.RESP2 and self.subscriptions.active_subscriptions != 0:
+            self.subscriptions.publish(b"pong", self.message or b"")
+            return DoNotReply
+
         if self.message:
             return self.message
         return b"PONG"

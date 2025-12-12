@@ -4,6 +4,8 @@ import functools
 import random
 from collections.abc import Callable
 
+from pyvalkey.commands.core import Command
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
@@ -11,6 +13,7 @@ from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
+from pyvalkey.enums import NotificationType
 from pyvalkey.resp import ValueType
 
 
@@ -69,7 +72,9 @@ class SetCardinality(DatabaseCommand):
 
 
 @command(b"sadd", {b"write", b"set", b"fast"})
-class SetAdd(DatabaseCommand):
+class SetAdd(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
 
@@ -78,7 +83,10 @@ class SetAdd(DatabaseCommand):
         length_before = len(key_value.value)
         for member in self.members:
             key_value.value.add(member)
-        return len(key_value.value) - length_before
+        added = len(key_value.value) - length_before
+        if added:
+            self.database.notify(NotificationType.SET, b"sadd", self.key)
+        return added
 
 
 @command(b"spop", {b"write", b"set", b"fast"})
@@ -96,14 +104,22 @@ class SetPop(DatabaseCommand):
 
 
 @command(b"srem", {b"write", b"set", b"fast"})
-class SetRemove(DatabaseCommand):
+class SetRemove(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     members: set[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        a_set = self.database.set_database.get_value(self.key)
-        to_remove = len(self.members.intersection(a_set))
-        a_set.difference_update(self.members)
+        value = self.database.set_database.get_value(self.key)
+        to_remove = len(self.members.intersection(value))
+        value.difference_update(self.members)
+
+        if to_remove:
+            self.database.notify(NotificationType.SET, b"srem", self.key)
+            if len(value) == 0:
+                self.database.notify(NotificationType.GENERIC, b"del", self.key)
+
         return to_remove
 
 

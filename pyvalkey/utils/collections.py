@@ -8,7 +8,7 @@ HashableValueType = TypeVar("HashableValueType", bound=Hashable)
 
 
 @dataclass
-class SetMapping(Generic[HashableKeyType, HashableValueType]):
+class OrderedBiMap(Generic[HashableKeyType, HashableValueType]):
     mapping: defaultdict[HashableKeyType, list[HashableValueType]] = field(default_factory=lambda: defaultdict(list))
     reverse_mapping: dict[HashableValueType, set[HashableKeyType]] = field(default_factory=lambda: defaultdict(set))
 
@@ -40,3 +40,35 @@ class SetMapping(Generic[HashableKeyType, HashableValueType]):
     @property
     def values_count(self) -> int:
         return len(self.reverse_mapping)
+
+
+@dataclass
+class SetMap(Generic[HashableKeyType, HashableValueType]):
+    mapping: dict[HashableKeyType, set[HashableValueType]] = field(default_factory=dict)
+
+    def add(self, key: HashableKeyType, value: HashableValueType) -> None:
+        if key not in self.mapping:
+            self.mapping[key] = set()
+        self.mapping[key].add(value)
+
+    def remove(self, key: HashableKeyType, value: HashableValueType) -> None:
+        self.mapping[key].remove(value)
+        if not self.mapping[key]:
+            del self.mapping[key]
+
+    def iter_keys(self) -> Iterator[HashableKeyType]:
+        yield from self.mapping.keys()
+
+    def iter_values(self, key: HashableKeyType) -> Iterator[HashableValueType]:
+        yield from self.mapping.get(key, set())
+
+    @property
+    def keys_count(self) -> int:
+        return len(self.mapping)
+
+    @property
+    def values_count(self) -> int:
+        return sum(len(values) for values in self.mapping.values())
+
+    def count_values(self, key: HashableKeyType) -> int:
+        return len(self.mapping.get(key, set()))

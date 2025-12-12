@@ -88,9 +88,8 @@ class Permission:
                 is_fields_allowed[command_field.name] = True
         key_allowed = not self.keys_patterns or not is_fields_allowed or any(is_fields_allowed.values())
 
-        results = []
-        for command_rule in self.command_rules:
-            results.append(command_rule.check(command_name))
+        results = [command_rule.check(command_name) for command_rule in self.command_rules]
+
         command_allowed = (results[0] and all(results)) or (not results[0] and any(results))
 
         if not command_allowed:

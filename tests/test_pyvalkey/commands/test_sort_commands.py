@@ -1,5 +1,6 @@
+from pyvalkey.blocking import BlockingManager
 from pyvalkey.commands.generic_commands import Sort
-from pyvalkey.database_objects.databases import BlockingManager, Database, DatabaseContent, KeyValue
+from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue
 
 
 class TestSetRandomMember:
@@ -19,6 +20,8 @@ class TestSetRandomMember:
     def test_execute_get(self):
         database = Database(
             0,
+            None,
+            None,
             content=DatabaseContent(
                 {
                     kv.key: kv
@@ -39,6 +42,8 @@ class TestSetRandomMember:
     def test_execute_get_hash(self):
         database = Database(
             0,
+            None,
+            None,
             content=DatabaseContent(
                 {
                     kv.key: kv
@@ -61,6 +66,8 @@ class TestSetRandomMember:
     def test_execute_get_hash_with_numbers(self):
         database = Database(
             0,
+            None,
+            None,
             content=DatabaseContent(
                 {
                     kv.key: kv
@@ -78,6 +85,8 @@ class TestSetRandomMember:
     def test_execute_get_foo(self):
         database = Database(
             0,
+            None,
+            None,
             content=DatabaseContent(
                 {
                     kv.key: kv

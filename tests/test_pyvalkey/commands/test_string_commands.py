@@ -55,23 +55,25 @@ class TestSet:
 
         ###
 
-        database = Database(0)
+        database = Database(0, None, Mock())
 
         assert Set(database, blocking_manager_mock, b"0", b"0").execute() == b"OK"
 
-        assert database.content.data[b"0"] == KeyValue(b"0", 0)
+        assert database.content.data[b"0"] == KeyValue(b"0", 0, last_accessed=database.content.data[b"0"].last_accessed)
 
         ###
 
-        database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
+        database = Database(0, None, Mock(), DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
 
         assert Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value").execute() == b"OK"
 
-        assert database.content.data[b"foo"] == KeyValue(b"foo", b"new_value")
+        assert database.content.data[b"foo"] == KeyValue(
+            b"foo", b"new_value", last_accessed=database.content.data[b"foo"].last_accessed
+        )
 
         ###
 
-        database = Database(0)
+        database = Database(0, None, Mock())
 
         assert (
             Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value", get=True).execute()
@@ -82,7 +84,7 @@ class TestSet:
 
         ###
 
-        database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
+        database = Database(0, None, Mock(), DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
 
         assert (
             Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value", get=True).execute()
@@ -95,14 +97,14 @@ class TestSet:
 
 class TestGet:
     def test_execute(self):
-        database = Database(0, DatabaseContent({b"0": KeyValue(b"0", 0)}))
+        database = Database(0, None, None, DatabaseContent({b"0": KeyValue(b"0", 0)}))
 
         assert Get(database, b"0").execute() == 0
 
 
 class TestGetExpire:
     def test_execute(self):
-        database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", 1)}))
+        database = Database(0, None, None, DatabaseContent({b"foo": KeyValue(b"foo", 1)}))
 
         now_milliseconds = now_ms()
 
@@ -113,7 +115,7 @@ class TestGetExpire:
 
 class TestLongestCommonSubsequence:
     def test_execute(self):
-        database = Database(0)
+        database = Database(0, None, None)
 
         database.string_database.upsert(b"key1", b"ohmytext")
         database.string_database.upsert(b"key2", b"mynewtext")
@@ -156,7 +158,7 @@ class TestLongestCommonSubsequence:
         }
 
     def test_execute_rna(self):
-        database = Database(0)
+        database = Database(0, None, None)
 
         database.bytes_database.upsert(
             b"rna1",

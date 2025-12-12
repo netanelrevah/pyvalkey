@@ -38,7 +38,18 @@ class ArrayNoneType:
 ArrayNone = ArrayNoneType()
 
 
+class DoNotReplyType:
+    __slots__ = ()
+
+
+DoNotReply = DoNotReplyType()
+
+
 class RespError(bytes):
+    pass
+
+
+class BulkArray(list):
     pass
 
 
@@ -55,6 +66,8 @@ ValueType = (
     | dict[bytes, Any]
     | None
     | ArrayNoneType
+    | DoNotReplyType
+    | BulkArray
 )
 
 
@@ -371,4 +384,8 @@ def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: Resp
         stream.write(b"\r\n")
         raise ValueError(protocol)
 
-    dumper.dump(value)
+    if isinstance(value, BulkArray):
+        for item in value:
+            dumper.dump(item)
+    else:
+        dumper.dump(value)
