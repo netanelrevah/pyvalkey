@@ -122,12 +122,21 @@ class Information:
 
         return b"\r\n".join(info)
 
+    def memory(self) -> bytes:
+        info = [
+            b"# Memory",
+            b"lazyfree_pending_objects:0",
+        ]
+        return b"\r\n".join(info)
+
     def sections(self, sections: list[bytes] | None) -> bytes:
         info = []
         if not sections or b"all" in sections or b"server" in sections:
             info.append(self.server())
         if not sections or b"all" in sections or b"clients" in sections:
             info.append(self.clients())
+        if not sections or b"all" in sections or b"memory" in sections:
+            info.append(self.memory())
         if not sections or b"all" in sections or b"persistence" in sections:
             info.append(self.persistence())
         if not sections or b"all" in sections or b"stats" in sections:
