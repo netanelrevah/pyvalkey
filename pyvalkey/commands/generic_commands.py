@@ -709,9 +709,29 @@ class Type(DatabaseCommand):
 
 
 @command(b"unlink", {b"keyspace", b"write", b"slow", b"dangerous"})
-class Unlink(DatabaseCommand):
+class Unlink(Command):
+    database: Database = dependency()
+
+    blocking_manager: StreamBlockingManager = dependency()
+    keys: list[bytes] = positional_parameter()
+
+    _stream_keys: list[bytes] = field(default_factory=list, init=False)
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        count = 0
+        for key in self.keys:
+            value = self.database.pop(key, None)
+            if value is not None:
+                count += 1
+                self.database.notify(NotificationType.GENERIC, b"del", key)
+                if isinstance(value.value, Stream):
+                    self._stream_keys.append(key)
+
+        return count
+
+    async def after(self, in_multi: bool = False) -> None:
+        for key in self._stream_keys:
+            await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
 
 
 @command(b"wait", {b"keyspace", b"write", b"slow", b"dangerous"})
