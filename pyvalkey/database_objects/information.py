@@ -4,6 +4,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from psutil import Process
+
 from pyvalkey.database_objects.utils import to_bytes
 
 if TYPE_CHECKING:
@@ -123,8 +125,12 @@ class Information:
         return b"\r\n".join(info)
 
     def memory(self) -> bytes:
+        current_process = Process()
+
         info = [
             b"# Memory",
+            f"used_memory:{current_process.memory_full_info().vms}".encode(),
+            f"used_memory_rss:{current_process.memory_full_info().rss}".encode(),
             b"lazyfree_pending_objects:0",
         ]
         return b"\r\n".join(info)

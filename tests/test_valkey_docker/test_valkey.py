@@ -103,3 +103,7 @@ def test_quit(s: Valkey):
 
 def test_pubsub(s: Valkey):
     run_tests(s, tags="pubsub")
+
+
+def test_lazyfree(s: Valkey):
+    run_tests(s, tags="lazyfree")
