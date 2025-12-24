@@ -4,6 +4,7 @@ import random
 from dataclasses import field
 from typing import Any
 
+from pyvalkey.blocking import BlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
@@ -13,15 +14,16 @@ from pyvalkey.commands.utils import is_integer
 from pyvalkey.consts import LONG_LONG_MAX, LONG_LONG_MIN
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import (
-    BlockingManager,
     Database,
     KeyValue,
-    StreamBlockingManager,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.database_objects.information import Information
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, Stream
+from pyvalkey.enums import NotificationType
 from pyvalkey.listpack import listpack
+from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, ValueType
 from pyvalkey.utils.times import now_ms
 
@@ -61,6 +63,8 @@ class Copy(Command):
 
 @command(b"del", {b"keyspace", b"write", b"slow"})
 class Delete(DatabaseCommand):
+    notifications: NotificationsManager = dependency()
+
     blocking_manager: StreamBlockingManager = dependency()
     keys: list[bytes] = positional_parameter()
 
@@ -72,6 +76,7 @@ class Delete(DatabaseCommand):
             value = self.database.pop(key, None)
             if value is not None:
                 count += 1
+                self.notifications.notify(NotificationType.GENERIC, b"del", key)
                 if isinstance(value.value, Stream):
                     self._stream_keys.append(key)
 
@@ -154,11 +159,16 @@ class Exists(DatabaseCommand):
 
 @command(b"expire", {b"keyspace", b"write", b"fast"})
 class Expire(DatabaseCommand):
+    notifications: NotificationsManager = dependency()
+
     key: bytes = positional_parameter()
     seconds: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return self.database.set_expiration_in(self.key, self.seconds * 1000)
+        expire_set = self.database.set_expiration_in(self.key, self.seconds * 1000)
+        if self.database.get_or_none(self.key) is not None:
+            self.notifications.notify(NotificationType.GENERIC, b"expire", self.key)
+        return expire_set
 
 
 @command(b"expireat", {b"keyspace", b"write", b"fast"})
@@ -700,9 +710,34 @@ class Type(DatabaseCommand):
 
 
 @command(b"unlink", {b"keyspace", b"write", b"slow", b"dangerous"})
-class Unlink(DatabaseCommand):
+class Unlink(Command):
+    database: Database = dependency()
+    information: Information = dependency()
+
+    blocking_manager: StreamBlockingManager = dependency()
+    keys: list[bytes] = positional_parameter()
+
+    _stream_keys: list[bytes] = field(default_factory=list, init=False)
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        count = 0
+        for key in self.keys:
+            value = self.database.pop(key, None)
+            if value is not None:
+                count += 1
+                self.database.notify(NotificationType.GENERIC, b"del", key)
+                if isinstance(value.value, Stream):
+                    self._stream_keys.append(key)
+                    if value.value.consumer_groups:
+                        self.information.lazyfreed_objects += 1
+                else:
+                    self.information.lazyfreed_objects += 1
+
+        return count
+
+    async def after(self, in_multi: bool = False) -> None:
+        for key in self._stream_keys:
+            await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
 
 
 @command(b"wait", {b"keyspace", b"write", b"slow", b"dangerous"})

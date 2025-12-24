@@ -112,9 +112,7 @@ def msgpack_unpack_limit(lua_runtime: LuaRuntimeWrapper, value: Any, limit: int,
     else:
         python_values = [python_values]
 
-    lua_values = []
-    for python_value in python_values:
-        lua_values.append(convert_from_msgpack_values(lua_runtime, python_value))
+    lua_values = [convert_from_msgpack_values(lua_runtime, python_value) for python_value in python_values]
 
     return real_offset, *lua_values
 

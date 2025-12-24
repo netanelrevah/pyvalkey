@@ -1,6 +1,7 @@
 from dataclasses import field
 from enum import Enum
 
+from pyvalkey.blocking import ListBlockingManager
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -9,9 +10,11 @@ from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.consts import LONG_MAX
-from pyvalkey.database_objects.databases import Database, ListBlockingManager
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
+from pyvalkey.enums import NotificationType
+from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, ArrayNone, ValueType
 
 
@@ -392,6 +395,7 @@ class ListPosition(DatabaseCommand):
 
 @command(b"lpush", {b"list", b"fast"}, flags={b"write", b"denyoom"})
 class ListPush(DatabaseCommand):
+    notification: NotificationsManager = dependency()
     information: Information = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
@@ -404,6 +408,8 @@ class ListPush(DatabaseCommand):
         for v in self.values:
             a_list.insert(0, v)
             self.information.rdb_changes_since_last_save += 1
+
+        self.notification.notify(NotificationType.LIST, b"lpush", self.key)
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:
@@ -433,6 +439,8 @@ class ListPushIfExists(DatabaseCommand):
 
 @command(b"rpop", {b"write", b"list", b"fast"})
 class ListRightPop(DatabaseCommand):
+    notification: NotificationsManager = dependency()
+
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
 
@@ -440,13 +448,19 @@ class ListRightPop(DatabaseCommand):
         if self.count is not None and self.count < 0:
             raise ServerError(b"ERR value is out of range, must be positive")
 
-        a_list = self.database.list_database.get_value_or_create(self.key)
-
-        if not a_list:
+        value = self.database.list_database.get_value_or_none(self.key)
+        if not value or (self.count is not None and self.count == 0):
             return None if (self.count is None) else ArrayNone
+
+        self.notification.notify(NotificationType.LIST, b"rpop", self.key)
+        removed: ValueType
         if self.count is not None:
-            return [a_list.pop(-1) for _ in range(min(len(a_list), self.count))]
-        return a_list.pop(-1)
+            removed = [value.pop(-1) for _ in range(min(len(value), self.count))]
+        else:
+            removed = value.pop(-1)
+        if len(value) == 0:
+            self.notification.notify(NotificationType.GENERIC, b"del", self.key)
+        return removed
 
 
 @command(b"rpoplpush", {b"write", b"list", b"fast"})
@@ -501,6 +515,8 @@ class ListRemove(DatabaseCommand):
 class ListPushAtTail(DatabaseCommand):
     blocking_manager: ListBlockingManager = dependency()
 
+    notification: NotificationsManager = dependency()
+
     key: bytes = positional_parameter()
     values: list[bytes] = positional_parameter()
 
@@ -509,6 +525,8 @@ class ListPushAtTail(DatabaseCommand):
 
         for v in self.values:
             a_list.append(v)
+
+        self.notification.notify(NotificationType.LIST, b"rpush", self.key)
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:

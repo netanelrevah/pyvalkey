@@ -2,15 +2,17 @@ from dataclasses import field
 from enum import Enum
 from math import isinf, isnan
 
-from pyvalkey.commands.core import DatabaseCommand
+from pyvalkey.blocking import StreamBlockingManager
+from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
 from pyvalkey.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
-from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue, StreamBlockingManager
+from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
 from pyvalkey.utils.times import now_ms
 
@@ -335,7 +337,8 @@ class ExistenceMode(Enum):
 
 
 @command(b"set", {b"write", b"string", b"slow"})
-class Set(DatabaseCommand):
+class Set(Command):
+    database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"RW")
@@ -392,9 +395,15 @@ class Set(DatabaseCommand):
         if self.condition is not None and previous_value != self.condition:
             return None
 
-        self.database.pop(self.key, None)
+        previous = self.database.pop(self.key, None)
         self.database.string_database.set_key_value(KeyValue.of_string(self.key, self.value, expiration=expiration))
+
+        if previous is None:
+            self.database.notify(NotificationType.NEW, b"new", self.key)
+
         self._is_key_updated = True
+
+        self.database.notifications_manager.notify(NotificationType.STRING, b"set", self.key)
 
         return RESP_OK if not self.get else previous_value
 
@@ -411,7 +420,19 @@ class SetExpire(DatabaseCommand):
 
     def execute(self) -> ValueType:
         self.database.string_database.upsert(self.key, self.value)
-        self.database.set_expiration_in(self.key, self.seconds)
+        self.database.set_expiration_in(self.key, 1000 * self.seconds)
+        return RESP_OK
+
+
+@command(b"psetex", {b"write", b"string", b"slow"})
+class SetExpireMilliseconds(DatabaseCommand):
+    key: bytes = positional_parameter(key_mode=b"RW")
+    milliseconds: int = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        self.database.string_database.upsert(self.key, self.value)
+        self.database.set_expiration_in(self.key, self.milliseconds)
         return RESP_OK
 
 

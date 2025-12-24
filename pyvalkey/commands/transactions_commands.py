@@ -1,5 +1,6 @@
 from dataclasses import field
 
+from pyvalkey.blocking import ListBlockingManager, SortedSetBlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, TransactionContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -8,11 +9,8 @@ from pyvalkey.commands.router import command
 from pyvalkey.database_objects.databases import (
     ClientWatchlist,
     Database,
-    ListBlockingManager,
-    SortedSetBlockingManager,
-    StreamBlockingManager,
 )
-from pyvalkey.resp import RESP_OK, RespError, ValueType
+from pyvalkey.resp import RESP_OK, BulkArray, DoNotReply, RespError, ValueType
 
 
 def unwatch(databases: dict[int, Database], client_watchlist: ClientWatchlist) -> None:
@@ -79,7 +77,13 @@ class TransactionExecute(Command):
         self._result = []
         for transaction_command in self.client_context.transaction_context.commands:
             await transaction_command.before(in_multi=True)
-            self._result.append(transaction_command.execute())
+            result = transaction_command.execute()
+            if result is not DoNotReply:
+                if isinstance(result, BulkArray):
+                    for item in result:
+                        self._result.append(item)
+                else:
+                    self._result.append(result)
             await transaction_command.after(in_multi=True)
 
     def execute(self) -> ValueType:

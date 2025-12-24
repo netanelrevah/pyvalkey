@@ -10,6 +10,8 @@ from pyvalkey.consts import LONG_MAX, LONG_MIN
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.utils import flatten
+from pyvalkey.enums import NotificationType
+from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, RespProtocolVersion, ValueType
 
 
@@ -49,19 +51,6 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
         return increment_by_float(database, key, field, increment)
     else:
         raise ValueError()
-
-    # hash_get = database.hash_database.get_value_or_create(key)
-    #
-    # if field not in hash_get:
-    #     hash_get[field] = 0
-    # if not isinstance(hash_get[field], int | float):
-    #     if not is_numeric(hash_get[field]):
-    #         raise ServerError(b"ERR hash value is not an " + (b"integer" if isinstance(increment, int) else b"float"))
-    #     hash_get[field] = type(increment)(hash_get[field])
-    # if not (LONG_LONG_MIN < hash_get[field] + increment < LONG_LONG_MAX):
-    #     raise ServerError(b"ERR increment or decrement would overflow")
-    # hash_get[field] += increment
-    # return hash_get[field]
 
 
 @command(b"hdel", {b"write", b"hash", b"fast"})
@@ -108,16 +97,22 @@ class HashMapGetAll(DatabaseCommand):
 
 @command(b"hincrby", {b"write", b"hash", b"fast"})
 class HashMapIncreaseBy(DatabaseCommand):
+    notifications: NotificationsManager = dependency()
+
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
     value: int = positional_parameter()
 
     def execute(self) -> ValueType:
-        return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
+        result = apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
+        self.notifications.notify(NotificationType.HASH, b"hincrby", self.key)
+        return result
 
 
 @command(b"hincrbyfloat", {b"write", b"hash", b"fast"})
 class HashMapIncreaseByFloat(DatabaseCommand):
+    notifications: NotificationsManager = dependency()
+
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
     value: float = positional_parameter()
@@ -126,7 +121,9 @@ class HashMapIncreaseByFloat(DatabaseCommand):
         if isnan(self.value) or isinf(self.value):
             raise ServerError(b"ERR value is NaN or Infinity")
 
-        return apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
+        result = apply_hash_map_increase_by(self.database, self.key, self.field, self.value)
+        self.notifications.notify(NotificationType.HASH, b"hincrbyfloat", self.key)
+        return result
 
 
 @command(b"hkeys", {b"read", b"hash", b"slow"})
@@ -165,6 +162,8 @@ class HashMapSetMultiple(DatabaseCommand):
 
         for field, value in self.fields_values:
             hash_map[field] = value
+
+        self.database.notify(NotificationType.HASH, b"hset", self.key)
         return RESP_OK
 
 
@@ -228,6 +227,8 @@ class HashMapSet(DatabaseCommand):
             if field not in hash_map:
                 added_fields += 1
             hash_map[field] = value
+        if added_fields:
+            self.database.notify(NotificationType.HASH, b"hset", self.key)
         return added_fields
 
 

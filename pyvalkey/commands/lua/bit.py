@@ -19,7 +19,7 @@ def to_bit(value: Any) -> int:  # noqa: ANN401
 def to_hex(value: Any, length: int) -> str:  # noqa: ANN401
     if length > HIGHEST_TO_HEX_LENGTH or length < 0:
         length = HIGHEST_TO_HEX_LENGTH
-    hex_value = hex(to_bit(value))[2:].upper()
+    hex_value = f"{to_bit(value):X}"
     return hex_value.zfill(length)[:length]
 
 

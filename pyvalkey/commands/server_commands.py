@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import field, fields
 from os import urandom
 
+from pyvalkey.blocking import BlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
@@ -11,7 +11,7 @@ from pyvalkey.commands.parameters import ParameterMetadata, keyword_parameter, p
 from pyvalkey.commands.router import CommandsRouter, command
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
 from pyvalkey.database_objects.configurations import ConfigurationError, Configurations
-from pyvalkey.database_objects.databases import BlockingManager, Database, StreamBlockingManager
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType
@@ -240,9 +240,7 @@ class ConfigResetStatistics(Command):
     information: Information = dependency()
 
     def execute(self) -> ValueType:
-        self.information.commands_statistics = {}
-        self.information.rdb_changes_since_last_save = 0
-        self.information.error_statistics = Counter()
+        self.information.reset_stats()
         return RESP_OK
 
 
@@ -299,6 +297,9 @@ class FlushAllDatabases(Command):
 class FlushDatabase(Command):
     blocking_manager: StreamBlockingManager = dependency()
     client_context: ClientContext = dependency()
+    information: Information = dependency()
+
+    async_: bool = keyword_parameter(flag=b"async", default=False)
 
     _flushed_keys: set[bytes] = field(default_factory=set, init=False)
 
@@ -307,6 +308,8 @@ class FlushDatabase(Command):
             self._flushed_keys.update(self.client_context.database.keys())
             for key in self.client_context.database.keys():
                 self.client_context.database.touch_watched_key(key)
+                if self.async_:
+                    self.information.lazyfreed_objects += 1
             self.client_context.server_context.databases.pop(self.client_context.current_database)
         return RESP_OK
 

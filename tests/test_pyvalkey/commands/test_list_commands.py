@@ -21,7 +21,7 @@ class TestListLength:
         assert command.database == client_context.database
 
     def test_execute(self):
-        database = Database(0)
+        database = Database(0, None, None)
         database.list_database.set_key_value(KeyValue(b"abc", [1, 2, 3]))
 
         command = ListLength(database=database, key=b"abc")

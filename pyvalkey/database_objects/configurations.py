@@ -3,6 +3,8 @@ from dataclasses import Field, dataclass, field
 from hashlib import sha256
 from typing import Any, ClassVar, Literal, TypeVar, dataclass_transform
 
+from pyvalkey.enums import NOTIFICATION_TYPE_ORDER
+
 
 class ConfigurationError(Exception):
     pass
@@ -39,7 +41,7 @@ class ConfigurationFieldData:
 
 def configuration(
     default: int | bytes,
-    type_: Literal["string", "password", "integer"] = "string",
+    type_: Literal["string", "password", "integer", "ordered"] = "string",
     alias: bytes | None = None,
     flags: set[bytes] | None = None,
 ) -> Any:  # noqa:ANN401
@@ -133,6 +135,8 @@ class Configurations(ConfigurationBase):
 
     lua_time_limit: int = configuration(default=5000, type_="integer")
 
+    notify_keyspace_events: bytes = configuration(default=b"", type_="ordered")
+
     @classmethod
     def get_field_name(cls, name: bytes) -> str:
         return cls.FIELD_BY_NAME[name].field_name
@@ -156,6 +160,12 @@ class Configurations(ConfigurationBase):
                 if b"memory" in self.FIELD_BY_NAME[name].flags:
                     raise ConfigurationError("argument must be a memory value")
                 raise ConfigurationError("argument couldn't be parsed into an integer")
+        elif field_type == "ordered":
+            setattr(
+                self,
+                field_name,
+                "".join(sorted(value.decode(), key=lambda c: NOTIFICATION_TYPE_ORDER.index(c.encode()))).encode(),
+            )
         else:
             setattr(self, field_name, value)
 
