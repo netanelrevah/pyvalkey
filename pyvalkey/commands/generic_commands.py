@@ -18,6 +18,7 @@ from pyvalkey.database_objects.databases import (
     KeyValue,
 )
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.database_objects.information import Information
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, Stream
 from pyvalkey.enums import NotificationType
@@ -711,6 +712,7 @@ class Type(DatabaseCommand):
 @command(b"unlink", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Unlink(Command):
     database: Database = dependency()
+    information: Information = dependency()
 
     blocking_manager: StreamBlockingManager = dependency()
     keys: list[bytes] = positional_parameter()
@@ -726,6 +728,10 @@ class Unlink(Command):
                 self.database.notify(NotificationType.GENERIC, b"del", key)
                 if isinstance(value.value, Stream):
                     self._stream_keys.append(key)
+                    if value.value.consumer_groups:
+                        self.information.lazyfreed_objects += 1
+                else:
+                    self.information.lazyfreed_objects += 1
 
         return count
 

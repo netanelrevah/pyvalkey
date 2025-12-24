@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -41,6 +42,7 @@ class Information:
     rdb_changes_since_last_save: int = 0
     commands_statistics: dict[bytes, CommandStatistics] = field(default_factory=dict)
     error_statistics: Counter[bytes] = field(default_factory=Counter)
+    lazyfreed_objects: int = 0
 
     _server_context: ServerContext | None = None
 
@@ -124,14 +126,30 @@ class Information:
 
         return b"\r\n".join(info)
 
+    @classmethod
+    def _human_readable_bytes(cls, bytes_value: float) -> str:
+        for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
+            if abs(bytes_value) < 1024.0:  # noqa: PLR2004
+                return f"{bytes_value:3.2f}{unit}"
+            bytes_value /= 1024.0
+        return f"{bytes_value:.2f}Y"
+
     def memory(self) -> bytes:
+        gc.collect()
+
         current_process = Process()
+
+        print(
+            f"Memory info: VMS={self._human_readable_bytes(current_process.memory_full_info().vms)}, "
+            f"RSS={self._human_readable_bytes(current_process.memory_full_info().rss)}"
+        )
 
         info = [
             b"# Memory",
             f"used_memory:{current_process.memory_full_info().vms}".encode(),
             f"used_memory_rss:{current_process.memory_full_info().rss}".encode(),
             b"lazyfree_pending_objects:0",
+            f"lazyfreed_objects:{self.lazyfreed_objects}".encode(),
         ]
         return b"\r\n".join(info)
 
@@ -157,3 +175,9 @@ class Information:
             info.append(self.keyspace())
 
         return b"\r\n\r\n".join(info)
+
+    def reset_stats(self) -> None:
+        self.commands_statistics = {}
+        self.rdb_changes_since_last_save = 0
+        self.error_statistics = Counter()
+        self.lazyfreed_objects = 0

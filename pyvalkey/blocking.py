@@ -325,7 +325,7 @@ class StreamBlockingManager:
         database = client_context.database
 
         stream_waiting_context = StreamWaitingContext()
-        had_keys = self.calculate_context(database, keys_to_ids, stream_waiting_context)
+        had_keys = self.calculate_context(client_context.database, keys_to_ids, stream_waiting_context)
 
         if had_keys:
             return stream_waiting_context.keys_to_minimum_id
