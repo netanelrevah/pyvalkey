@@ -285,7 +285,7 @@ class ValkeyServer:
         while not self.should_exit:
             await asyncio.sleep(0.1)
 
-    def clean_databases(self):
+    def clean_databases(self) -> None:
         for database in self.context.databases.values():
             for key in database.content.key_with_expiration[:10]:
                 database.get_or_none(key.key)
