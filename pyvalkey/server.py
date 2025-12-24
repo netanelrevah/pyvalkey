@@ -132,6 +132,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
             async for query in self._resp_query_parser:
                 async with self.command_handling_lock:
                     await self.handle(query)
+                    if self.transport.is_closing():
+                        break
                 await asyncio.sleep(0)
         except RespSyntaxError as e:
             if self.client_context.transaction_context is not None:
@@ -164,7 +166,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
     async def handle(self, command: list[bytes]) -> None:
         if not command:
             return
-        if command[0] == b"QUIT":
+        if command[0].upper() == b"QUIT":
+            print(f"{self.current_client.client_id} got quit command with params {command[1:]}")
             self.dump(RESP_OK)
             self.transport.close()
             return
