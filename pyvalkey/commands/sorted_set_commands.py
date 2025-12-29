@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import fnmatch
 import math
 import operator
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import field
 from enum import Enum
 from itertools import zip_longest
@@ -1192,3 +1193,29 @@ class SortedSetRandomMember(DatabaseCommand):
                 else:
                     result.append(member)
         return result
+
+
+@command(b"zscan", {b"read", b"sortedset", b"slow"})
+class SortedSetScan(DatabaseCommand):
+    key: bytes = positional_parameter()
+    cursor: int = positional_parameter()
+    match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
+    count: int | None = keyword_parameter(token=b"COUNT", default=None)
+    no_scores: bool = keyword_parameter(flag=b"NOSCORES", default=False)
+
+    def execute(self) -> ValueType:
+        value = self.database.sorted_set_database.get_value_or_empty(self.key)
+
+        def scan() -> Iterable[tuple[bytes, float]]:
+            selected = 0
+            for score, member in value.members:
+                if self.count is not None and selected >= self.count:
+                    break
+                if self.match is not None and not fnmatch.fnmatch(member, self.match):
+                    continue
+                yield member, score
+                selected += 1
+
+        if self.no_scores:
+            return [b"0", [m for m, s in scan()]]
+        return [b"0", dict(scan())]

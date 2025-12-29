@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import fnmatch
 import functools
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -246,3 +247,22 @@ class SetRandomMember(DatabaseCommand):
 
             result.append(items.pop(random.randrange(len(items))))
         return result
+
+
+@command(b"sscan", {b"read", b"set", b"fast"})
+class SetScan(DatabaseCommand):
+    key: bytes = positional_parameter()
+    cursor: int = positional_parameter()
+    match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
+    count: int | None = keyword_parameter(token=b"COUNT", default=None)
+
+    def execute(self) -> ValueType:
+        value = self.database.set_database.get_value_or_empty(self.key)
+
+        def scan() -> Iterable[bytes]:
+            for item in value:
+                if self.match is not None and not fnmatch.fnmatch(item, self.match):
+                    continue
+                yield item
+
+        return [b"0", [item for item in scan()]]

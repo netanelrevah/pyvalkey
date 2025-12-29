@@ -1,4 +1,5 @@
 import docker
+import pytest
 from valkey import Valkey
 
 
@@ -107,3 +108,8 @@ def test_pubsub(s: Valkey):
 
 def test_lazyfree(s: Valkey):
     run_tests(s, tags="lazyfree")
+
+
+def test_tag(s: Valkey, request: pytest.FixtureRequest):
+    requested_tag = request.config.getoption("--tag")
+    run_tests(s, tags=requested_tag)

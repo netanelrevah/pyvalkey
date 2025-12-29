@@ -535,8 +535,35 @@ class Restore(DatabaseCommand):
 
 @command(b"scan", {b"keyspace", b"write", b"slow", b"dangerous"})
 class Scan(DatabaseCommand):
+    cursor: int = positional_parameter()
+    match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
+    count: int | None = keyword_parameter(token=b"COUNT", default=None)
+    type: bytes | None = keyword_parameter(token=b"TYPE", default=None)
+
     def execute(self) -> ValueType:
-        return RESP_OK
+        keys = list(self.database.keys())
+        if self.match is not None:
+            keys = fnmatch.filter(self.database.keys(), self.match)
+        if self.type is not None:
+
+            def type_filter(key: bytes) -> bool:
+                value = self.database.get_value_or_none(key)
+                if self.type == b"string":
+                    return isinstance(value, bytes)
+                if self.type == b"list":
+                    return isinstance(value, list)
+                if self.type == b"set":
+                    return isinstance(value, set)
+                if self.type == b"hash":
+                    return isinstance(value, dict)
+                if self.type == b"zset":
+                    return isinstance(value, ScoredSortedSet)
+                if self.type == b"stream":
+                    return isinstance(value, Stream)
+                return False
+
+            keys = [key for key in keys if type_filter(key)]
+        return [b"0", keys]
 
 
 @command(b"sort", {b"read", b"set", b"sortedset", b"list", b"slow", b"dangerous"})

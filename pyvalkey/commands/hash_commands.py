@@ -1,4 +1,6 @@
+import fnmatch
 import random
+from collections.abc import Iterable
 from math import isinf, isnan
 
 from pyvalkey.commands.dependencies import dependency
@@ -208,10 +210,26 @@ class HashRandomField(DatabaseCommand):
 class HashMapScan(DatabaseCommand):
     key: bytes = positional_parameter()
     cursor: int = positional_parameter()
+    match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
+    count: int | None = keyword_parameter(token=b"COUNT", default=None)
+    no_values: bool = keyword_parameter(flag=b"NOVALUES", default=False)
 
     def execute(self) -> ValueType:
-        self.database.hash_database.get_value(self.key)
-        return RESP_OK
+        value = self.database.hash_database.get_value_or_empty(self.key)
+
+        def scan() -> Iterable[tuple[bytes, bytes | int]]:
+            selected = 0
+            for k, v in value.items():
+                if self.count is not None and selected >= self.count:
+                    break
+                if self.match is not None and not fnmatch.fnmatch(k, self.match):
+                    continue
+                yield k, v
+                selected += 1
+
+        if self.no_values:
+            return [b"0", [k for k, v in scan()]]
+        return [b"0", dict(scan())]
 
 
 @command(b"hset", {b"write", b"hash", b"fast"})
