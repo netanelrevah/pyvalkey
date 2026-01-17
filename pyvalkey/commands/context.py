@@ -123,7 +123,7 @@ class ClientContext:
 
     @classmethod
     def create(cls, server_context: ServerContext, host: bytes, port: int, router: CommandsRouter) -> Self:
-        scripting_manager = ScriptingEngine.create()
+        scripting_manager = ScriptingEngine.create(server_context.configurations)
 
         client = server_context.clients.create_client(host, port)
         client_context = cls(

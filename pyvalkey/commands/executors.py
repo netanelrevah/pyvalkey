@@ -49,7 +49,10 @@ class CommandExecutor:
 
             if self.client_context.transaction_context is not None:
                 if b"nomulti" in self.command.flags:
-                    raise ServerError(b"ERR Command not allowed inside a transaction")
+                    raise ServerError(
+                        f"ERR Command '{self.command.full_command_name.decode()}' "
+                        f"not allowed inside a transaction".encode()
+                    )
                 if not isinstance(self.command, TransactionCommand):
                     self.client_context.transaction_context.commands.append(self.command)
                     return "QUEUED"

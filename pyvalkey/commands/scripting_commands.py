@@ -30,12 +30,15 @@ class FunctionCall(Command):
     scripting_engine: ScriptingEngine = dependency()
 
     function: bytes = positional_parameter()
-    num_keys: int = positional_parameter()
+    num_keys: int = positional_parameter(parse_error=b"Bad number of keys provided")
     keys_and_args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
+
+        if len(self.keys_and_args) < self.num_keys:
+            raise ServerError(b"ERR Number of keys can't be greater than number of args")
 
         arguments: list[int | bytes] = []
         for argument in self.keys_and_args[self.num_keys :]:
@@ -76,8 +79,28 @@ class FunctionLoad(Command):
     function_code: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        name = self.scripting_engine.load_function(self.function_code)
+        name = self.scripting_engine.load_function(self.function_code, self.replace)
         return name
+
+
+@command(b"delete", {b"fast", b"connection"}, parent_command=b"function")
+class FunctionDelete(Command):
+    scripting_engine: ScriptingEngine = dependency()
+
+    function_name: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        deleted = self.scripting_engine.delete_function(self.function_name)
+
+        if not deleted:
+            raise ServerError(b"ERR Library not found")
+        return RESP_OK
+
+
+@command(b"kill", {b"connection", b"fast"}, parent_command=b"function")
+class FunctionKill(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
 
 
 @command(b"kill", {b"connection", b"fast"}, parent_command=b"script")

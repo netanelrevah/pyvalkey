@@ -369,7 +369,8 @@ class SwapDb(Command):
         return RESP_OK
 
     async def after(self, in_multi: bool = False) -> None:
-        await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index1], in_multi=in_multi)
+        if self.index1 in self.server_context.databases:
+            await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index1], in_multi=in_multi)
         await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index2], in_multi=in_multi)
 
 

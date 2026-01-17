@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.scripting import ScriptingEngine
 
-
 MAX_CONVERT_DEPTH = 100
 
 
@@ -67,7 +66,9 @@ def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueTy
 
 
 def register_function(scripting_manager, function_name, callback, flags=None) -> None:  # noqa: ANN001
-    scripting_manager.registered_functions[function_name] = RegisteredFunction(
+    if function_name.lower() in scripting_manager.registered_functions:
+        raise ServerError(b"ERR Library already exists")
+    scripting_manager.registered_functions[function_name.lower()] = RegisteredFunction(
         callback, flags.values() if flags else []
     )
 
@@ -266,6 +267,9 @@ class LuaRuntimeWrapper:
 
     def globals(self) -> Any:  # noqa: ANN401
         return self.lua_runtime.globals()
+
+    def compile(self, code: bytes) -> Any:  # noqa: ANN401
+        return self.lua_runtime.compile(code)  # type: ignore[arg-type]
 
     def execute(self, code: bytes) -> Any:  # noqa: ANN401
         return self.lua_runtime.execute(code)  # type: ignore[arg-type]
