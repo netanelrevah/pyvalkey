@@ -317,6 +317,8 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
 
         key_value.expiration = now_ms() + expiration_milliseconds
         self.content.key_with_expiration.add(key_value)
+        # Touch watched keys when their expiration is modified
+        self.touch_watched_key(key)
         return True
 
     def set_expiration_at(self, key: bytes, expiration_milliseconds_at: int) -> bool:
