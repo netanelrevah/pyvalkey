@@ -30,13 +30,14 @@ To understand which commands and features are currently supported and verified, 
 ## Development and Execution
 - Local Server Start: Run "python -m pyvalkey" to start the server on the default port.
 - Compatibility Testing: Run "pytest" to trigger the Docker-based TCL test execution. Ensure Docker Desktop or Engine is active.
-- Targeted Testing: Run specific test tags using "pytest -v --tag=<tag_name> test_valkey.test_tag" (e.g., "pytest -v --tag=multi" for multi command tests)
+- Targeted Testing: Run specific test tags INSIDE test_pyvalkey_docker folder using "python -m pytest -s --tag=<tag_name> test_valkey.test_tag" (e.g., "pytest -v --tag=multi" for multi command tests)
 - Dependencies: Managed via "uv" (refer to uv.lock and pyproject.toml).
 - Development Setup: Install dev dependencies with "uv sync --all-extras"
+- Try not to read all files and fill the context with it, use grep more to find relevant parts.
 
 ## Implementation Notes for AI Agents
 - Always prioritize compatibility with Valkey TCL tests over cuttom implementation preferences.
 - Consult pyvalkey/tests/test_valkey_docker/test_valkey.py to see the current coverage before proceeding.
 - When adding new commands, refer to the official Valkey documentation for expected RESP return types.
 - Ensure that any changes to the server loop do not break the thread-safe nature of the data store.
-- Test with specific tags using: "pytest -v --tag=<tag_name> test_valkey.test_tag" to run targeted tests
+- Test with specific test tags INSIDE test_pyvalkey_docker folder using "python -m pytest -v --tag=<tag_name> test_valkey.test_tag" to run targeted tests
