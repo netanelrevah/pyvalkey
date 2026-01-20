@@ -133,6 +133,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
 
         if key_value.expiration is not None:
             if now_ms() > key_value.expiration:
+                self.touch_watched_key(key_value.key)
                 self.content.clear_key(key_value)
                 self.notify(NotificationType.EXPIRED, b"expired", key)
                 return False
