@@ -9,6 +9,17 @@
 - pyvalkey/: Core source code including server logic, protocol parsing, and command handlers.
 - tests/: Integration and compatibility test infrastructure.
 
+## Code Style
+- NEVER add comments to code you write! Details:
+  - Avoid comments that simply restate the code obviously does.
+  - Avoid comments that are hiding the need of function/variable/etc. extraction
+  - DO NOT drop existing comments UNLESS they are commented on a changed code AND irrelevant.
+- Write clean code!
+  - Don't Repeat Yourself (DRY).
+- EXTRACT to variable, function, const etc. when possible to create reable code.
+- DO NOT extract if it's obvious and not helpful.
+- ALWAYS use fast return! don't nest 'if' statements. if it is possible, and it is readable, prefer not nesting.
+
 ## Testing and Compatibility Logic
 This project employs a "Black-Box" testing methodology to ensure perfect parity with the original Valkey server:
 - Official Test Suite: The project utilizes the original Valkey tests written in TCL, which are the same tests used by the official C-based Valkey repository.
