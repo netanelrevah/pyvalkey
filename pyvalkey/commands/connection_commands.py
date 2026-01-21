@@ -6,6 +6,7 @@ from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
+    flag_parameter,
     keyword_parameter,
     positional_parameter,
 )
@@ -113,8 +114,8 @@ class ClientKill(Command):
 class ClientPause(Command):
     server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
-    pause_all: bool = keyword_parameter(flag=b"ALL", default=False)
-    pause_write: bool = keyword_parameter(flag=b"WRITE", default=False)
+    pause_all: bool = flag_parameter(token=b"ALL")
+    pause_write: bool = flag_parameter(token=b"WRITE")
 
     def execute(self) -> ValueType:
         if self.pause_write and self.pause_all:

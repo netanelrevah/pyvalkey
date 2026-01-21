@@ -15,6 +15,7 @@ from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
+    flag_parameter,
     keyword_parameter,
     positional_parameter,
 )
@@ -342,8 +343,8 @@ class SortedSetAdd(DatabaseCommand):
     score_update: ScoreUpdateMode = keyword_parameter(
         default=ScoreUpdateMode.ALL, flag={b"LT": ScoreUpdateMode.LESS_THAN, b"GT": ScoreUpdateMode.GREATER_THAN}
     )
-    return_changed_elements: bool = keyword_parameter(flag=b"CH")
-    increment_mode: bool = keyword_parameter(flag=b"INCR")
+    return_changed_elements: bool = flag_parameter(token=b"CH")
+    increment_mode: bool = flag_parameter(token=b"INCR")
     scores_members: list[tuple[float, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -479,9 +480,9 @@ class SortedSetRange(DatabaseCommand):
     range_mode: RangeMode = keyword_parameter(
         default=RangeMode.BY_INDEX, flag={b"BYSCORE": RangeMode.BY_SCORE, b"BYLEX": RangeMode.BY_LEX}
     )
-    rev: bool = keyword_parameter(flag=b"REV")
+    rev: bool = flag_parameter(token=b"REV")
     limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -506,7 +507,7 @@ class SortedSetRangeStore(DatabaseCommand):
     range_mode: RangeMode = keyword_parameter(
         default=RangeMode.BY_INDEX, flag={b"BYSCORE": RangeMode.BY_SCORE, b"BYLEX": RangeMode.BY_LEX}
     )
-    rev: bool = keyword_parameter(flag=b"REV")
+    rev: bool = flag_parameter(token=b"REV")
     limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
 
     def execute(self) -> ValueType:
@@ -528,7 +529,7 @@ class SortedSetReversedRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return sorted_set_range(
@@ -546,7 +547,7 @@ class SortedSetRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
     limit: RangeLimit | None = keyword_parameter(default=None, token=b"LIMIT")
 
     def execute(self) -> ValueType:
@@ -566,7 +567,7 @@ class SortedSetReversedRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
     min: bytes = positional_parameter()
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES")
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
     limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
 
     def execute(self) -> ValueType:
@@ -723,7 +724,7 @@ class SortedSetRemove(DatabaseCommand):
 class SortedSetRank(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
-    with_score: bool = keyword_parameter(flag=b"WITHSCORE")
+    with_score: bool = flag_parameter(token=b"WITHSCORE")
 
     def execute(self) -> ValueType:
         value = self.database.sorted_set_database.get_value_or_empty(self.key)
@@ -744,7 +745,7 @@ class SortedSetRank(DatabaseCommand):
 class SortedSetReversedRank(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
-    with_score: bool = keyword_parameter(flag=b"WITHSCORE")
+    with_score: bool = flag_parameter(token=b"WITHSCORE")
 
     def execute(self) -> ValueType:
         value = self.database.sorted_set_database.get_value_or_empty(self.key)
@@ -998,7 +999,7 @@ class SortedSetUnion(DatabaseCommand):
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
     )
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
     aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
 
     def execute(self) -> ValueType:
@@ -1025,7 +1026,7 @@ class SortedSetIntersection(DatabaseCommand):
     weights: list[float] | None = keyword_parameter(
         token=b"WEIGHTS", default=None, length_field_name="numkeys", parse_error=b"ERR weight value is not a float"
     )
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
     aggregate: AggregateMode = keyword_parameter(token=b"AGGREGATE", default=AggregateMode.SUM)
 
     def execute(self) -> ValueType:
@@ -1126,7 +1127,7 @@ class SortedSetDifference(DatabaseCommand):
         length_field_name="numkeys",
         errors={"when_length_field_less_then_parameters": b"ERR at least 1 input key is needed for 'zdiff' command"},
     )
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         return apply_sorted_set_operation(
@@ -1144,7 +1145,7 @@ class SortedSetRandomMember(DatabaseCommand):
 
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
-    with_scores: bool = keyword_parameter(flag=b"WITHSCORES", default=False)
+    with_scores: bool = flag_parameter(token=b"WITHSCORES")
 
     def execute(self) -> ValueType:
         value = self.database.sorted_set_database.get_value_or_none(self.key)
@@ -1201,7 +1202,7 @@ class SortedSetScan(DatabaseCommand):
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
     count: int | None = keyword_parameter(token=b"COUNT", default=None)
-    no_scores: bool = keyword_parameter(flag=b"NOSCORES", default=False)
+    no_scores: bool = flag_parameter(token=b"NOSCORES")
 
     def execute(self) -> ValueType:
         value = self.database.sorted_set_database.get_value_or_empty(self.key)

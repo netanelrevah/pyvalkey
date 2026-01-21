@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from math import isinf, isnan
 
 from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import increment_bytes_value_as_float, is_floating_point, is_integer
@@ -175,7 +175,7 @@ class HashRandomField(DatabaseCommand):
 
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
-    with_values: bool = keyword_parameter(flag=b"WITHVALUES", default=False)
+    with_values: bool = flag_parameter(token=b"WITHVALUES")
 
     def execute(self) -> ValueType:
         hash_map = self.database.hash_database.get_value_or_create(self.key)
@@ -212,7 +212,7 @@ class HashMapScan(DatabaseCommand):
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
     count: int | None = keyword_parameter(token=b"COUNT", default=None)
-    no_values: bool = keyword_parameter(flag=b"NOVALUES", default=False)
+    no_values: bool = flag_parameter(token=b"NOVALUES")
 
     def execute(self) -> ValueType:
         value = self.database.hash_database.get_value_or_empty(self.key)

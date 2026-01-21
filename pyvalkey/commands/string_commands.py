@@ -5,7 +5,7 @@ from math import isinf, isnan
 from pyvalkey.blocking import StreamBlockingManager
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
@@ -106,7 +106,7 @@ class GetExpire(DatabaseCommand):
     px: int | None = keyword_parameter(flag=b"PX", default=None)
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
-    persist: bool = keyword_parameter(flag=b"PERSIST")
+    persist: bool = flag_parameter(token=b"PERSIST")
 
     def execute(self) -> ValueType:
         print(self.ex, self.px, self.exat, self.pxat, self.persist)
@@ -189,10 +189,10 @@ class IncrementByFloat(DatabaseCommand):
 class LongestCommonSubsequence(DatabaseCommand):
     key1: bytes = positional_parameter()
     key2: bytes = positional_parameter()
-    length: bool = keyword_parameter(flag=b"LEN", default=False)
-    index: bool = keyword_parameter(flag=b"IDX", default=False)
+    length: bool = flag_parameter(token=b"LEN")
+    index: bool = flag_parameter(token=b"IDX")
     min_match_length: int = keyword_parameter(token=b"MINMATCHLEN", default=0)
-    with_match_length: bool = keyword_parameter(flag=b"WITHMATCHLEN", default=False)
+    with_match_length: bool = flag_parameter(token=b"WITHMATCHLEN")
 
     def compute_matrix(self, s1: bytes, s2: bytes) -> list[list[int]]:
         matrix = [[0 for _ in range(len(s2) + 1)] for _ in range(len(s1) + 1)]
@@ -351,7 +351,7 @@ class Set(Command):
     px: int | None = keyword_parameter(flag=b"PX", default=None)
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
-    get: bool = keyword_parameter(flag=b"GET", default=False)
+    get: bool = flag_parameter(token=b"GET")
 
     _is_key_updated: bool = field(init=False, default=False)
 

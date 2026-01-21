@@ -1,7 +1,7 @@
 from pyvalkey.commands.core import DatabaseCommand
 from pyvalkey.commands.parameters import (
     ParameterMetadata,
-    keyword_boolean_flag,
+    flag_parameter,
     keyword_numeric_option,
     keyword_string_option,
     positional_boolean_flag,
@@ -30,7 +30,7 @@ def test_positional_boolean_flag_custom_mapping():
 
 
 def test_keyword_boolean_flag():
-    param = keyword_boolean_flag(flag=b"REPLACE", default=False)
+    param = flag_parameter(token=b"REPLACE", default=False)
     assert param.metadata is not None
     assert param.metadata[ParameterMetadata.TOKEN] == b"REPLACE"
 
@@ -51,7 +51,7 @@ def test_all_parameter_types_have_metadata():
     param1 = positional_boolean_flag(default=False)
     assert ParameterMetadata.COMMAND_PARAMETER in param1.metadata
 
-    param2 = keyword_boolean_flag(flag=b"REPLACE", default=False)
+    param2 = flag_parameter(token=b"REPLACE", default=False)
     assert ParameterMetadata.COMMAND_PARAMETER in param2.metadata
     assert ParameterMetadata.TOKEN in param2.metadata
 
@@ -83,7 +83,7 @@ class SetTestCommand(DatabaseCommand):
     value: bytes = positional_parameter()
     ex_seconds: int | None = keyword_numeric_option(flag=b"EX", default=None)
     px_milliseconds: int | None = keyword_numeric_option(flag=b"PX", default=None)
-    nx_flag: bool = keyword_boolean_flag(flag=b"NX", default=False)
+    nx_flag: bool = flag_parameter(token=b"NX", default=False)
 
     def execute(self) -> bytes:
         if self.nx_flag and self.database.string_database.has_key(self.key):
@@ -125,7 +125,7 @@ class ClientTestCOmmand(DatabaseCommand):
 class ZAddTestCommand(DatabaseCommand):
     key: bytes = positional_parameter()
     score_member: list[tuple[float, bytes]] = positional_parameter()
-    changed_flag: bool = keyword_boolean_flag(flag=b"CH", default=False)
+    changed_flag: bool = flag_parameter(token=b"CH", default=False)
 
     def execute(self) -> int:
         # In a real implementation, this would actually modify the sorted set

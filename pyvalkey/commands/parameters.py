@@ -122,11 +122,11 @@ def positional_boolean_flag(
     )
 
 
-def keyword_boolean_flag(
-    flag: bytes,
+def flag_parameter(
+    token: bytes,
     default: bool = False,
 ) -> Any:  # noqa: ANN401
-    return keyword_parameter(flag=flag, default=default)
+    return server_parameter(flag=token, default=default)
 
 
 def keyword_numeric_option(

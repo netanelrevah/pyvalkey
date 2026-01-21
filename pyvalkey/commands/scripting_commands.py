@@ -1,6 +1,6 @@
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parameters import flag_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.scripting import ScriptingEngine
@@ -83,7 +83,7 @@ class FunctionFlush(Command):
 class FunctionLoad(Command):
     scripting_engine: ScriptingEngine = dependency()
 
-    replace: bool = keyword_parameter(flag=b"REPLACE", default=False)
+    replace: bool = flag_parameter(token=b"REPLACE")
     function_code: bytes = positional_parameter()
 
     def execute(self) -> ValueType:

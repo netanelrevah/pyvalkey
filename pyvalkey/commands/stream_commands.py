@@ -6,7 +6,7 @@ from pyvalkey.blocking import StreamBlockingManager, StreamWaitingContext
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata, parameters_object
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import _format_entry_id, _parse_entry_id, _parse_strict_entry_id
@@ -29,16 +29,16 @@ from pyvalkey.utils.times import now_ms
 
 @parameters_object
 class MaxLength:
-    equal: bool = keyword_parameter(flag=b"=", default=False)
-    approximate: bool = keyword_parameter(flag=b"~", default=False)
+    equal: bool = flag_parameter(token=b"=")
+    approximate: bool = flag_parameter(token=b"~")
     threshold: int = positional_parameter()
     limit: int | None = keyword_parameter(flag=b"LIMIT", default=None)
 
 
 @parameters_object
 class MinimumId:
-    equal: bool = keyword_parameter(flag=b"=", default=False)
-    approximate: bool = keyword_parameter(flag=b"~", default=False)
+    equal: bool = flag_parameter(token=b"=")
+    approximate: bool = flag_parameter(token=b"~")
     threshold: bytes = positional_parameter()
     limit: int | None = keyword_parameter(flag=b"LIMIT", default=None)
 
@@ -49,7 +49,7 @@ class StreamTrim(Command):
     configuration: Configurations = dependency()
 
     key: bytes = positional_parameter()
-    no_make_stream: bool = keyword_parameter(flag=b"NOMKSTREAM", default=False)
+    no_make_stream: bool = flag_parameter(token=b"NOMKSTREAM")
     maximum_length: MaxLength | None = keyword_parameter(token=b"MAXLEN", default=None)
     minimum_id: MinimumId | None = keyword_parameter(token=b"MINID", default=None)
 
@@ -124,7 +124,7 @@ class StreamAdd(Command):
     blocking_manager: StreamBlockingManager = dependency()
 
     key: bytes = positional_parameter()
-    no_make_stream: bool = keyword_parameter(flag=b"NOMKSTREAM", default=False)
+    no_make_stream: bool = flag_parameter(token=b"NOMKSTREAM")
     maximum_length: MaxLength | None = keyword_parameter(token=b"MAXLEN", default=None)
     minimum_id: MinimumId | None = keyword_parameter(token=b"MINID", default=None)
     stream_id: bytes = positional_parameter()
@@ -370,7 +370,7 @@ class StreamGroupCreate(Command):
     group: bytes = positional_parameter()
 
     stream_id: bytes = positional_parameter()
-    make_stream: bool = keyword_parameter(flag=b"MKSTREAM", default=False)
+    make_stream: bool = flag_parameter(token=b"MKSTREAM")
     entries_read: int = keyword_parameter(token=b"ENTRIESREAD", default=-1)
 
     def execute(self) -> ValueType:
@@ -571,7 +571,7 @@ class StreamInfoStream(Command):
     configuration: Configurations = dependency()
 
     key: bytes = positional_parameter()
-    full: bool = keyword_parameter(flag=b"FULL", default=False)
+    full: bool = flag_parameter(token=b"FULL")
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
 
     def execute(self) -> ValueType:
@@ -709,7 +709,7 @@ class StreamGroupRead(Command):
 
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
     block_milliseconds: int | None = keyword_parameter(flag=b"BLOCK", default=None)
-    no_ack: bool = keyword_parameter(flag=b"NOACK", default=False)
+    no_ack: bool = flag_parameter(token=b"NOACK")
     keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
 
     _keys_to_minimum_id: dict[bytes, EntryID] | None = field(default_factory=dict, init=False)
@@ -980,7 +980,7 @@ class StreamGroupAutoClaim(Command):
     minimum_idle_time: int = positional_parameter()
     start: bytes = positional_parameter()
     count: int = keyword_parameter(flag=b"COUNT", default=100)
-    just_id: bool = keyword_parameter(flag=b"JUSTID", default=False)
+    just_id: bool = flag_parameter(token=b"JUSTID")
 
     def execute(self) -> ValueType:
         if self.count <= 0 or self.count > (LONG_MAX / 16):
@@ -1055,8 +1055,8 @@ class StreamGroupClaim(Command):
     idle: int | None = keyword_parameter(token=b"IDLE", default=None)
     time_milliseconds: int | None = keyword_parameter(token=b"TIME", default=None)
     retry_count: int | None = keyword_parameter(token=b"RERETRYCOUNT", default=None)
-    force: bool = keyword_parameter(flag=b"FORCE", default=False)
-    just_id: bool = keyword_parameter(flag=b"JUSTID", default=False)
+    force: bool = flag_parameter(token=b"FORCE")
+    just_id: bool = flag_parameter(token=b"JUSTID")
     last_id: bytes | None = keyword_parameter(token=b"LASTID", default=None)
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
 

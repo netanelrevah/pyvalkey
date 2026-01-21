@@ -26,6 +26,7 @@
 ## General
 - DO NOT create example test file, tests are the examples and we should use them.
 - DO NOT create any Markdown (.md) file to explain solutions!
+- If the task is to change something globally, work gradually, if you can make small edit step without getting whole context, do it!
 
 ## Testing and Compatibility Logic
 This project employs a "Black-Box" testing methodology to ensure perfect parity with the original Valkey server:

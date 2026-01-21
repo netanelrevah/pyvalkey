@@ -8,7 +8,7 @@ from pyvalkey.blocking import BlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import is_integer
 from pyvalkey.consts import LONG_LONG_MAX, LONG_LONG_MIN
@@ -34,7 +34,7 @@ class Copy(Command):
 
     source: bytes = positional_parameter(key_mode=b"R")
     destination: bytes = positional_parameter(key_mode=b"W")
-    replace: bool = keyword_parameter(flag=b"REPLACE", default=False)
+    replace: bool = flag_parameter(token=b"REPLACE")
     db: int | None = keyword_parameter(flag=b"DB", default=None)
 
     def execute(self) -> ValueType:
@@ -474,8 +474,8 @@ class Restore(DatabaseCommand):
     key: bytes = positional_parameter()
     ttl: int = positional_parameter()
     serialized_value: bytes = positional_parameter()
-    replace: bool = keyword_parameter(flag=b"REPLACE")
-    absolute_ttl: bool = keyword_parameter(flag=b"ABSTTL")
+    replace: bool = flag_parameter(token=b"REPLACE")
+    absolute_ttl: bool = flag_parameter(token=b"ABSTTL")
     idle_time_seconds: int | None = keyword_parameter(default=None, token=b"IDLETIME")
     frequency: int | None = keyword_parameter(default=None, token=b"FREQ")
 
@@ -576,7 +576,7 @@ class Sort(Command):
     limit: tuple[int, int] | None = keyword_parameter(token=b"LIMIT", default=None)
     get_values: list[bytes] | None = keyword_parameter(multi_token=True, token=b"GET", default=None)
     descending: bool = keyword_parameter(flag={b"ASC": False, b"DESC": True}, default=False)
-    alpha: bool = keyword_parameter(flag=b"ALPHA", default=False)
+    alpha: bool = flag_parameter(token=b"ALPHA")
     destination: bytes | None = keyword_parameter(skip_first=True, token=b"STORE", default=None, key_mode=b"W")
 
     def execute(self) -> ValueType:
@@ -617,7 +617,7 @@ class SortReadOnly(Command):
     limit: tuple[int, int] | None = keyword_parameter(token=b"LIMIT", default=None)
     get_values: list[bytes] | None = keyword_parameter(multi_token=True, token=b"GET", default=None)
     descending: bool = keyword_parameter(flag={b"ASC": False, b"DESC": True}, default=False)
-    alpha: bool = keyword_parameter(flag=b"ALPHA", default=False)
+    alpha: bool = flag_parameter(token=b"ALPHA")
 
     def _get_referenced_value(self, value: bytes, reference: bytes) -> int | bytes | None:
         reference_key, reference_field = reference, None
