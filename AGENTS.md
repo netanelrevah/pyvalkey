@@ -16,6 +16,15 @@ This project employs a "Black-Box" testing methodology to ensure perfect parity 
 - Execution Flow: The TCL tests are directed to run against the pyvalkey Python server instance instead of the standard Valkey binary.
 - Success Criteria: A feature is considered complete only when it passes the corresponding official TCL test cases without modifications to the test logic.
 
+### Test Output Files
+Test results are saved in Docker log files located at `tests/test_valkey_docker/<tag>.docker.log`.
+Each line in these logs shows:
+- Test name and status markers: `[ok]`, `[fail]`, `[err]`, or `[ignore]`
+- Execution time for each test
+- Detailed output including command exchanges and error messages
+
+**Important Note:** The Docker container exit status (StatusCode) may not always reflect the actual test results. Always check the log files to verify individual test outcomes, as some tests may pass even if the container exits with a non-zero status.
+
 ## Feature Source of Truth
 To understand which commands and features are currently supported and verified, refer to the following file:
 - File Path: pyvalkey/tests/test_valkey_docker/test_valkey.py
@@ -34,6 +43,22 @@ To understand which commands and features are currently supported and verified, 
 - Dependencies: Managed via "uv" (refer to uv.lock and pyproject.toml).
 - Development Setup: Install dev dependencies with "uv sync --all-extras"
 - Try not to read all files and fill the context with it, use grep more to find relevant parts.
+
+### Troubleshooting Test Failures
+When tests fail, check these common issues:
+
+1. **Docker Container Exit Status**: The pytest assertion `assert status["StatusCode"] == 0` may fail even when individual tests pass. Always verify by checking the actual test output in `<tag>.docker.log` files.
+
+2. **Test Result Markers**: Look for these markers in Docker logs:
+   - `[ok]`: Test passed successfully
+   - `[fail]`: Test failed (check error details)
+   - `[err]`: Test encountered an exception
+   - `[ignore]`: Test was skipped due to tags or missing features
+
+3. **WATCH/EXEC Tests**: For transaction-related tests, verify that:
+   - Expired keys are properly marked as "touched"
+   - EXEC returns empty array when watched keys were modified
+   - Check `tests/test_valkey_docker/multi.docker.log` for WATCH test results
 
 ## Implementation Notes for AI Agents
 - Always prioritize compatibility with Valkey TCL tests over cuttom implementation preferences.

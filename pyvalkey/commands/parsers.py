@@ -414,7 +414,7 @@ class ObjectParametersParser(ParameterParser):
 
         if parameters and not self.allow_more_parameters:
             if self.parameters_left_error is not None:
-                raise ServerError(self.parameters_left_error)
+                raise ServerError(self.parameters_left_error.decode().format(next_parameter=parameters[0]).encode())
 
             # has_optional_keyword_parameters = False
             # for parameter_parser in self.parameters_parsers:

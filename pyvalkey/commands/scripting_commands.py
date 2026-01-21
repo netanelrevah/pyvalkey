@@ -1,6 +1,7 @@
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.scripting import ScriptingEngine
 from pyvalkey.commands.utils import is_integer
@@ -71,7 +72,14 @@ class FunctionFlush(Command):
         return True
 
 
-@command(b"load", {b"fast", b"connection"}, parent_command=b"function")
+@command(
+    b"load",
+    {b"fast", b"connection"},
+    parent_command=b"function",
+    metadata={
+        CommandMetadata.PARAMETERS_LEFT_ERROR: b"Unknown option given: {next_parameter}",
+    },
+)
 class FunctionLoad(Command):
     scripting_engine: ScriptingEngine = dependency()
 
