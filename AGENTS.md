@@ -14,11 +14,18 @@
   - Avoid comments that simply restate the code obviously does.
   - Avoid comments that are hiding the need of function/variable/etc. extraction
   - DO NOT drop existing comments UNLESS they are commented on a changed code AND irrelevant.
+- NEVER add documentation comments/docstrings to code you write!
 - Write clean code!
   - Don't Repeat Yourself (DRY).
 - EXTRACT to variable, function, const etc. when possible to create reable code.
 - DO NOT extract if it's obvious and not helpful.
 - ALWAYS use fast return! don't nest 'if' statements. if it is possible, and it is readable, prefer not nesting.
+- AVOID equality comparisons to `True` or `False` with '==', use 'is' or direct evaluation instead.
+- imports should be ONLY on top of the file!
+
+## General
+- DO NOT create example test file, tests are the examples and we should use them.
+- DO NOT create any Markdown (.md) file to explain solutions!
 
 ## Testing and Compatibility Logic
 This project employs a "Black-Box" testing methodology to ensure perfect parity with the original Valkey server:
