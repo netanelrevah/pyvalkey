@@ -110,3 +110,35 @@ def keyword_parameter(
         errors=errors,
         sequence_allow_empty=sequence_allow_empty,
     )
+
+
+def positional_boolean_flag(
+    default: bool = False,
+    values_mapping: dict[bytes, Any] | None = None,
+) -> Any:  # noqa: ANN401
+    return positional_parameter(
+        values_mapping=values_mapping or {b"1": True, b"0": False},
+        default=default,
+    )
+
+
+def keyword_boolean_flag(
+    flag: bytes,
+    default: bool = False,
+) -> Any:  # noqa: ANN401
+    return keyword_parameter(flag=flag, default=default)
+
+
+def keyword_numeric_option(
+    flag: bytes,
+    default: Any = MISSING,  # noqa: ANN401
+    parse_error: bytes | None = None,
+) -> Any:  # noqa: ANN401
+    return keyword_parameter(flag=flag, default=default, parse_error=parse_error)
+
+
+def keyword_string_option(
+    flag: bytes,
+    default: Any = MISSING,  # noqa: ANN401
+) -> Any:  # noqa: ANN401
+    return keyword_parameter(flag=flag, default=default)
