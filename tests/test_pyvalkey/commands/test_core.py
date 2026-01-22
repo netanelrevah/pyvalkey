@@ -6,7 +6,7 @@ from parametrization import Parametrization
 from pyvalkey.commands.connection_commands import ClientKill, Ping
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.generic_commands import Copy
-from pyvalkey.commands.parameters import positional_parameter
+from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.server_commands import DebugSetActiveExpire
 from pyvalkey.commands.sorted_set_commands import AddMode, RangeMode, SortedSetAdd, SortedSetRange
@@ -24,6 +24,7 @@ class ByteIntCommand(Command):
     a: bytes = positional_parameter()
     c: bool = positional_parameter()
     b: int = positional_parameter()
+    d: int | None = keyword_parameter(token=b"D", default=2)
 
 
 @command(b"test3", {b"test"})

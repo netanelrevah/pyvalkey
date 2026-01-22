@@ -7,8 +7,7 @@ from pyvalkey.commands.parameters import (
     positional_boolean_flag,
     positional_parameter,
 )
-from pyvalkey.commands.parsers import ObjectParametersParser
-from pyvalkey.commands.router import command
+from pyvalkey.commands.parsers import ObjectParametersParser, transform_command
 from pyvalkey.resp import ValueType
 
 
@@ -64,20 +63,17 @@ def test_all_parameter_types_have_metadata():
     assert ParameterMetadata.TOKEN in param4.metadata
 
 
-@command(b"getset", {b"test"})
+@transform_command
 class GetSetTestCommand(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
     get_flag: bool = positional_boolean_flag(default=False)
 
     def execute(self) -> ValueType:
-        """Return the old value if GET flag is set, otherwise return OK."""
-        old_value = self.database.string_database.get_value_or_none(self.key)
-        self.database.string_database.upsert(self.key, self.value)
-        return old_value if self.get_flag else b"OK"
+        pass
 
 
-@command(b"set", {b"test"})
+@transform_command
 class SetTestCommand(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
@@ -85,52 +81,35 @@ class SetTestCommand(DatabaseCommand):
     px_milliseconds: int | None = keyword_numeric_option(flag=b"PX", default=None)
     nx_flag: bool = flag_parameter(token=b"NX", default=False)
 
-    def execute(self) -> bytes:
-        if self.nx_flag and self.database.string_database.has_key(self.key):
-            return b"NOT_SET"
-
-        self.database.string_database.upsert(self.key, self.value)
-
-        if self.ex_seconds is not None:
-            self.database.set_expiration_in(self.key, 1000 * self.ex_seconds)
-        elif self.px_milliseconds is not None:
-            self.database.set_expiration_in(self.key, self.px_milliseconds)
-
-        return b"OK"
+    def execute(self) -> ValueType:
+        pass
 
 
-@command(b"select", {b"test"})
+@transform_command
 class SelectTestCommand(DatabaseCommand):
     db_index: int = positional_parameter()
 
-    def execute(self) -> bytes:
-        return f"Selected DB: {self.db_index}".encode()
+    def execute(self) -> ValueType:
+        pass
 
 
-@command(b"client", {b"test"})
-class ClientTestCOmmand(DatabaseCommand):
+@transform_command
+class ClientTestCommand(DatabaseCommand):
     client_type: bytes | None = keyword_string_option(flag=b"TYPE", default=None)
     client_id: int | None = keyword_numeric_option(flag=b"ID", default=None)
 
-    def execute(self) -> dict[bytes, bytes]:
-        result = {}
-        if self.client_type is not None:
-            result[b"type"] = self.client_type
-        if self.client_id is not None:
-            result[b"id"] = str(self.client_id).encode()
-        return result
+    def execute(self) -> ValueType:
+        pass
 
 
-@command(b"zadd", {b"test"})
+@transform_command
 class ZAddTestCommand(DatabaseCommand):
     key: bytes = positional_parameter()
     score_member: list[tuple[float, bytes]] = positional_parameter()
     changed_flag: bool = flag_parameter(token=b"CH", default=False)
 
-    def execute(self) -> int:
-        # In a real implementation, this would actually modify the sorted set
-        num_changes = len(self.score_member)
-        return num_changes if self.changed_flag else 0
+    def execute(self) -> ValueType:
+        pass
 
 
 def test_getset_without_get():
@@ -163,7 +142,7 @@ def test_set_with_nx():
 
 
 def test_client_with_type():
-    parser = ObjectParametersParser.create(ClientTestCOmmand)
+    parser = ObjectParametersParser.create(ClientTestCommand)
     params = [b"TYPE", b"normal"]
     result = parser.parse(params)
     assert result["client_type"] == b"normal"
@@ -171,7 +150,7 @@ def test_client_with_type():
 
 
 def test_client_with_id():
-    parser = ObjectParametersParser.create(ClientTestCOmmand)
+    parser = ObjectParametersParser.create(ClientTestCommand)
     params = [b"ID", b"123"]
     result = parser.parse(params)
     assert result["client_id"] == 123

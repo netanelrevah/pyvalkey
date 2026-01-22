@@ -192,8 +192,8 @@ class ClientUnblock(Command):
 @command(b"setinfo", {b"slow", b"connection"}, b"client")
 class ClientSetInformation(Command):
     client_context: ClientContext = dependency()
-    library_name: bytes | None = keyword_parameter(flag=b"LIB-NAME", default=None)
-    library_version: bytes | None = keyword_parameter(flag=b"LIB-VER", default=None)
+    library_name: bytes | None = keyword_parameter(token=b"LIB-NAME", default=None)
+    library_version: bytes | None = keyword_parameter(token=b"LIB-VER", default=None)
 
     def execute(self) -> ValueType:
         if self.library_name:

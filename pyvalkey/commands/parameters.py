@@ -142,3 +142,7 @@ def keyword_string_option(
     default: Any = MISSING,  # noqa: ANN401
 ) -> Any:  # noqa: ANN401
     return keyword_parameter(flag=flag, default=default)
+
+
+def tokenized_parameter(token: bytes, default: Any = MISSING) -> Any:  # noqa: ANN401
+    return server_parameter(token=token, default=default)
