@@ -76,7 +76,7 @@ class ParametersParserCreator:
                     )
                 )
             case int():
-                return IntValueParser(parse_error=parse_error, default_value=default_value)
+                return IntValueParser(parse_error=parse_error)
             case float():
                 return FloatValueParser(parse_error=parse_error)
             case list():
@@ -179,7 +179,6 @@ class TupleValueParser(ValueParser):
 
 @dataclass
 class IntValueParser(ValueParser):
-    default_value: int | None = None
     parse_error: bytes | None = None
 
     def parse(self, parameters: list[bytes]) -> int:
