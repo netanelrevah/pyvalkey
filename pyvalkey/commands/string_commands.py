@@ -336,7 +336,7 @@ class ExistenceMode(Enum):
     OnlyIfExist = b"XX"
 
 
-@command(b"set", {b"write", b"string", b"slow"})
+@command(b"set", {b"string", b"slow"}, flags={b"write"})
 class Set(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
