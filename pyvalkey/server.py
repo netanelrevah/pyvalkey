@@ -180,15 +180,10 @@ class ValkeyClientProtocol(asyncio.Protocol):
         try:
             routed_command_cls, parameters = self.router.route(command)
 
-        except RouterKeyError:
+        except RouterKeyError as e:
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
-            self.dump(
-                RespError(
-                    f"ERR unknown command '{command[0].decode()}', "
-                    f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
-                )
-            )
+            self.dump(RespError(e.message))
             return
 
         if self.server_context.pause_timeout:
@@ -204,11 +199,24 @@ class ValkeyClientProtocol(asyncio.Protocol):
             routed_command = routed_command_cls.create(parameters, self.client_context)
         except ServerWrongNumberOfArgumentsError:
             command_statistics.rejected_calls += 1
-            self.dump(
-                RespError(
-                    b"ERR wrong number of arguments for '" + routed_command_cls.full_command_name.lower() + b"' command"
+            if b"|" in routed_command_cls.full_command_name:
+                _, command_name = routed_command_cls.full_command_name.split(b"|")
+
+                self.dump(
+                    RespError(
+                        b"ERR unknown subcommand or wrong number of arguments for '"
+                        + command_name
+                        + b"'. Try FUNCTION HELP."
+                    )
                 )
-            )
+            else:
+                self.dump(
+                    RespError(
+                        b"ERR wrong number of arguments for '"
+                        + routed_command_cls.full_command_name.lower()
+                        + b"' command"
+                    )
+                )
             self.server_context.information.error_statistics[b"ERR"] += 1
             return
         except ServerError as e:

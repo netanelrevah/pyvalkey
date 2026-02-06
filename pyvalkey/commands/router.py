@@ -26,7 +26,15 @@ class CommandsRouter:
         command_name = parameters.pop(0).lower()
 
         if command_name not in routes:
-            raise RouterKeyError()
+            if routes is not self.ROUTES:
+                raise RouterKeyError(
+                    f"unknown subcommand or wrong number of arguments for '{command_name.decode()}'."
+                    f" Try '{{command_name}}' HELP.".encode()
+                )
+            raise RouterKeyError(
+                f"ERR unknown command '{command_name.decode()}',"
+                f" with args beginning with: {parameters[1].decode() if len(parameters) > 0 else ''}".encode()
+            )
 
         routed_command = routes[command_name]
 
