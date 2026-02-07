@@ -23,7 +23,7 @@ class DirectionMode(Enum):
     AFTER = b"AFTER"
 
 
-@command(b"blpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"blpop", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingLeftPop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -50,7 +50,7 @@ class ListBlockingLeftPop(Command):
         return [self._key, value]
 
 
-@command(b"brpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"brpop", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingRightPop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -80,7 +80,7 @@ class Direction(Enum):
     RIGHT = b"RIGHT"
 
 
-@command(b"blmpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"blmpop", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingMultiplePop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -111,7 +111,7 @@ class ListBlockingMultiplePop(Command):
         return [self._key, values]
 
 
-@command(b"lmpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"lmpop", {b"list", b"slow"}, flags={b"write"})
 class ListMultiplePop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -136,7 +136,7 @@ class ListMultiplePop(Command):
         return [key, values]
 
 
-@command(b"brpoplpush", {b"list", b"fast"}, flags={b"write"})
+@command(b"brpoplpush", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingRightPopLeftPush(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -168,7 +168,7 @@ class ListBlockingRightPopLeftPush(Command):
             await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"blmove", {b"list", b"fast"}, flags={b"write"})
+@command(b"blmove", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingMove(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -207,7 +207,7 @@ class ListBlockingMove(Command):
             await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"lmove", {b"list", b"fast"}, flags={b"write"})
+@command(b"lmove", {b"list", b"slow"}, flags={b"write"})
 class ListMove(Command):
     database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
@@ -236,7 +236,7 @@ class ListMove(Command):
         await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"lindex", {b"read", b"list", b"slow"})
+@command(b"lindex", {b"list", b"read", b"slow"})
 class ListIndex(DatabaseCommand):
     key: bytes = positional_parameter()
     index: int = positional_parameter()
@@ -290,7 +290,7 @@ class ListSet(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"llen", {b"read", b"list", b"fast"})
+@command(b"llen", {b"fast", b"list", b"read"})
 class ListLength(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -298,7 +298,7 @@ class ListLength(DatabaseCommand):
         return len(self.database.list_database.get_value_or_empty(self.key))
 
 
-@command(b"lrange", {b"read", b"list", b"slow"})
+@command(b"lrange", {b"list", b"read", b"slow"})
 class ListRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: int = positional_parameter()
@@ -308,7 +308,7 @@ class ListRange(DatabaseCommand):
         return self.database.list_database.get_value_or_empty(self.key)[parse_range_parameters(self.start, self.stop)]
 
 
-@command(b"ltrim", {b"read", b"list", b"slow"})
+@command(b"ltrim", {b"list", b"slow"}, flags={b"write"})
 class ListTrim(DatabaseCommand):
     key: bytes = positional_parameter()
     start: int = positional_parameter()
@@ -322,7 +322,7 @@ class ListTrim(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"lpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"lpop", {b"fast", b"list"}, flags={b"write"})
 class ListPop(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
@@ -341,7 +341,7 @@ class ListPop(DatabaseCommand):
         return value
 
 
-@command(b"lpos", {b"read", b"list", b"slow"})
+@command(b"lpos", {b"list", b"read", b"slow"})
 class ListPosition(DatabaseCommand):
     key: bytes = positional_parameter()
     element: bytes = positional_parameter()
@@ -393,7 +393,7 @@ class ListPosition(DatabaseCommand):
         return indexes
 
 
-@command(b"lpush", {b"list", b"fast"}, flags={b"write", b"denyoom"})
+@command(b"lpush", {b"fast", b"list"}, flags={b"write", b"denyoom"})
 class ListPush(DatabaseCommand):
     notification: NotificationsManager = dependency()
     information: Information = dependency()
@@ -416,7 +416,7 @@ class ListPush(DatabaseCommand):
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"lpushx", {b"list", b"fast"}, flags={b"write", b"denyoom"})
+@command(b"lpushx", {b"fast", b"list"}, flags={b"write", b"denyoom"})
 class ListPushIfExists(DatabaseCommand):
     blocking_manager: ListBlockingManager = dependency()
 
@@ -437,7 +437,7 @@ class ListPushIfExists(DatabaseCommand):
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"rpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"rpop", {b"fast", b"list"}, flags={b"write"})
 class ListRightPop(DatabaseCommand):
     notification: NotificationsManager = dependency()
 
@@ -463,7 +463,7 @@ class ListRightPop(DatabaseCommand):
         return removed
 
 
-@command(b"rpoplpush", {b"list", b"fast"}, flags={b"write"})
+@command(b"rpoplpush", {b"list", b"slow"}, flags={b"write"})
 class ListRightPopLeftPush(DatabaseCommand):
     blocking_manager: ListBlockingManager = dependency()
     source: bytes = positional_parameter()
@@ -511,7 +511,7 @@ class ListRemove(DatabaseCommand):
         return deleted
 
 
-@command(b"rpush", {b"list", b"fast"}, flags={b"write"})
+@command(b"rpush", {b"fast", b"list"}, flags={b"write"})
 class ListPushAtTail(DatabaseCommand):
     blocking_manager: ListBlockingManager = dependency()
 
@@ -533,7 +533,7 @@ class ListPushAtTail(DatabaseCommand):
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"rpushx", {b"list", b"fast"}, flags={b"write"})
+@command(b"rpushx", {b"fast", b"list"}, flags={b"write"})
 class ListPushAtTailIfExists(DatabaseCommand):
     blocking_manager: ListBlockingManager = dependency()
 

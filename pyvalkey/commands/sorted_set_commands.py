@@ -234,7 +234,7 @@ def sorted_set_multikey_pop(
     return None
 
 
-@command(b"zpopmax", {b"sortedset"})
+@command(b"zpopmax", {b"fast", b"sortedset"}, flags={b"write"})
 class SortedSetPopMaximum(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -252,7 +252,7 @@ class SortedSetPopMaximum(DatabaseCommand):
         )
 
 
-@command(b"zpopmin", {b"sortedset"})
+@command(b"zpopmin", {b"fast", b"sortedset"}, flags={b"write"})
 class SortedSetPopMinimum(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -270,7 +270,7 @@ class SortedSetPopMinimum(DatabaseCommand):
         )
 
 
-@command(b"bzpopmax", {b"sortedset"})
+@command(b"bzpopmax", {b"blocking", b"fast", b"sortedset"}, flags={b"write"})
 class SortedSetBlockingPopMaximum(DatabaseCommand):
     client_context: ClientContext = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
@@ -300,7 +300,7 @@ class SortedSetBlockingPopMaximum(DatabaseCommand):
         return result
 
 
-@command(b"bzpopmin", {b"sortedset"})
+@command(b"bzpopmin", {b"blocking", b"fast", b"sortedset"}, flags={b"write"})
 class SortedSetBlockingPopMinimum(DatabaseCommand):
     client_context: ClientContext = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
@@ -331,7 +331,10 @@ class SortedSetBlockingPopMinimum(DatabaseCommand):
 
 
 @command(
-    b"zadd", {b"sortedset", b"fast"}, flags={b"write"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    b"zadd",
+    {b"fast", b"sortedset"},
+    flags={b"write"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
 )
 class SortedSetAdd(DatabaseCommand):
     blocking_manager: SortedSetBlockingManager = dependency()
@@ -410,7 +413,7 @@ POP_MODIFIER_TO_OPERATION: dict[PopModifier, Callable[[ScoredSortedSet], tuple[f
 }
 
 
-@command(b"zmpop", {b"sortedset"})
+@command(b"zmpop", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetMultiplePop(Command):
     database: Database = dependency()
 
@@ -431,7 +434,7 @@ class SortedSetMultiplePop(Command):
         return result if result is not None else ArrayNone
 
 
-@command(b"bzmpop", {b"sortedset"})
+@command(b"bzmpop", {b"blocking", b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetBlockingMultiplePop(Command):
     client_context: ClientContext = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
@@ -470,7 +473,7 @@ class SortedSetBlockingMultiplePop(Command):
         return [self._key, result]
 
 
-@command(b"zrange", {b"read", b"sortedset", b"slow"})
+@command(b"zrange", {b"read", b"slow", b"sortedset"})
 class SortedSetRange(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -498,7 +501,7 @@ class SortedSetRange(DatabaseCommand):
         )
 
 
-@command(b"zrangestore", {b"sortedset", b"slow"}, flags={b"write"})
+@command(b"zrangestore", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRangeStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     key: bytes = positional_parameter()
@@ -524,7 +527,7 @@ class SortedSetRangeStore(DatabaseCommand):
         )
 
 
-@command(b"zrevrange", {b"read", b"sortedset", b"slow"})
+@command(b"zrevrange", {b"read", b"slow", b"sortedset"})
 class SortedSetReversedRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: bytes = positional_parameter()
@@ -542,7 +545,7 @@ class SortedSetReversedRange(DatabaseCommand):
         )
 
 
-@command(b"zrangebyscore", {b"read", b"sortedset", b"slow"})
+@command(b"zrangebyscore", {b"read", b"slow", b"sortedset"})
 class SortedSetRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -562,7 +565,7 @@ class SortedSetRangeByScore(DatabaseCommand):
         )
 
 
-@command(b"zrevrangebyscore", {b"read", b"sortedset", b"slow"})
+@command(b"zrevrangebyscore", {b"read", b"slow", b"sortedset"})
 class SortedSetReversedRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
@@ -583,7 +586,7 @@ class SortedSetReversedRangeByScore(DatabaseCommand):
         )
 
 
-@command(b"zrangebylex", {b"read", b"sortedset", b"slow"})
+@command(b"zrangebylex", {b"read", b"slow", b"sortedset"})
 class SortedSetRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -601,7 +604,7 @@ class SortedSetRangeByLexical(DatabaseCommand):
         )
 
 
-@command(b"zrevrangebylex", {b"read", b"sortedset", b"slow"})
+@command(b"zrevrangebylex", {b"read", b"slow", b"sortedset"})
 class SortedSetReversedRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     max: bytes = positional_parameter()
@@ -620,7 +623,7 @@ class SortedSetReversedRangeByLexical(DatabaseCommand):
         )
 
 
-@command(b"zcount", {b"read", b"sortedset", b"fast"})
+@command(b"zcount", {b"fast", b"read", b"sortedset"})
 class SortedSetCount(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -639,7 +642,7 @@ class SortedSetCount(DatabaseCommand):
         )
 
 
-@command(b"zcard", {b"read", b"sortedset", b"fast"})
+@command(b"zcard", {b"fast", b"read", b"sortedset"})
 class SortedSetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -647,7 +650,7 @@ class SortedSetCardinality(DatabaseCommand):
         return len(self.database.sorted_set_database.get_or_create(self.key).value.members)
 
 
-@command(b"zscore", {b"read", b"sortedset", b"fast"})
+@command(b"zscore", {b"fast", b"read", b"sortedset"})
 class SortedSetMemberScore(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
@@ -658,7 +661,7 @@ class SortedSetMemberScore(DatabaseCommand):
         return value.members_scores.get(self.member, None)
 
 
-@command(b"zmscore", {b"read", b"sortedset", b"fast"})
+@command(b"zmscore", {b"fast", b"read", b"sortedset"})
 class SortedSetMultipleMemberScore(DatabaseCommand):
     key: bytes = positional_parameter()
     members: list[bytes] = positional_parameter()
@@ -672,7 +675,7 @@ class SortedSetMultipleMemberScore(DatabaseCommand):
         return [value.members_scores.get(member, None) for member in self.members]
 
 
-@command(b"zincrby", {b"read", b"sortedset", b"fast"})
+@command(b"zincrby", {b"fast", b"sortedset"}, flags={b"write"})
 class SortedSetIncrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: float = positional_parameter()
@@ -694,7 +697,7 @@ class SortedSetIncrementBy(DatabaseCommand):
         return new_score
 
 
-@command(b"zrem", {b"read", b"sortedset", b"fast"})
+@command(b"zrem", {b"fast", b"sortedset"}, flags={b"write"})
 class SortedSetRemove(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -720,7 +723,7 @@ class SortedSetRemove(DatabaseCommand):
         return removed_members
 
 
-@command(b"zrank", {b"read", b"sortedset", b"fast"})
+@command(b"zrank", {b"fast", b"read", b"sortedset"})
 class SortedSetRank(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
@@ -741,7 +744,7 @@ class SortedSetRank(DatabaseCommand):
         return rank
 
 
-@command(b"zrevrank", {b"read", b"sortedset", b"fast"})
+@command(b"zrevrank", {b"fast", b"read", b"sortedset"})
 class SortedSetReversedRank(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
@@ -762,7 +765,7 @@ class SortedSetReversedRank(DatabaseCommand):
         return rank
 
 
-@command(b"zlexcount", {b"read", b"sortedset", b"fast"})
+@command(b"zlexcount", {b"fast", b"read", b"sortedset"})
 class SortedSetLexicalCount(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -781,7 +784,7 @@ class SortedSetLexicalCount(DatabaseCommand):
         )
 
 
-@command(b"zremrangebyscore", {b"sortedset", b"fast"}, flags={b"write"})
+@command(b"zremrangebyscore", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRemoveRangeByScore(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -812,7 +815,7 @@ class SortedSetRemoveRangeByScore(DatabaseCommand):
         return removed_members
 
 
-@command(b"zremrangebyrank", {b"sortedset", b"fast"}, flags={b"write"})
+@command(b"zremrangebyrank", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRemoveRangeByRank(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -843,7 +846,7 @@ class SortedSetRemoveRangeByRank(DatabaseCommand):
         return removed_members
 
 
-@command(b"zremrangebylex", {b"sortedset", b"fast"}, flags={b"write"})
+@command(b"zremrangebylex", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRemoveRangeByLexical(DatabaseCommand):
     key: bytes = positional_parameter()
     min: bytes = positional_parameter()
@@ -940,7 +943,7 @@ def apply_sorted_set_store_operation(
     return len(new_set)
 
 
-@command(b"zunionstore", {b"set", b"slow"}, flags={b"write"})
+@command(b"zunionstore", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     numkeys: int = positional_parameter()
@@ -987,7 +990,7 @@ def apply_sorted_set_operation(
     return [member for score, member in new_set.members]
 
 
-@command(b"zunion", {b"set", b"slow"}, flags={b"write"})
+@command(b"zunion", {b"read", b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetUnion(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -1014,7 +1017,7 @@ class SortedSetUnion(DatabaseCommand):
         )
 
 
-@command(b"zinter", {b"set", b"slow"}, flags={b"write"})
+@command(b"zinter", {b"read", b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetIntersection(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -1041,7 +1044,7 @@ class SortedSetIntersection(DatabaseCommand):
         )
 
 
-@command(b"zinterstore", {b"set", b"slow"}, flags={b"write"})
+@command(b"zinterstore", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetIntersectionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     numkeys: int = positional_parameter()
@@ -1067,7 +1070,7 @@ class SortedSetIntersectionStore(DatabaseCommand):
         )
 
 
-@command(b"zdiffstore", {b"set", b"slow"}, flags={b"write"})
+@command(b"zdiffstore", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetDifferenceStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     numkeys: int = positional_parameter()
@@ -1093,7 +1096,7 @@ class SortedSetDifferenceStore(DatabaseCommand):
         )
 
 
-@command(b"zintercard", {b"set", b"slow"}, flags={b"write"})
+@command(b"zintercard", {b"read", b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
@@ -1120,7 +1123,7 @@ class SortedSetIntersectionCardinality(DatabaseCommand):
         return cardinality if self.limit == 0 else min(cardinality, self.limit)
 
 
-@command(b"zdiff", {b"set", b"slow"}, flags={b"write"})
+@command(b"zdiff", {b"read", b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetDifference(DatabaseCommand):
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
@@ -1139,7 +1142,7 @@ class SortedSetDifference(DatabaseCommand):
         )
 
 
-@command(b"zrandmember", {b"string", b"slow"}, flags={b"write"})
+@command(b"zrandmember", {b"read", b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRandomMember(DatabaseCommand):
     client_context: ClientContext = dependency()
 
@@ -1196,7 +1199,7 @@ class SortedSetRandomMember(DatabaseCommand):
         return result
 
 
-@command(b"zscan", {b"read", b"sortedset", b"slow"})
+@command(b"zscan", {b"read", b"slow", b"sortedset"})
 class SortedSetScan(DatabaseCommand):
     key: bytes = positional_parameter()
     cursor: int = positional_parameter()

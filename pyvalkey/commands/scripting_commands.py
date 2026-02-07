@@ -11,7 +11,7 @@ from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, ValueType
 
 
-@command(b"eval", {b"connection", b"fast"})
+@command(b"eval", {b"scripting", b"slow"})
 class Eval(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -28,7 +28,7 @@ class Eval(Command):
         )
 
 
-@command(b"fcall", {b"connection", b"fast"})
+@command(b"fcall", {b"scripting", b"slow"})
 class FunctionCall(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -53,7 +53,7 @@ class FunctionCall(Command):
         return self.scripting_engine.call_function(self.function, self.keys_and_args[: self.num_keys], arguments)
 
 
-@command(b"fcall_ro", {b"connection", b"fast"})
+@command(b"fcall_ro", {b"scripting", b"slow"})
 class ReadOnlyFunctionCall(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -80,7 +80,7 @@ class ReadOnlyFunctionCall(Command):
         )
 
 
-@command(b"flush", {b"fast", b"connection"}, parent_command=b"function")
+@command(b"flush", {b"scripting", b"slow"}, parent_command=b"function", flags={b"write"})
 class FunctionFlush(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -91,7 +91,7 @@ class FunctionFlush(Command):
         return RESP_OK
 
 
-@command(b"dump", {b"fast", b"connection"}, parent_command=b"function")
+@command(b"dump", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionDump(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -117,7 +117,7 @@ class FunctionDump(Command):
         return json.dumps(result).encode()
 
 
-@command(b"restore", {b"fast", b"connection"}, parent_command=b"function")
+@command(b"restore", {b"scripting", b"slow"}, parent_command=b"function", flags={b"write"})
 class FunctionRestore(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -152,11 +152,12 @@ class FunctionRestore(Command):
 
 @command(
     b"load",
-    {b"fast", b"connection"},
+    {b"scripting", b"slow"},
     parent_command=b"function",
     metadata={
         CommandMetadata.PARAMETERS_LEFT_ERROR: b"Unknown option given: {next_parameter}",
     },
+    flags={b"write"}
 )
 class FunctionLoad(Command):
     scripting_engine: ScriptingEngine = dependency()
@@ -169,7 +170,7 @@ class FunctionLoad(Command):
         return name
 
 
-@command(b"delete", {b"fast", b"connection"}, parent_command=b"function")
+@command(b"delete", {b"scripting", b"slow"}, parent_command=b"function", flags={b"write"})
 class FunctionDelete(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -183,7 +184,7 @@ class FunctionDelete(Command):
         return RESP_OK
 
 
-@command(b"kill", {b"connection", b"fast"}, parent_command=b"function")
+@command(b"kill", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionKill(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -194,13 +195,13 @@ class FunctionKill(Command):
         return RESP_OK
 
 
-@command(b"kill", {b"connection", b"fast"}, parent_command=b"script")
+@command(b"kill", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptKill(Command):
     def execute(self) -> ValueType:
         return RESP_OK
 
 
-@command(b"help", {b"connection", b"fast"}, parent_command=b"script")
+@command(b"help", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptHelp(Command):
     def execute(self) -> ValueType:
         return [
@@ -218,7 +219,7 @@ class ScriptHelp(Command):
         ]
 
 
-@command(b"flush", {b"fast", b"connection"}, parent_command=b"script")
+@command(b"flush", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptFlush(Command):
     scripting_engine: ScriptingEngine = dependency()
 
@@ -226,7 +227,7 @@ class ScriptFlush(Command):
         return RESP_OK
 
 
-@command(b"help", {b"connection", b"fast"}, parent_command=b"function")
+@command(b"help", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionHelp(Command):
     def execute(self) -> ValueType:
         return [
@@ -250,7 +251,7 @@ class FunctionHelp(Command):
         ]
 
 
-@command(b"list", {b"connection", b"fast"}, parent_command=b"function")
+@command(b"list", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionList(Command):
     scripting_engine: ScriptingEngine = dependency()
 

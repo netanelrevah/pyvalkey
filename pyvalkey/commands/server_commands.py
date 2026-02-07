@@ -17,7 +17,7 @@ from pyvalkey.database_objects.information import Information
 from pyvalkey.resp import RESP_OK, RespError, ValueType
 
 
-@command(b"help", {b"slow", b"connection"}, b"acl")
+@command(b"help", {b"slow"}, b"acl")
 class AclHelp(Command):
     def execute(self) -> ValueType:
         return ["genpass"]
@@ -41,7 +41,7 @@ class AclCategory(Command):
         return ACL.get_categories()
 
 
-@command(b"deluser", {b"admin", b"slow", b"dangerous"}, b"acl")
+@command(b"deluser", {b"admin", b"dangerous", b"slow"}, b"acl")
 class AclDeleteUser(Command):
     acl: ACL = dependency()
 
@@ -56,7 +56,7 @@ class AclDeleteUser(Command):
         return user_deleted
 
 
-@command(b"getuser", {b"admin", b"slow", b"dangerous"}, b"acl")
+@command(b"getuser", {b"admin", b"dangerous", b"slow"}, b"acl")
 class AclGetUser(Command):
     acl: ACL = dependency()
     user_name: bytes = positional_parameter()
@@ -67,7 +67,7 @@ class AclGetUser(Command):
         return self.acl[self.user_name].info
 
 
-@command(b"dryrun", {b"admin", b"slow", b"dangerous"}, b"acl")
+@command(b"dryrun", {b"admin", b"dangerous", b"slow"}, b"acl")
 class AclDryRun(Command):
     acl: ACL = dependency()
 
@@ -79,7 +79,7 @@ class AclDryRun(Command):
         return RESP_OK
 
 
-@command(b"setuser", {b"admin", b"slow", b"dangerous"}, b"acl")
+@command(b"setuser", {b"admin", b"dangerous", b"slow"}, b"acl")
 class AclSetUser(Command):
     acl: ACL = dependency()
     user_name: bytes = positional_parameter()
@@ -181,7 +181,7 @@ class AclSetUser(Command):
         return RESP_OK
 
 
-@command(b"getkeys", {b"connection", b"fast"}, b"command")
+@command(b"getkeys", {b"connection", b"slow"}, b"command")
 class CommandGetKeys(Command):
     command: bytes = positional_parameter()
     args: list[bytes] = positional_parameter()
@@ -207,7 +207,7 @@ class CommandGetKeys(Command):
         return keys
 
 
-@command(b"get", {b"admin", b"slow", b"dangerous"}, b"config")
+@command(b"get", {b"admin", b"dangerous", b"slow"}, b"config")
 class ConfigGet(Command):
     configurations: Configurations = dependency()
     parameters: list[bytes] = positional_parameter()
@@ -217,7 +217,7 @@ class ConfigGet(Command):
         return self.configurations.info(names)
 
 
-@command(b"set", {b"admin", b"slow", b"dangerous"}, b"config")
+@command(b"set", {b"admin", b"dangerous", b"slow"}, b"config")
 class ConfigSet(Command):
     configurations: Configurations = dependency()
     parameters_values: list[tuple[bytes, bytes]] = positional_parameter()
@@ -234,7 +234,7 @@ class ConfigSet(Command):
         return RESP_OK
 
 
-@command(b"resetstat", {b"admin", b"slow", b"dangerous"}, b"config")
+@command(b"resetstat", {b"admin", b"dangerous", b"slow"}, b"config")
 class ConfigResetStatistics(Command):
     configurations: Configurations = dependency()
     information: Information = dependency()
@@ -244,7 +244,7 @@ class ConfigResetStatistics(Command):
         return RESP_OK
 
 
-@command(b"dbsize", {b"keyspace", b"read", b"fast"})
+@command(b"dbsize", {b"fast", b"keyspace", b"read"})
 class DatabaseSize(DatabaseCommand):
     def execute(self) -> ValueType:
         return self.database.size()
@@ -278,7 +278,7 @@ def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
         database.touch_all_database_watched_keys()
 
 
-@command(b"flushall", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
+@command(b"flushall", {b"dangerous", b"keyspace", b"slow"}, flags={b"write"})
 class FlushAllDatabases(Command):
     server_context: ServerContext = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -293,7 +293,7 @@ class FlushAllDatabases(Command):
             await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
 
 
-@command(b"flushdb", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
+@command(b"flushdb", {b"dangerous", b"keyspace", b"slow"}, flags={b"write"})
 class FlushDatabase(Command):
     blocking_manager: StreamBlockingManager = dependency()
     client_context: ClientContext = dependency()
@@ -318,7 +318,7 @@ class FlushDatabase(Command):
             await self.blocking_manager.notify(key, in_multi=in_multi)
 
 
-@command(b"info", {b"slow", b"dangerous"})
+@command(b"info", {b"connection", b"dangerous", b"slow"})
 class GetInformation(Command):
     information: Information = dependency()
 
@@ -328,7 +328,7 @@ class GetInformation(Command):
         return self.information.sections(self.section)
 
 
-@command(b"help", {b"read", b"slow"}, parent_command=b"memory")
+@command(b"help", {b"slow"}, parent_command=b"memory")
 class MemoryHelp(Command):
     def execute(self) -> ValueType:
         return [
@@ -348,7 +348,7 @@ class MemoryUsage(Command):
         return 1
 
 
-@command(b"swapdb", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
+@command(b"swapdb", {b"dangerous", b"fast", b"keyspace"}, flags={b"write"})
 class SwapDb(Command):
     server_context: ServerContext = dependency()
     blocking_manager: BlockingManager = dependency()
@@ -386,7 +386,7 @@ class SwapDb(Command):
         await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index2], in_multi=in_multi)
 
 
-@command(b"sync", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
+@command(b"sync", {b"admin", b"dangerous", b"slow"}, flags={b"write"})
 class Sync(Command):
     def execute(self) -> ValueType:
         return RESP_OK

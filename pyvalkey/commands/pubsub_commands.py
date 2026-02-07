@@ -6,7 +6,7 @@ from pyvalkey.notifications import ClientSubscriptions, SubscriptionsManager
 from pyvalkey.resp import BulkArray, DoNotReply, ValueType
 
 
-@command(b"subscribe", {b"slow", b"connection"})
+@command(b"subscribe", {b"pubsub", b"slow"})
 class Subscribe(Command):
     subscriptions: ClientSubscriptions = dependency()
 
@@ -20,7 +20,7 @@ class Subscribe(Command):
         return DoNotReply
 
 
-@command(b"psubscribe", {b"slow", b"connection"})
+@command(b"psubscribe", {b"pubsub", b"slow"})
 class SubscribeToPatternedChannel(Command):
     subscriptions: ClientSubscriptions = dependency()
 
@@ -34,7 +34,7 @@ class SubscribeToPatternedChannel(Command):
         return DoNotReply
 
 
-@command(b"unsubscribe", {b"slow", b"connection"})
+@command(b"unsubscribe", {b"pubsub", b"slow"})
 class Unsubscribe(Command):
     subscriptions: ClientSubscriptions = dependency()
 
@@ -55,7 +55,7 @@ class Unsubscribe(Command):
         return result
 
 
-@command(b"punsubscribe", {b"slow", b"connection"})
+@command(b"punsubscribe", {b"pubsub", b"slow"})
 class UnsubscribeFromPatternedChannel(Command):
     subscriptions: ClientSubscriptions = dependency()
 
@@ -79,7 +79,7 @@ class UnsubscribeFromPatternedChannel(Command):
         return DoNotReply
 
 
-@command(b"channels", {b"slow", b"connection"}, parent_command=b"pubsub")
+@command(b"channels", {b"pubsub", b"slow"}, parent_command=b"pubsub")
 class PubSubChannels(Command):
     subscriptions_manager: SubscriptionsManager = dependency()
 
@@ -99,7 +99,7 @@ class PubSubChannels(Command):
         ]
 
 
-@command(b"help", {b"slow", b"connection"}, parent_command=b"pubsub")
+@command(b"help", {b"slow"}, parent_command=b"pubsub")
 class PubSubHelp(Command):
     def execute(self) -> ValueType:
         return [
@@ -115,7 +115,7 @@ class PubSubHelp(Command):
         ]
 
 
-@command(b"numsub", {b"slow", b"connection"}, parent_command=b"pubsub")
+@command(b"numsub", {b"pubsub", b"slow"}, parent_command=b"pubsub")
 class PubSubNumberOfSubscribers(Command):
     subscriptions_manager: SubscriptionsManager = dependency()
 
@@ -132,7 +132,7 @@ class PubSubNumberOfSubscribers(Command):
         return result
 
 
-@command(b"numpat", {b"slow", b"connection"}, parent_command=b"pubsub")
+@command(b"numpat", {b"pubsub", b"slow"}, parent_command=b"pubsub")
 class PubSubNumberOfPatterns(Command):
     subscriptions_manager: SubscriptionsManager = dependency()
 
@@ -140,7 +140,7 @@ class PubSubNumberOfPatterns(Command):
         return self.subscriptions_manager.patterns_queues.keys_count
 
 
-@command(b"publish", {b"slow", b"connection"})
+@command(b"publish", {b"fast", b"pubsub"})
 class Publish(Command):
     subscription_manager: SubscriptionsManager = dependency()
 

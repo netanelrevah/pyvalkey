@@ -43,7 +43,7 @@ class MinimumId:
     limit: int | None = keyword_parameter(flag=b"LIMIT", default=None)
 
 
-@command(b"xtrim", {b"stream", b"fast"}, flags={b"write"})
+@command(b"xtrim", {b"slow", b"stream"}, flags={b"write"})
 class StreamTrim(Command):
     database: Database = dependency()
     configuration: Configurations = dependency()
@@ -117,7 +117,7 @@ class StreamTrim(Command):
         return self.trim(value, self.maximum_length, self.minimum_id, self.configuration.stream_node_max_entries)
 
 
-@command(b"xadd", {b"stream", b"fast"}, flags={b"write"})
+@command(b"xadd", {b"fast", b"stream"}, flags={b"write"})
 class StreamAdd(Command):
     database: Database = dependency()
     configuration: Configurations = dependency()
@@ -192,7 +192,7 @@ class StreamAdd(Command):
             await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"help", {b"stream", b"fast"}, parent_command=b"xgroup", flags={b"read"})
+@command(b"help", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"read"})
 class StreamGroupHelp(Command):
     def execute(self) -> ValueType:
         return [
@@ -213,7 +213,7 @@ class StreamGroupHelp(Command):
         ]
 
 
-@command(b"help", {b"stream", b"fast"}, parent_command=b"xinfo", flags={b"read"})
+@command(b"help", {b"slow", b"stream"}, parent_command=b"xinfo", flags={b"read"})
 class StreamInfoHelp(Command):
     def execute(self) -> ValueType:
         return [
@@ -230,7 +230,7 @@ class StreamInfoHelp(Command):
         ]
 
 
-@command(b"xlen", {b"stream", b"fast"}, flags={b"write"})
+@command(b"xlen", {b"fast", b"read", b"stream"}, flags={b"write"})
 class StreamLength(Command):
     database: Database = dependency()
 
@@ -240,7 +240,7 @@ class StreamLength(Command):
         return len(self.database.stream_database.get_value_or_empty(self.key))
 
 
-@command(b"xdel", {b"stream", b"fast"}, flags={b"write"})
+@command(b"xdel", {b"fast", b"stream"}, flags={b"write"})
 class StreamDelete(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -314,7 +314,7 @@ def _parse_range(start: bytes, end: bytes) -> tuple[int | None, int | None, int 
     )
 
 
-@command(b"xrange", {b"stream", b"fast"}, flags={b"write"})
+@command(b"xrange", {b"read", b"slow", b"stream"}, flags={b"write"})
 class StreamRange(Command):
     database: Database = dependency()
 
@@ -343,7 +343,7 @@ class StreamRange(Command):
         return self.range(self.database.stream_database.get_value_or_empty(self.key), self.start, self.end, self.count)
 
 
-@command(b"xrevrange", {b"stream", b"fast"}, flags={b"write"})
+@command(b"xrevrange", {b"read", b"slow", b"stream"}, flags={b"write"})
 class StreamReversedRange(Command):
     database: Database = dependency()
 
@@ -362,7 +362,7 @@ class StreamReversedRange(Command):
         )
 
 
-@command(b"create", {b"stream", b"slow"}, b"xgroup", flags={b"write"})
+@command(b"create", {b"slow", b"stream"}, b"xgroup", flags={b"write"})
 class StreamGroupCreate(Command):
     database: Database = dependency()
 
@@ -403,7 +403,7 @@ class StreamGroupCreate(Command):
         return RESP_OK
 
 
-@command(b"setid", {b"stream", b"slow"}, b"xgroup", flags={b"write"})
+@command(b"setid", {b"slow", b"stream"}, b"xgroup", flags={b"write"})
 class StreamGroupSetId(Command):
     database: Database = dependency()
 
@@ -444,7 +444,7 @@ class StreamGroupSetId(Command):
         return RESP_OK
 
 
-@command(b"groups", {b"stream", b"fast"}, b"xinfo", flags={b"write"})
+@command(b"groups", {b"read", b"slow", b"stream"}, b"xinfo", flags={b"write"})
 class StreamInfoGroups(Command):
     database: Database = dependency()
     key: bytes = positional_parameter()
@@ -476,9 +476,9 @@ class StreamInfoGroups(Command):
 
 @command(
     b"xsetid",
-    {b"stream", b"fast"},
+    {b"fast", b"stream"},
     flags={b"write"},
-    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
 )
 class StreamSetId(Command):
     database: Database = dependency()
@@ -530,7 +530,7 @@ class StreamSetId(Command):
         return RESP_OK
 
 
-@command(b"consumers", {b"stream", b"fast"}, b"xinfo", flags={b"write"})
+@command(b"consumers", {b"read", b"slow", b"stream"}, b"xinfo", flags={b"write"})
 class StreamInfoConsumers(Command):
     database: Database = dependency()
     configuration: Configurations = dependency()
@@ -599,7 +599,7 @@ class StreamInfoConsumer(Command):
         ]
 
 
-@command(b"stream", {b"stream", b"fast"}, b"xinfo", flags={b"write"})
+@command(b"stream", {b"read", b"slow", b"stream"}, b"xinfo", flags={b"write"})
 class StreamInfoStream(Command):
     database: Database = dependency()
     configuration: Configurations = dependency()
@@ -678,7 +678,7 @@ class StreamInfoStream(Command):
         ]
 
 
-@command(b"xread", {b"stream"})
+@command(b"xread", {b"blocking", b"read", b"slow", b"stream"})
 class StreamRead(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -732,7 +732,7 @@ class StreamRead(Command):
         return result
 
 
-@command(b"xreadgroup", {b"stream", b"slow", b"blocking"}, flags={b"write"})
+@command(b"xreadgroup", {b"blocking", b"slow", b"stream"}, flags={b"write"})
 class StreamGroupRead(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -865,7 +865,7 @@ class ExtendedPendingParameters:
     consumer: bytes | None = positional_parameter(default=None)
 
 
-@command(b"xpending", {b"stream", b"slow", b"blocking"}, flags={b"write"})
+@command(b"xpending", {b"read", b"slow", b"stream"}, flags={b"write"})
 class StreamGroupPending(Command):
     database: Database = dependency()
 
@@ -944,7 +944,7 @@ class StreamGroupPending(Command):
         return result
 
 
-@command(b"xack", {b"stream", b"slow", b"blocking"}, flags={b"write"})
+@command(b"xack", {b"fast", b"stream"}, flags={b"write"})
 class StreamGroupAcknowledge(Command):
     database: Database = dependency()
 
@@ -979,7 +979,7 @@ class StreamGroupAcknowledge(Command):
         return deleted_count
 
 
-@command(b"destroy", {b"stream", b"slow", b"blocking"}, parent_command=b"xgroup", flags={b"write"})
+@command(b"destroy", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"write"})
 class StreamGroupDestroy(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -1003,7 +1003,7 @@ class StreamGroupDestroy(Command):
             await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)
 
 
-@command(b"xautoclaim", {b"stream", b"slow", b"blocking"}, flags={b"write"})
+@command(b"xautoclaim", {b"fast", b"stream"}, flags={b"write"})
 class StreamGroupAutoClaim(Command):
     database: Database = dependency()
     client_context: ClientContext = dependency()
@@ -1076,7 +1076,7 @@ class StreamGroupAutoClaim(Command):
         return [_format_entry_id(next_entry_id), stream_entries, deleted_entries]
 
 
-@command(b"xclaim", {b"stream", b"slow", b"blocking"}, flags={b"write"})
+@command(b"xclaim", {b"fast", b"stream"}, flags={b"write"})
 class StreamGroupClaim(Command):
     database: Database = dependency()
     client_context: ClientContext = dependency()
@@ -1149,7 +1149,7 @@ class StreamGroupClaim(Command):
         return stream_entries
 
 
-@command(b"createconsumer", {b"stream", b"slow", b"blocking"}, parent_command=b"xgroup", flags={b"write"})
+@command(b"createconsumer", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"write"})
 class StreamGroupCreateConsumer(Command):
     database: Database = dependency()
 
@@ -1177,7 +1177,7 @@ class StreamGroupCreateConsumer(Command):
         return 1
 
 
-@command(b"delconsumer", {b"stream", b"slow", b"blocking"}, parent_command=b"xgroup", flags={b"write"})
+@command(b"delconsumer", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"write"})
 class StreamGroupDeleteConsumer(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()

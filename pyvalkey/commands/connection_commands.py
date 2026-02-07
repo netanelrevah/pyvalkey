@@ -20,7 +20,7 @@ from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespProtocolVersion, V
 from pyvalkey.utils.times import now_f_s
 
 
-@command(b"auth", {b"fast", b"connection"})
+@command(b"auth", {b"connection", b"fast"})
 class Authorize(Command):
     acl: ACL = dependency()
     configurations: Configurations = dependency()
@@ -79,7 +79,7 @@ class ClientHelp(Command):
         ]
 
 
-@command(b"list", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
+@command(b"list", {b"admin", b"connection", b"dangerous", b"slow"}, b"client")
 class ClientList(Command):
     client_context: ClientContext = dependency()
     client_type: bytes | None = keyword_parameter(flag=b"TYPE", default=None)
@@ -90,7 +90,7 @@ class ClientList(Command):
         return self.client_context.server_context.clients.info
 
 
-@command(b"id", {b"slow", b"connection"}, b"client")
+@command(b"id", {b"connection", b"slow"}, b"client")
 class ClientId(Command):
     client_context: ClientContext = dependency()
 
@@ -98,7 +98,7 @@ class ClientId(Command):
         return self.client_context.current_client.client_id
 
 
-@command(b"setname", {b"slow", b"connection"}, b"client")
+@command(b"setname", {b"connection", b"slow"}, b"client")
 class ClientSetName(Command):
     client_context: ClientContext = dependency()
     name: bytes = positional_parameter()
@@ -108,7 +108,7 @@ class ClientSetName(Command):
         return RESP_OK
 
 
-@command(b"getname", {b"slow", b"connection"}, b"client")
+@command(b"getname", {b"connection", b"slow"}, b"client")
 class ClientGetName(Command):
     client_context: ClientContext = dependency()
 
@@ -116,7 +116,7 @@ class ClientGetName(Command):
         return self.client_context.current_client.name or None
 
 
-@command(b"kill", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
+@command(b"kill", {b"admin", b"connection", b"dangerous", b"slow"}, b"client")
 class ClientKill(Command):
     server_context: ServerContext = dependency()
     old_format_address: bytes | None = positional_parameter(default=None)
@@ -138,7 +138,7 @@ class ClientKill(Command):
         return len(clients)
 
 
-@command(b"pause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
+@command(b"pause", {b"admin", b"connection", b"dangerous", b"slow"}, b"client")
 class ClientPause(Command):
     server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
@@ -159,7 +159,7 @@ class ClientPause(Command):
         return RESP_OK
 
 
-@command(b"unpause", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
+@command(b"unpause", {b"admin", b"connection", b"dangerous", b"slow"}, b"client")
 class ClientUnpause(Command):
     server_context: ServerContext = dependency()
     timeout_seconds: int = positional_parameter()
@@ -170,7 +170,7 @@ class ClientUnpause(Command):
         return RESP_OK
 
 
-@command(b"reply", {b"slow", b"connection"}, b"client")
+@command(b"reply", {b"connection", b"slow"}, b"client")
 class ClientReply(Command):
     client_context: ClientContext = dependency()
 
@@ -190,7 +190,7 @@ class UnblockOption(Enum):
     error = b"ERROR"
 
 
-@command(b"unblock", {b"slow", b"connection"}, b"client")
+@command(b"unblock", {b"admin", b"connection", b"dangerous", b"slow"}, b"client")
 class ClientUnblock(Command):
     server_context: ServerContext = dependency()
 
@@ -217,7 +217,7 @@ class ClientUnblock(Command):
         return self._unblocked
 
 
-@command(b"setinfo", {b"slow", b"connection"}, b"client")
+@command(b"setinfo", {b"connection", b"slow"}, b"client")
 class ClientSetInformation(Command):
     client_context: ClientContext = dependency()
     library_name: bytes | None = keyword_parameter(token=b"LIB-NAME", default=None)
@@ -231,7 +231,7 @@ class ClientSetInformation(Command):
         return RESP_OK
 
 
-@command(b"echo", {b"fast", b"connection"})
+@command(b"echo", {b"connection", b"fast"})
 class Echo(Command):
     message: bytes = positional_parameter()
 
@@ -266,7 +266,7 @@ class Hello(Command):
         return response
 
 
-@command(b"ping", {b"fast", b"connection"})
+@command(b"ping", {b"connection", b"fast"})
 class Ping(Command):
     client_context: ClientContext = dependency()
     subscriptions: ClientSubscriptions = dependency()

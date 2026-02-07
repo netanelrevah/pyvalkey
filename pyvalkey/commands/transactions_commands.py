@@ -25,7 +25,7 @@ def unwatch(databases: dict[int, Database], client_watchlist: ClientWatchlist) -
     client_watchlist.watchlist = {}
 
 
-@command(b"multi", {b"transaction", b"fast"}, flags={b"nomulti"})
+@command(b"multi", {b"fast", b"transaction"}, flags={b"nomulti"})
 class TransactionStart(Command):
     client_context: ClientContext = dependency()
 
@@ -35,7 +35,7 @@ class TransactionStart(Command):
         return RESP_OK
 
 
-@command(b"discard", {b"transaction", b"fast"})
+@command(b"discard", {b"fast", b"transaction"})
 class TransactionDiscard(Command):
     client_context: ClientContext = dependency()
 
@@ -49,7 +49,7 @@ class TransactionDiscard(Command):
         return RESP_OK
 
 
-@command(b"exec", {b"connection", b"fast"})
+@command(b"exec", {b"slow", b"transaction"})
 class TransactionExecute(Command):
     database: Database = dependency()
     client_context: ClientContext = dependency()
@@ -99,7 +99,7 @@ class TransactionExecute(Command):
         await self.stream_blocking_manager.notify_lazy(self.database)
 
 
-@command(b"watch", {b"transaction", b"fast"}, flags={b"nomulti"})
+@command(b"watch", {b"fast", b"transaction"}, flags={b"nomulti"})
 class TransactionWatch(Command):
     client_context: ClientContext = dependency()
 
@@ -117,7 +117,7 @@ class TransactionWatch(Command):
         return RESP_OK
 
 
-@command(b"unwatch", {b"transaction", b"fast"}, flags={b"nomulti"})
+@command(b"unwatch", {b"fast", b"transaction"}, flags={b"nomulti"})
 class TransactionUnwatch(Command):
     client_context: ClientContext = dependency()
 

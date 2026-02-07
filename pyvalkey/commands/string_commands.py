@@ -46,7 +46,7 @@ def increment_by(database: Database, key: bytes, increment: int | float = 1) -> 
         raise ValueError()
 
 
-@command(b"append", {b"string", b"fast"}, flags={b"write"})
+@command(b"append", {b"fast", b"string"}, flags={b"write"})
 class Append(DatabaseCommand):
     key: bytes = positional_parameter()
     value: bytes = positional_parameter()
@@ -58,7 +58,7 @@ class Append(DatabaseCommand):
         return len(value)
 
 
-@command(b"decr", {b"string", b"fast"}, flags={b"write"})
+@command(b"decr", {b"fast", b"string"}, flags={b"write"})
 class Decrement(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -66,7 +66,7 @@ class Decrement(DatabaseCommand):
         return increment_by(self.database, self.key, -1)
 
 
-@command(b"decrby", {b"string", b"fast"}, flags={b"write"})
+@command(b"decrby", {b"fast", b"string"}, flags={b"write"})
 class DecrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     decrement: int = positional_parameter()
@@ -78,7 +78,7 @@ class DecrementBy(DatabaseCommand):
         return increment_by(self.database, self.key, self.decrement * -1)
 
 
-@command(b"get", {b"read", b"string", b"fast"})
+@command(b"get", {b"admin", b"dangerous", b"fast", b"read", b"slow", b"string"})
 class Get(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
 
@@ -86,7 +86,7 @@ class Get(DatabaseCommand):
         return self.database.string_database.get_value_or_none(self.key)
 
 
-@command(b"getdel", {b"read", b"string", b"fast"})
+@command(b"getdel", {b"fast", b"string"}, flags={b"write"})
 class GetDelete(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
@@ -98,7 +98,10 @@ class GetDelete(DatabaseCommand):
 
 
 @command(
-    b"getex", {b"string", b"fast"}, flags={b"write"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    b"getex",
+    {b"fast", b"string"},
+    flags={b"write"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
 class GetExpire(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"R")
@@ -135,7 +138,7 @@ class GetExpire(DatabaseCommand):
         return key_value.value
 
 
-@command(b"getrange", {b"stream", b"fast"}, flags={b"write"})
+@command(b"getrange", {b"read", b"slow", b"string"}, flags={b"write"})
 class StringGetRange(DatabaseCommand):
     key: bytes = positional_parameter()
     start: int = positional_parameter()
@@ -146,7 +149,7 @@ class StringGetRange(DatabaseCommand):
         return value[parse_range_parameters(self.start, self.end)]
 
 
-@command(b"getset", {b"string", b"slow"}, flags={b"write"})
+@command(b"getset", {b"fast", b"string"}, flags={b"write"})
 class GetSet(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
@@ -157,7 +160,7 @@ class GetSet(DatabaseCommand):
         return old_value
 
 
-@command(b"incr", {b"string", b"fast"}, flags={b"write"})
+@command(b"incr", {b"fast", b"string"}, flags={b"write"})
 class Increment(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -165,7 +168,7 @@ class Increment(DatabaseCommand):
         return increment_by(self.database, self.key)
 
 
-@command(b"incrby", {b"string", b"fast"}, flags={b"write"})
+@command(b"incrby", {b"fast", b"string"}, flags={b"write"})
 class IncrementBy(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: int = positional_parameter()
@@ -174,7 +177,7 @@ class IncrementBy(DatabaseCommand):
         return increment_by(self.database, self.key, self.increment)
 
 
-@command(b"incrbyfloat", {b"string", b"fast"}, flags={b"write"})
+@command(b"incrbyfloat", {b"fast", b"string"}, flags={b"write"})
 class IncrementByFloat(DatabaseCommand):
     key: bytes = positional_parameter()
     increment: float = positional_parameter()
@@ -185,7 +188,7 @@ class IncrementByFloat(DatabaseCommand):
         return increment_by(self.database, self.key, self.increment)
 
 
-@command(b"lcs", {b"string", b"fast"}, flags={b"write"})
+@command(b"lcs", {b"read", b"slow", b"string"}, flags={b"write"})
 class LongestCommonSubsequence(DatabaseCommand):
     key1: bytes = positional_parameter()
     key2: bytes = positional_parameter()
@@ -288,7 +291,7 @@ class LongestCommonSubsequence(DatabaseCommand):
         return {b"matches": matches, b"len": lcs_length}
 
 
-@command(b"mget", {b"read", b"string", b"fast"})
+@command(b"mget", {b"fast", b"read", b"string"})
 class MultipleGet(DatabaseCommand):
     keys: list[bytes] = positional_parameter(key_mode=b"R")
 
@@ -308,7 +311,7 @@ class MultipleGet(DatabaseCommand):
         return result
 
 
-@command(b"mset", {b"string", b"slow"}, flags={b"write"})
+@command(b"mset", {b"slow", b"string"}, flags={b"write"})
 class SetMultiple(DatabaseCommand):
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
@@ -318,7 +321,7 @@ class SetMultiple(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"msetnx", {b"string", b"slow"}, flags={b"write"})
+@command(b"msetnx", {b"slow", b"string"}, flags={b"write"})
 class SetIfNotExistsMultiple(DatabaseCommand):
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
@@ -336,7 +339,7 @@ class ExistenceMode(Enum):
     OnlyIfExist = b"XX"
 
 
-@command(b"set", {b"string", b"slow"}, flags={b"write"})
+@command(b"set", {b"admin", b"dangerous", b"slow", b"string"}, flags={b"write"})
 class Set(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -412,7 +415,7 @@ class Set(Command):
             await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)
 
 
-@command(b"setex", {b"string", b"slow"}, flags={b"write"})
+@command(b"setex", {b"slow", b"string"}, flags={b"write"})
 class SetExpire(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     seconds: int = positional_parameter()
@@ -424,7 +427,7 @@ class SetExpire(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"psetex", {b"string", b"slow"}, flags={b"write"})
+@command(b"psetex", {b"slow", b"string"}, flags={b"write"})
 class SetExpireMilliseconds(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     milliseconds: int = positional_parameter()
@@ -436,7 +439,7 @@ class SetExpireMilliseconds(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"setnx", {b"string", b"fast"}, flags={b"write"})
+@command(b"setnx", {b"fast", b"string"}, flags={b"write"})
 class SetIfNotExists(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
@@ -449,7 +452,7 @@ class SetIfNotExists(DatabaseCommand):
         return True
 
 
-@command(b"setrange", {b"string", b"slow"}, flags={b"write"})
+@command(b"setrange", {b"slow", b"string"}, flags={b"write"})
 class SetRange(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
     offset: int = positional_parameter()
@@ -476,7 +479,7 @@ class SetRange(DatabaseCommand):
         return len(new_value)
 
 
-@command(b"strlen", {b"read", b"string", b"fast"})
+@command(b"strlen", {b"fast", b"read", b"string"})
 class StringLength(DatabaseCommand):
     key: bytes = positional_parameter(key_mode=b"RW")
 
@@ -484,7 +487,7 @@ class StringLength(DatabaseCommand):
         return len(self.database.bytes_database.get_value_or_empty(self.key))
 
 
-@command(b"substr", {b"stream", b"fast"}, flags={b"write"})
+@command(b"substr", {b"read", b"slow", b"string"}, flags={b"write"})
 class StringSubstring(DatabaseCommand):
     key: bytes = positional_parameter()
     start: int = positional_parameter()

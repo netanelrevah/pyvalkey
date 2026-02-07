@@ -18,7 +18,7 @@ from pyvalkey.enums import NotificationType
 from pyvalkey.resp import ValueType
 
 
-@command(b"smove", {b"set", b"fast"}, flags={b"write"})
+@command(b"smove", {b"fast", b"set"}, flags={b"write"})
 class SetMove(DatabaseCommand):
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -37,7 +37,7 @@ class SetMove(DatabaseCommand):
         return True
 
 
-@command(b"smismember", {b"read", b"set", b"slow"})
+@command(b"smismember", {b"fast", b"read", b"set"})
 class SetAreMembers(DatabaseCommand):
     key: bytes = positional_parameter()
     members: list[bytes] = positional_parameter(sequence_allow_empty=False)
@@ -47,7 +47,7 @@ class SetAreMembers(DatabaseCommand):
         return list(map(lambda m: m in a_set, self.members))
 
 
-@command(b"sismember", {b"read", b"set", b"fast"})
+@command(b"sismember", {b"fast", b"read", b"set"})
 class SetIsMember(DatabaseCommand):
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
@@ -56,7 +56,7 @@ class SetIsMember(DatabaseCommand):
         return self.member in self.database.set_database.get_value_or_empty(self.key)
 
 
-@command(b"smembers", {b"read", b"set", b"fast"})
+@command(b"smembers", {b"read", b"set", b"slow"})
 class SetMembers(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -64,7 +64,7 @@ class SetMembers(DatabaseCommand):
         return list(self.database.set_database.get_value_or_empty(self.key))
 
 
-@command(b"scard", {b"read", b"set", b"fast"})
+@command(b"scard", {b"fast", b"read", b"set"})
 class SetCardinality(DatabaseCommand):
     key: bytes = positional_parameter()
 
@@ -72,7 +72,7 @@ class SetCardinality(DatabaseCommand):
         return len(self.database.set_database.get_value_or_empty(self.key))
 
 
-@command(b"sadd", {b"set", b"fast"}, flags={b"write"})
+@command(b"sadd", {b"fast", b"set"}, flags={b"write"})
 class SetAdd(Command):
     database: Database = dependency()
 
@@ -90,7 +90,7 @@ class SetAdd(Command):
         return added
 
 
-@command(b"spop", {b"set", b"fast"}, flags={b"write"})
+@command(b"spop", {b"fast", b"set"}, flags={b"write"})
 class SetPop(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int = positional_parameter(default=None)
@@ -104,7 +104,7 @@ class SetPop(DatabaseCommand):
         return [value.pop() for _ in range(min(len(value), self.count))]
 
 
-@command(b"srem", {b"set", b"fast"}, flags={b"write"})
+@command(b"srem", {b"fast", b"set"}, flags={b"write"})
 class SetRemove(Command):
     database: Database = dependency()
 
@@ -145,7 +145,9 @@ class SetIntersection(DatabaseCommand):
 
 
 @command(
-    b"sintercard", {b"read", b"set", b"fast"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    b"sintercard",
+    {b"read", b"set", b"slow"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
 )
 class SetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
@@ -213,7 +215,7 @@ class SetDifferenceStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.difference, self.keys, self.destination)
 
 
-@command(b"srandmember", {b"string", b"slow"}, flags={b"write"})
+@command(b"srandmember", {b"read", b"set", b"slow"}, flags={b"write"})
 class SetRandomMember(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
@@ -249,7 +251,7 @@ class SetRandomMember(DatabaseCommand):
         return result
 
 
-@command(b"sscan", {b"read", b"set", b"fast"})
+@command(b"sscan", {b"read", b"set", b"slow"})
 class SetScan(DatabaseCommand):
     key: bytes = positional_parameter()
     cursor: int = positional_parameter()
