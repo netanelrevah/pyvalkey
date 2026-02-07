@@ -58,6 +58,7 @@ To understand which commands and features are currently supported and verified, 
 ## Development and Execution
 - Local Server Start: Run "python -m pyvalkey" to start the server on the default port.
 - Compatibility Testing: Run "pytest" to trigger the Docker-based TCL test execution. Ensure Docker Desktop or Engine is active.
+- To run tests without activating the virtual environment, use `uv run pytest <test_file>`.
 - Targeted Testing: Run specific test tags INSIDE test_pyvalkey_docker folder using "python -m pytest -s --tag=<tag_name> test_valkey.test_tag" (e.g., "pytest -v --tag=multi" for multi command tests)
 - Dependencies: Managed via "uv" (refer to uv.lock and pyproject.toml).
 - Development Setup: Install dev dependencies with "uv sync --all-extras"

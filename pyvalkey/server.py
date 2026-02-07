@@ -96,11 +96,14 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self.pubsub_task = asyncio.create_task(self.pubsub())
 
     def connection_lost(self, exception: Exception | None) -> None:
-        print(f"{self.current_client.client_id} connection lost")
-        self.client_context.subscriptions.unsubscribe_all()
-        if self.client_context.current_client.blocking_context is not None:
-            self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
-        del self.clients[self.current_client.client_id]
+        if self._client_context is not None:
+            print(f"{self.current_client.client_id} connection lost")
+            self.client_context.subscriptions.unsubscribe_all()
+            if self.client_context.current_client.blocking_context is not None:
+                self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
+            del self.clients[self.current_client.client_id]
+        else:
+            print("connection lost before context initialization")
 
     async def pubsub(self) -> None:
         try:

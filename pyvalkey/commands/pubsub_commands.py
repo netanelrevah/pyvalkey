@@ -79,6 +79,42 @@ class UnsubscribeFromPatternedChannel(Command):
         return DoNotReply
 
 
+@command(b"channels", {b"slow", b"connection"}, parent_command=b"pubsub")
+class PubSubChannels(Command):
+    subscriptions_manager: SubscriptionsManager = dependency()
+
+    pattern: bytes | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        if self.pattern is None:
+            return list(self.subscriptions_manager.channels_queues.keys())
+
+        import fnmatch
+
+        decoded_pattern = self.pattern.decode()
+        return [
+            channel
+            for channel in self.subscriptions_manager.channels_queues.keys()
+            if fnmatch.fnmatch(channel.decode() if isinstance(channel, bytes) else str(channel), decoded_pattern)
+        ]
+
+
+@command(b"help", {b"slow", b"connection"}, parent_command=b"pubsub")
+class PubSubHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"PUBSUB <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"CHANNELS [<pattern>]",
+            b"    Return the currently active channels matching a <pattern>.",
+            b"NUMSUB [<channel> ...]",
+            b"    Return the number of subscribers for the specified channels.",
+            b"NUMPAT",
+            b"    Return the number of subscribed patterns.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
 @command(b"numsub", {b"slow", b"connection"}, parent_command=b"pubsub")
 class PubSubNumberOfSubscribers(Command):
     subscriptions_manager: SubscriptionsManager = dependency()

@@ -55,7 +55,7 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
         raise ValueError()
 
 
-@command(b"hdel", {b"write", b"hash", b"fast"})
+@command(b"hdel", {b"hash", b"fast"}, flags={b"write"})
 class HashMapDelete(DatabaseCommand):
     key: bytes = positional_parameter()
     fields: list[bytes] = positional_parameter()
@@ -97,7 +97,7 @@ class HashMapGetAll(DatabaseCommand):
         return response
 
 
-@command(b"hincrby", {b"write", b"hash", b"fast"})
+@command(b"hincrby", {b"hash", b"fast"}, flags={b"write"})
 class HashMapIncreaseBy(DatabaseCommand):
     notifications: NotificationsManager = dependency()
 
@@ -111,7 +111,7 @@ class HashMapIncreaseBy(DatabaseCommand):
         return result
 
 
-@command(b"hincrbyfloat", {b"write", b"hash", b"fast"})
+@command(b"hincrbyfloat", {b"hash", b"fast"}, flags={b"write"})
 class HashMapIncreaseByFloat(DatabaseCommand):
     notifications: NotificationsManager = dependency()
 
@@ -154,7 +154,7 @@ class HashMapGetMultiple(DatabaseCommand):
         return [hash_map.get(f, None) for f in self.fields]
 
 
-@command(b"hmset", {b"write", b"hash", b"fast"})
+@command(b"hmset", {b"hash", b"fast"}, flags={b"write"})
 class HashMapSetMultiple(DatabaseCommand):
     key: bytes = positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
@@ -169,7 +169,7 @@ class HashMapSetMultiple(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"hrandfield", {b"write", b"hash", b"fast"})
+@command(b"hrandfield", {b"hash", b"fast"}, flags={b"write"})
 class HashRandomField(DatabaseCommand):
     protocol: RespProtocolVersion = dependency()
 
@@ -232,7 +232,7 @@ class HashMapScan(DatabaseCommand):
         return [b"0", dict(scan())]
 
 
-@command(b"hset", {b"write", b"hash", b"fast"})
+@command(b"hset", {b"hash", b"fast"}, flags={b"write"})
 class HashMapSet(DatabaseCommand):
     key: bytes = positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
@@ -250,7 +250,7 @@ class HashMapSet(DatabaseCommand):
         return added_fields
 
 
-@command(b"hsetnx", {b"write", b"hash", b"fast"})
+@command(b"hsetnx", {b"hash", b"fast"}, flags={b"write"})
 class HashMapSetIfNotExists(DatabaseCommand):
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()

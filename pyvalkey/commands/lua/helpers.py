@@ -25,12 +25,6 @@ if TYPE_CHECKING:
 MAX_CONVERT_DEPTH = 100
 
 
-@dataclass
-class RegisteredFunction:
-    compiled_function: Any
-    flags: list[str]
-
-
 def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueType:  # noqa: ANN401
     print("convert_lua_value_to_valkey_value", depth)
 
@@ -65,12 +59,15 @@ def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueTy
     return lua_value
 
 
-def register_function(scripting_manager, function_name, callback, flags=None) -> None:  # noqa: ANN001
-    if function_name.lower() in scripting_manager.registered_functions:
-        raise ServerError(b"ERR Library already exists")
-    scripting_manager.registered_functions[function_name.lower()] = RegisteredFunction(
-        callback, flags.values() if flags else []
-    )
+def register_function(
+    scripting_manager: ScriptingEngine,
+    readonly: bool,
+    library_name: bytes,
+    function_name: bytes,
+    callback: Any,  # noqa: ANN401
+    flags: list[str] | None = None,
+) -> None:
+    scripting_manager.register_function(library_name, readonly, function_name, callback, flags or [])
 
 
 class ServerLuaError(LuaError):
@@ -80,8 +77,10 @@ class ServerLuaError(LuaError):
 
 
 def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool = False) -> Any:  # noqa: ANN401
+    lua_runtime = scripting_manager.ro_lua_runtime if readonly else scripting_manager.lua_runtime
+
     if not args:
-        return scripting_manager.lua_runtime.table(err=b"ERR Please specify at least one argument for this call script")
+        return lua_runtime.table(err=b"ERR Please specify at least one argument for this call script")
 
     command = [str(p).encode() if isinstance(p, int) else p for p in args]
 
@@ -94,7 +93,7 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
     try:
         routed_command_cls, parameters = scripting_manager._commands_router.route(command)
     except RouterKeyError:
-        return scripting_manager.lua_runtime.table(
+        return lua_runtime.table(
             err=f"ERR unknown command '{command[0].decode()}', "
             f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
         )
@@ -120,27 +119,27 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
     if b"no-script" in routed_command.flags:
         raise ServerLuaError(b"ERR This Valkey command is not allowed from script")
     if b"write" in routed_command.flags and readonly is True:
-        return scripting_manager.lua_runtime.table(err=b"ERR Write commands are not allowed from read-only scripts")
+        return lua_runtime.table(err=b"ERR Write commands are not allowed from read-only scripts")
 
     try:
         result: ValueType = routed_command.execute()
     except ServerWrongTypeError:
         raise ServerLuaError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
     except ServerError as e:
-        return scripting_manager.lua_runtime.table(err=e.message)
+        return lua_runtime.table(err=e.message)
 
     print("redis.call", scripting_manager._client_context.current_client.client_id, "result", result, type(result))
 
     if result is DoNotReply:
         return None
     if result == RESP_OK:
-        return scripting_manager.lua_runtime.table(ok="OK")
+        return lua_runtime.table(ok="OK")
     if result is None:
         return False
     if isinstance(result, RespError):
-        return scripting_manager.lua_runtime.table(err=result)
+        return lua_runtime.table(err=result)
     if isinstance(result, list):
-        return scripting_manager.lua_runtime.table(*result)
+        return lua_runtime.table(*result)
 
     return result
 
@@ -224,7 +223,6 @@ def create_lua_runtime(scripting_manager: ScriptingEngine, readonly: bool = Fals
       """)
 
     lua_globals.server = lua_runtime.table(
-        register_function=unpacks_lua_table(partial(register_function, scripting_manager)),
         sha1hex=sha1hex_wrapper(sha1hex),
     )
     if readonly:

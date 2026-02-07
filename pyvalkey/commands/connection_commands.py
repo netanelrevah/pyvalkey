@@ -51,6 +51,34 @@ class Authorize(Command):
         )
 
 
+@command(b"help", {b"connection", b"slow"}, b"client")
+class ClientHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"CLIENT <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"ID",
+            b"    Return the ID of the current connection.",
+            b"GETNAME",
+            b"    Return the name of the current connection.",
+            b"SETNAME <name>",
+            b"    Assign the name <name> to the current connection.",
+            b"LIST [TYPE <type>]",
+            b"    Return information about client connections.",
+            b"KILL <ip:port> [ID <id>] [ADDR <ip:port>]",
+            b"    Terminate a client connection.",
+            b"PAUSE <timeout> [WRITE|ALL]",
+            b"    Suspend all, or only write, queries from all clients for <timeout> ms.",
+            b"UNPAUSE",
+            b"    Resume queries from all clients.",
+            b"REPLY ON|OFF|SKIP",
+            b"    Control the replies sent to the current connection.",
+            b"UNBLOCK <id> [TIMEOUT|ERROR]",
+            b"    Unblock a client that is currently blocked by a blocking command.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
 @command(b"list", {b"admin", b"slow", b"dangerous", b"connection"}, b"client")
 class ClientList(Command):
     client_context: ClientContext = dependency()

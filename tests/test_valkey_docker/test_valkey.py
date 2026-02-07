@@ -1,3 +1,4 @@
+import os
 import docker
 import pytest
 
@@ -9,7 +10,7 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
     try:
         client = docker.from_env()
 
-        image, _ = client.images.build(path=".", rm=True)
+        image, _ = client.images.build(path=os.path.dirname(os.path.abspath(__file__)), rm=True)
 
         log_file_name = f"{'-'.join(tags.split())}.docker.log"
 

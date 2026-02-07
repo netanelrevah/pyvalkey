@@ -86,7 +86,7 @@ class BitFieldReadOnly(DatabaseCommand):
         return None
 
 
-@command(b"bitop", {b"write", b"bitmap", b"slow"})
+@command(b"bitop", {b"bitmap", b"slow"}, flags={b"write"})
 class BitOperation(DatabaseCommand):
     OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
         BitOperationMode.AND: operator.and_,
@@ -135,7 +135,7 @@ class GetBit(DatabaseCommand):
         return get_bit_from_bytes(self.database.bytes_database.get_value_or_empty(self.key), self.offset)
 
 
-@command(b"setbit", {b"write", b"bitmap", b"slow"})
+@command(b"setbit", {b"bitmap", b"slow"}, flags={b"write"})
 class SetBit(DatabaseCommand):
     key: bytes = positional_parameter()
     offset: int = positional_parameter()

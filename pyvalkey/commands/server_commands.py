@@ -278,7 +278,7 @@ def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
         database.touch_all_database_watched_keys()
 
 
-@command(b"flushall", {b"keyspace", b"write", b"slow", b"dangerous"})
+@command(b"flushall", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
 class FlushAllDatabases(Command):
     server_context: ServerContext = dependency()
     blocking_manager: StreamBlockingManager = dependency()
@@ -293,7 +293,7 @@ class FlushAllDatabases(Command):
             await self.blocking_manager.notify_deleted(key, in_multi=in_multi)
 
 
-@command(b"flushdb", {b"keyspace", b"write", b"slow", b"dangerous"})
+@command(b"flushdb", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
 class FlushDatabase(Command):
     blocking_manager: StreamBlockingManager = dependency()
     client_context: ClientContext = dependency()
@@ -328,7 +328,19 @@ class GetInformation(Command):
         return self.information.sections(self.section)
 
 
-@command(b"usage", {b"read", b"slow"}, b"memory")
+@command(b"help", {b"read", b"slow"}, parent_command=b"memory")
+class MemoryHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"MEMORY <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"USAGE <key>",
+            b"    Return the internal memory usage for the Redis object associated with the <key>.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
+@command(b"usage", {b"read", b"slow"}, parent_command=b"memory")
 class MemoryUsage(Command):
     key: bytes = positional_parameter()
 
@@ -336,7 +348,7 @@ class MemoryUsage(Command):
         return 1
 
 
-@command(b"swapdb", {b"keyspace", b"write", b"slow", b"dangerous"})
+@command(b"swapdb", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
 class SwapDb(Command):
     server_context: ServerContext = dependency()
     blocking_manager: BlockingManager = dependency()
@@ -374,7 +386,7 @@ class SwapDb(Command):
         await self.blocking_manager.notify_safely_all(self.server_context.databases[self.index2], in_multi=in_multi)
 
 
-@command(b"sync", {b"keyspace", b"write", b"slow", b"dangerous"})
+@command(b"sync", {b"keyspace", b"slow", b"dangerous"}, flags={b"write"})
 class Sync(Command):
     def execute(self) -> ValueType:
         return RESP_OK

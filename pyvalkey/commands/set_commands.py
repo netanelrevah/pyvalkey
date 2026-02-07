@@ -18,7 +18,7 @@ from pyvalkey.enums import NotificationType
 from pyvalkey.resp import ValueType
 
 
-@command(b"smove", {b"write", b"set", b"fast"})
+@command(b"smove", {b"set", b"fast"}, flags={b"write"})
 class SetMove(DatabaseCommand):
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -72,7 +72,7 @@ class SetCardinality(DatabaseCommand):
         return len(self.database.set_database.get_value_or_empty(self.key))
 
 
-@command(b"sadd", {b"write", b"set", b"fast"})
+@command(b"sadd", {b"set", b"fast"}, flags={b"write"})
 class SetAdd(Command):
     database: Database = dependency()
 
@@ -90,7 +90,7 @@ class SetAdd(Command):
         return added
 
 
-@command(b"spop", {b"write", b"set", b"fast"})
+@command(b"spop", {b"set", b"fast"}, flags={b"write"})
 class SetPop(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int = positional_parameter(default=None)
@@ -104,7 +104,7 @@ class SetPop(DatabaseCommand):
         return [value.pop() for _ in range(min(len(value), self.count))]
 
 
-@command(b"srem", {b"write", b"set", b"fast"})
+@command(b"srem", {b"set", b"fast"}, flags={b"write"})
 class SetRemove(Command):
     database: Database = dependency()
 
@@ -186,7 +186,7 @@ def apply_set_store_operation(
     return len(new_set)
 
 
-@command(b"sunionstore", {b"write", b"set", b"slow"})
+@command(b"sunionstore", {b"set", b"slow"}, flags={b"write"})
 class SetUnionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
@@ -195,7 +195,7 @@ class SetUnionStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.union, self.keys, self.destination)
 
 
-@command(b"sinterstore", {b"write", b"set", b"slow"})
+@command(b"sinterstore", {b"set", b"slow"}, flags={b"write"})
 class SetIntersectionStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
@@ -204,7 +204,7 @@ class SetIntersectionStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.intersection, self.keys, self.destination)
 
 
-@command(b"sdiffstore", {b"write", b"set", b"slow"})
+@command(b"sdiffstore", {b"set", b"slow"}, flags={b"write"})
 class SetDifferenceStore(DatabaseCommand):
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
@@ -213,7 +213,7 @@ class SetDifferenceStore(DatabaseCommand):
         return apply_set_store_operation(self.database, set.difference, self.keys, self.destination)
 
 
-@command(b"srandmember", {b"write", b"string", b"slow"})
+@command(b"srandmember", {b"string", b"slow"}, flags={b"write"})
 class SetRandomMember(DatabaseCommand):
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
