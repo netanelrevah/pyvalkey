@@ -136,6 +136,7 @@ class Configurations(ConfigurationBase):
     lua_time_limit: int = configuration(default=5000, type_="integer")
 
     notify_keyspace_events: bytes = configuration(default=b"", type_="ordered")
+    busy_reply_threshold: int = configuration(default=512, type_="integer")
 
     @classmethod
     def get_field_name(cls, name: bytes) -> str:

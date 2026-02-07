@@ -34,6 +34,10 @@ class Command:
     def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
         raise NotImplementedError()
 
+    @classmethod
+    def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
+        pass
+
 
 @dataclass
 class DatabaseCommand(Command):

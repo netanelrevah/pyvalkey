@@ -193,6 +193,10 @@ class CommandGetKeys(Command):
         )
         parsed_command = command_cls.parse(parameters)
 
+        keys = command_cls.collect_key_arguments(parsed_command)
+        if keys is not None:
+            return keys
+
         keys = []
         for cls_field in fields(command_cls):
             if ParameterMetadata.KEY_MODE in cls_field.metadata:

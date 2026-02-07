@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -36,6 +37,19 @@ class FunctionCall(Command):
     num_keys: int = positional_parameter(parse_error=b"Bad number of keys provided")
     keys_and_args: list[bytes] = positional_parameter()
 
+    @classmethod
+    def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
+        num_keys = command_arguments.get("num_keys")
+        keys_and_args = command_arguments.get("keys_and_args")
+
+        if num_keys is None or keys_and_args is None:
+            return None
+
+        if num_keys < 0 or num_keys > len(keys_and_args):
+            return None
+
+        return keys_and_args[:num_keys]
+
     def execute(self) -> ValueType:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
@@ -60,6 +74,19 @@ class ReadOnlyFunctionCall(Command):
     function: bytes = positional_parameter()
     num_keys: int = positional_parameter()
     keys_and_args: list[bytes] = positional_parameter()
+
+    @classmethod
+    def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
+        num_keys = command_arguments.get("num_keys")
+        keys_and_args = command_arguments.get("keys_and_args")
+
+        if num_keys is None or keys_and_args is None:
+            return None
+
+        if num_keys < 0 or num_keys > len(keys_and_args):
+            return None
+
+        return keys_and_args[:num_keys]
 
     def execute(self) -> ValueType:
         if self.num_keys < 0:
@@ -157,7 +184,7 @@ class FunctionRestore(Command):
     metadata={
         CommandMetadata.PARAMETERS_LEFT_ERROR: b"Unknown option given: {next_parameter}",
     },
-    flags={b"write"}
+    flags={b"write"},
 )
 class FunctionLoad(Command):
     scripting_engine: ScriptingEngine = dependency()
