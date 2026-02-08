@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from functools import partial
@@ -49,6 +50,7 @@ class ScriptingEngine:
 
     registered_libraries: dict[bytes, RegisteredLibrary] = field(default_factory=dict)
     registered_functions: dict[bytes, RegisteredFunction] = field(default_factory=dict)
+    script_cache: dict[bytes, bytes] = field(default_factory=dict)
 
     should_stop: bool = field(init=False, default=False)
     currently_running: bool = field(init=False, default=False)
@@ -212,21 +214,33 @@ class ScriptingEngine:
             return True
         return False
 
-    def eval(self, script: bytes, keys: list[bytes], argv: list[bytes]) -> ValueType:
-        compiled = self.lua_runtime.compile(script)
+
+    def eval(self, script: bytes, keys: list[bytes], argv: list[bytes], readonly: bool = False) -> ValueType:
+        sha1 = hashlib.sha1(script).hexdigest().encode()
+        self.script_cache[sha1] = script
+
+        lua_runtime = self.ro_lua_runtime if readonly else self.lua_runtime
+        mortal_wrapper = self.readonly_mortal_lua_function_wrapper if readonly else self.mortal_lua_function_wrapper
+        compiled = lua_runtime.compile(script)
 
         self.currently_running = True
-        status, return_value = self.mortal_lua_function_wrapper(
+        status, return_value = mortal_wrapper(
             compiled,
-            self.configuration.lua_time_limit,
+            self.configuration.busy_reply_threshold,
             lambda: self.should_stop,
-            self.lua_runtime.table(*keys),
-            self.lua_runtime.table(*argv),
+            lua_runtime.table(*keys),
+            lua_runtime.table(*argv),
         )
         self.currently_running = False
 
-        if status is False and b"Timeout reached!" in str(return_value).encode():
-            raise ServerError(b"ERR Lua script execution timed out.")
+        if status is False:
+            if b"Timeout reached!" in str(return_value).encode():
+                raise ServerError(b"ERR Lua script execution timed out.")
+
+            msg = return_value
+            if not isinstance(msg, bytes):
+                msg = str(msg).encode()
+            raise ServerError(msg)
 
         return convert_lua_value_to_valkey_value(return_value)
 
