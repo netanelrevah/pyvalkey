@@ -117,7 +117,7 @@ def _call(scripting_manager: ScriptingEngine, *args: bytes | int, readonly: bool
         raise ServerLuaError(b"ERR Wrong number of args calling command from script script")
 
     if b"no-script" in routed_command.flags:
-        raise ServerLuaError(b"ERR This Valkey command is not allowed from script")
+        raise ServerLuaError(b"ERR This Valkey command is not allowed from scripts")
     if b"write" in routed_command.flags and readonly is True:
         return lua_runtime.table(err=b"ERR Write commands are not allowed from read-only scripts")
 
@@ -159,16 +159,20 @@ def ro_call(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # n
 def pcall(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noqa: ANN401
     try:
         return _call(scripting_manager, *args)
+    except ServerLuaError as e:
+        return scripting_manager.lua_runtime.table_from({b"err": e.message})
     except Exception as e:
-        return scripting_manager.lua_runtime.table_from({b"err": b"ERR" + str(e).encode()})
+        return scripting_manager.lua_runtime.table_from({b"err": str(e).encode()})
 
 
 @unpacks_lua_table
 def ro_pcall(scripting_manager: ScriptingEngine, *args: bytes | int) -> Any:  # noqa: ANN401
     try:
         return _call(scripting_manager, *args, readonly=True)
+    except ServerLuaError as e:
+        return scripting_manager.lua_runtime.table_from({b"err": e.message})
     except Exception as e:
-        return scripting_manager.lua_runtime.table_from({b"err": b"ERR" + str(e).encode()})
+        return scripting_manager.lua_runtime.table_from({b"err": str(e).encode()})
 
 
 @unpacks_lua_table
@@ -256,7 +260,7 @@ def table_protection(*args: Any, **kwargs: Any) -> NoReturn:  # noqa: ANN401
     if not isinstance(args[1], int | bytes):
         raise LuaError(b"Second argument to luaProtectedTableError must be a string or number")
     variable_name = str(args[1] if isinstance(args[1], int) else args[1].decode())
-    raise LuaError(f"Script attempted to access nonexistent global variable '{variable_name}'".encode())
+    raise LuaError(f"Script attempted to access nonexistent global variable '{variable_name}'")
 
 
 @dataclass
