@@ -42,6 +42,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
     _transport: asyncio.BaseTransport | None = None
     _client_context: ClientContext | None = None
     data: BytesIO = field(default_factory=BytesIO)
+    _server: ValkeyServer | None = None
 
     _resp_query_parser: RespParser = field(default_factory=RespParser)
 
@@ -94,8 +95,14 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
         self.parser_task = asyncio.create_task(self.parse())
         self.pubsub_task = asyncio.create_task(self.pubsub())
+        server = self._server
+        if server is not None:
+            server.connections.add(self)
 
-    def connection_lost(self, exception: Exception | None) -> None:
+    def connection_lost(self, exc: Exception | None) -> None:
+        server = self._server
+        if server is not None:
+            server.connections.discard(self)
         if self._client_context is not None:
             print(f"{self.current_client.client_id} connection lost")
             self.client_context.subscriptions.unsubscribe_all()
@@ -104,6 +111,11 @@ class ValkeyClientProtocol(asyncio.Protocol):
             del self.clients[self.current_client.client_id]
         else:
             print("connection lost before context initialization")
+
+        if self.parser_task is not None:
+            self.parser_task.cancel()
+        if self.pubsub_task is not None:
+            self.pubsub_task.cancel()
 
     async def pubsub(self) -> None:
         try:
@@ -149,8 +161,10 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
     def cancel(self) -> None:
         self.transport.close()
-        if self.parser_task:
+        if self.parser_task is not None:
             self.parser_task.cancel()
+        if self.pubsub_task is not None:
+            self.pubsub_task.cancel()
 
     def data_received(self, data: bytes) -> None:
         try:
@@ -273,6 +287,7 @@ class ValkeyServer:
     should_exit: bool = False
     force_exit: bool = False
     server: asyncio.Server | None = None
+    connections: set[ValkeyClientProtocol] = field(default_factory=set)
 
     _database_cleanup_task: asyncio.Task | None = None
 
@@ -291,7 +306,7 @@ class ValkeyServer:
         loop = asyncio.get_running_loop()
 
         self.server = await loop.create_server(
-            lambda: ValkeyClientProtocol(self.context, self.router), self.host, self.port
+            lambda: ValkeyClientProtocol(self.context, self.router, _server=self), self.host, self.port
         )
         self._database_cleanup_task = asyncio.create_task(self.cleanup_databases())
 
@@ -334,12 +349,22 @@ class ValkeyServer:
             signal.raise_signal(captured_signal)
 
     async def _shutdown(self) -> None:
-        if self._database_cleanup_task:
+        if self._database_cleanup_task is not None:
             self._database_cleanup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._database_cleanup_task
-        if self.server:
+
+        if self.server is not None:
             self.server.close()
+            await self.server.wait_closed()
+        
+        # Close all active connections
+        for conn in list(self.connections):
+            conn.transport.close()
+        
+        # Give some time for tasks to be cancelled and cleaned up
+        if self.connections:
+            await asyncio.sleep(0.1)
 
     def shutdown(self) -> None:
         self.should_exit = True

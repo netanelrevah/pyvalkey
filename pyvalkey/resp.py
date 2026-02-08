@@ -178,14 +178,15 @@ class RespQueryParser:
 class RespParser:
     buffered_reader: BufferedLineReader = field(default_factory=BufferedLineReader)
 
-    async def __aiter__(self) -> AsyncIterator[list[bytes]]:
-        line: bytes
-        async for line in self.buffered_reader:
-            if line[0:1] == b"*":
-                self.buffered_reader.return_line(line)
-                yield await RespQueryParser(self.buffered_reader).parse()
-                continue
-            yield line.split()
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> list[bytes]:
+        line = await anext(self.buffered_reader)
+        if line[0:1] == b"*":
+            self.buffered_reader.return_line(line)
+            return await RespQueryParser(self.buffered_reader).parse()
+        return line.split()
 
     def feed(self, data: bytes) -> None:
         self.buffered_reader.feed(data)
