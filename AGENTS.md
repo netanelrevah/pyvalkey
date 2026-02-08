@@ -81,6 +81,7 @@ When tests fail, check these common issues:
    - Check `tests/test_valkey_docker/multi.docker.log` for WATCH test results
 
 ## Implementation Notes for AI Agents
+- Read also AGENTS.local.md if exists!
 - Always prioritize compatibility with Valkey TCL tests over cuttom implementation preferences.
 - Consult pyvalkey/tests/test_valkey_docker/test_valkey.py to see the current coverage before proceeding.
 - When adding new commands, refer to the official Valkey documentation for expected RESP return types.
