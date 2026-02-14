@@ -24,7 +24,7 @@ def to_hex(value: Any, length: int) -> str:  # noqa: ANN401
 
 
 def register_bit_module(lua_runtime: LuaRuntimeWrapper, lua_globals: Any) -> None:  # noqa: ANN401
-    lua_globals.bit = lua_runtime.table(
+    lua_globals.bit = lua_runtime.table(  # type: ignore[attr-defined]
         tobit=to_bit,
         tohex=to_hex,
         bnot=lambda value: ~to_bit(value),
@@ -37,4 +37,4 @@ def register_bit_module(lua_runtime: LuaRuntimeWrapper, lua_globals: Any) -> Non
         rol=lambda value, n: (2**32 - 1) & (to_bit(value) >> n | to_bit(value) << (32 - n)),
         ror=lambda value, n: (2**32 - 1) & (to_bit(value) << n | to_bit(value) >> (32 - n)),
         bswap=lambda value: int.from_bytes(to_bit(value).to_bytes(4, "big", signed=True), "little", signed=True),
-    )  # type: ignore[attr-defined]
+    )

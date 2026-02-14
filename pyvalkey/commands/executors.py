@@ -5,6 +5,7 @@ from traceback import print_exc
 from typing import TYPE_CHECKING
 
 from pyvalkey.commands.context import ClientContext
+from pyvalkey.commands.scripting_commands import FunctionKill, FunctionStats, ScriptKill
 from pyvalkey.commands.transactions_commands import (
     TransactionDiscard,
     TransactionExecute,
@@ -43,6 +44,15 @@ class CommandExecutor:
         )
 
         try:
+            if self.client_context.server_context.functions_engine.is_busy.is_set() and not isinstance(
+                self.command, FunctionKill | FunctionStats
+            ):
+                return "BUSY"
+            if self.client_context.server_context.scripts_engine.is_busy.is_set() and not isinstance(
+                self.command, ScriptKill
+            ):
+                return "BUSY"
+
             if self.client_context.server_context.configurations.maxmemory > 0:
                 if b"denyoom" in self.command.flags:
                     raise ServerError(b"ERR OOM command not allowed when used memory > 'maxmemory'.")

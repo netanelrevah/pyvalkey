@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Self, get_type_hints
 from pyvalkey.blocking import BlockingManager, ListBlockingManager, SortedSetBlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.dependencies import DependencyMetadata
-from pyvalkey.commands.scripting import ScriptingEngine
+from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
@@ -58,8 +58,10 @@ class CommandCreator:
                 command_kwargs[command_dependency.name] = (
                     client_context.server_context.blocking_manager.stream_blocking_manager
                 )
-            elif command_dependency_type == ScriptingEngine:
-                command_kwargs[command_dependency.name] = client_context.scripting_manager
+            elif command_dependency_type == FunctionsEngine:
+                command_kwargs[command_dependency.name] = client_context.server_context.functions_engine
+            elif command_dependency_type == ScriptsEngine:
+                command_kwargs[command_dependency.name] = client_context.server_context.scripts_engine
             elif command_dependency_type == NotificationsManager:
                 command_kwargs[command_dependency.name] = client_context.notifications_manager
             elif command_dependency_type == ClientSubscriptions:

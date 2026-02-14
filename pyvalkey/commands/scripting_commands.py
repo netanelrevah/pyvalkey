@@ -1,107 +1,140 @@
 import json
-import hashlib
+from dataclasses import field
 from typing import Any
 
+from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
-from pyvalkey.commands.scripting import ScriptingEngine
-from pyvalkey.commands.utils import is_integer
+from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, ValueType
 
 
 @command(b"eval", {b"scripting", b"slow"})
 class Eval(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    scripts_engine: ScriptsEngine = dependency()
 
     script: bytes = positional_parameter()
     num_keys: int = positional_parameter()
     keys_and_args: list[bytes] = positional_parameter()
 
-    def execute(self) -> ValueType:
+    result: ValueType = field(init=False, default=None)
+
+    async def before(self, in_multi: bool = False) -> None:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
 
-        return self.scripting_engine.eval(
-            self.script, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :]
+        self.result = await self.scripts_engine.eval(
+            self.client_context, self.script, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :]
         )
+
+    def execute(self) -> ValueType:
+        return self.result
 
 
 @command(b"evalsha", {b"scripting", b"slow"})
 class EvalSha(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    scripts_engine: ScriptsEngine = dependency()
 
     sha1: bytes = positional_parameter()
     num_keys: int = positional_parameter()
     keys_and_args: list[bytes] = positional_parameter()
 
-    def execute(self) -> ValueType:
+    result: ValueType = field(init=False, default=None)
+
+    async def before(self, in_multi: bool = False) -> None:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
 
-        script = self.scripting_engine.script_cache.get(self.sha1.lower())
-        if script is None:
+        registered_scripts = self.scripts_engine.registered_scripts.get(self.sha1.lower())
+        if registered_scripts is None:
             raise ServerError(b"NOSCRIPT No matching script. Please use EVAL.")
 
-        return self.scripting_engine.eval(
-            script, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :]
+        self.result = await self.scripts_engine.eval(
+            self.client_context,
+            registered_scripts.script,
+            self.keys_and_args[: self.num_keys],
+            self.keys_and_args[self.num_keys :],
         )
+
+    def execute(self) -> ValueType:
+        return self.result
 
 
 @command(b"evalsha_ro", {b"scripting", b"slow", b"read"})
 class EvalShaReadOnly(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    scripts_engine: ScriptsEngine = dependency()
 
     sha1: bytes = positional_parameter()
     num_keys: int = positional_parameter()
     keys_and_args: list[bytes] = positional_parameter()
 
-    def execute(self) -> ValueType:
+    result: ValueType = field(init=False, default=None)
+
+    async def before(self, in_multi: bool = False) -> None:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
 
-        script = self.scripting_engine.script_cache.get(self.sha1.lower())
-        if script is None:
+        registered_script = self.scripts_engine.registered_scripts.get(self.sha1.lower())
+        if registered_script is None:
             raise ServerError(b"NOSCRIPT No matching script. Please use EVAL.")
 
-        # Note: scripting_engine.eval currently doesn't take a readonly flag, 
-        # but the commands flags {b"read"} should handle it if implemented in engine.
-        return self.scripting_engine.eval(
-            script, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :], readonly=True
+        self.result = await self.scripts_engine.eval(
+            self.client_context,
+            registered_script.script,
+            self.keys_and_args[: self.num_keys],
+            self.keys_and_args[self.num_keys :],
+            readonly=True,
         )
+
+    def execute(self) -> ValueType:
+        return self.result
 
 
 @command(b"eval_ro", {b"scripting", b"slow", b"read"})
 class EvalReadOnly(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    scripts_engine: ScriptsEngine = dependency()
 
     script: bytes = positional_parameter()
     num_keys: int = positional_parameter()
     keys_and_args: list[bytes] = positional_parameter()
 
-    def execute(self) -> ValueType:
+    result: ValueType = field(init=False, default=None)
+
+    async def before(self, in_multi: bool = False) -> None:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
 
-        # Note: scripting_engine.eval currently doesn't take a readonly flag, 
-        # but it will use the default lua_runtime which is NOT the ro_lua_runtime.
-        # However, the command flag {b"read"} should ideally enforce this.
-        return self.scripting_engine.eval(
-            self.script, self.keys_and_args[: self.num_keys], self.keys_and_args[self.num_keys :], readonly=True
+        self.result = await self.scripts_engine.eval(
+            self.client_context,
+            self.script,
+            self.keys_and_args[: self.num_keys],
+            self.keys_and_args[self.num_keys :],
+            readonly=True,
         )
+
+    def execute(self) -> ValueType:
+        return self.result
 
 
 @command(b"fcall", {b"scripting", b"slow"})
 class FunctionCall(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     function: bytes = positional_parameter()
     num_keys: int = positional_parameter(parse_error=b"Bad number of keys provided")
     keys_and_args: list[bytes] = positional_parameter()
 
+    result: ValueType = field(init=False, default=None)
+
     @classmethod
     def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
         num_keys = command_arguments.get("num_keys")
@@ -115,97 +148,90 @@ class FunctionCall(Command):
 
         return keys_and_args[:num_keys]
 
-    def execute(self) -> ValueType:
+    async def _execute(self, readonly: bool = False) -> ValueType:
         if self.num_keys < 0:
             raise ServerError(b"ERR Number of keys can't be negative")
 
         if len(self.keys_and_args) < self.num_keys:
             raise ServerError(b"ERR Number of keys can't be greater than number of args")
 
-        arguments: list[int | bytes] = []
-        for argument in self.keys_and_args[self.num_keys :]:
-            if is_integer(argument):
-                arguments.append(int(argument))
-            else:
-                arguments.append(argument)
+        command = f"fcall {self.function.decode()} {self.num_keys}".encode()
+        if self.keys_and_args:
+            command += f" {' '.join(arg.decode() for arg in self.keys_and_args)}".encode()
 
-        return self.scripting_engine.call_function(self.function, self.keys_and_args[: self.num_keys], arguments)
+        return await self.functions_engine.call_function(
+            command,
+            self.client_context,
+            self.function,
+            self.keys_and_args[: self.num_keys],
+            self.keys_and_args[self.num_keys :],
+            readonly=readonly,
+        )
+
+    async def before(self, in_multi: bool = False) -> None:
+        self.result = await self._execute(readonly=False)
+
+    def execute(self) -> ValueType:
+        return self.result
 
 
 @command(b"fcall_ro", {b"scripting", b"slow"})
-class ReadOnlyFunctionCall(Command):
-    scripting_engine: ScriptingEngine = dependency()
+class ReadOnlyFunctionCall(FunctionCall):
+    functions_engine: FunctionsEngine = dependency()
 
     function: bytes = positional_parameter()
     num_keys: int = positional_parameter()
     keys_and_args: list[bytes] = positional_parameter()
 
-    @classmethod
-    def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
-        num_keys = command_arguments.get("num_keys")
-        keys_and_args = command_arguments.get("keys_and_args")
-
-        if num_keys is None or keys_and_args is None:
-            return None
-
-        if num_keys < 0 or num_keys > len(keys_and_args):
-            return None
-
-        return keys_and_args[:num_keys]
+    async def before(self, in_multi: bool = False) -> None:
+        self.result = await self._execute(readonly=True)
 
     def execute(self) -> ValueType:
-        if self.num_keys < 0:
-            raise ServerError(b"ERR Number of keys can't be negative")
-
-        if len(self.keys_and_args) < self.num_keys:
-            raise ServerError(b"ERR Number of keys can't be greater than number of args")
-
-        arguments: list[int | bytes] = []
-        for argument in self.keys_and_args[self.num_keys :]:
-            if is_integer(argument):
-                arguments.append(int(argument))
-            else:
-                arguments.append(argument)
-
-        return self.scripting_engine.call_function(
-            self.function, self.keys_and_args[: self.num_keys], arguments, readonly=True
-        )
+        return self.result
 
 
-@command(b"flush", {b"scripting", b"slow"}, parent_command=b"function", flags={b"write"})
+@command(
+    b"flush",
+    {b"scripting", b"slow"},
+    parent_command=b"function",
+    flags={b"write"},
+)
 class FunctionFlush(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
-    async_sync: bool | None = keyword_parameter(flag={b"ASYNC": True, b"SYNC": False}, default=None)
+    async_sync: bytes = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
-        self.scripting_engine.registered_functions.clear()
-        self.scripting_engine.registered_libraries.clear()
-        self.scripting_engine.currently_running = False
+        if self.async_sync is not None and self.async_sync.lower() not in [b"async", b"sync"]:
+            raise ServerError(b"ERR FUNCTION FLUSH only supports SYNC|ASYNC option")
+
+        self.functions_engine.registered_functions.clear()
+        self.functions_engine.registered_libraries.clear()
+        self.functions_engine.currently_running = None
         return RESP_OK
 
 
 @command(b"dump", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionDump(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     def execute(self) -> ValueType:
-        result = []
-        for library in self.scripting_engine.registered_libraries.values():
-            result.append(
-                {
-                    "library_name": library.name.decode(),
-                    "engine": library.engine.decode(),
-                    "code": library.code.decode(),
-                }
-            )
+        result = [
+            {
+                "library_name": library.name.decode(),
+                "engine": library.engine.decode(),
+                "code": library.code.decode(),
+            }
+            for library in self.functions_engine.registered_libraries.values()
+        ]
 
         return json.dumps(result).encode()
 
 
 @command(b"restore", {b"scripting", b"slow"}, parent_command=b"function", flags={b"write"})
 class FunctionRestore(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     serialized_value: bytes = positional_parameter()
     append: bool = flag_parameter(token=b"APPEND", default=True)
@@ -219,9 +245,9 @@ class FunctionRestore(Command):
             raise ServerError(b"ERR DUMP payload version or checksum are wrong")
 
         if self.flush:
-            self.scripting_engine.registered_functions.clear()
-            self.scripting_engine.registered_libraries.clear()
-            self.scripting_engine.currently_running = False
+            self.functions_engine.registered_functions.clear()
+            self.functions_engine.registered_libraries.clear()
+            self.functions_engine.currently_running = None
 
         for library in value:
             code = library["code"].encode()
@@ -230,7 +256,7 @@ class FunctionRestore(Command):
 
             script = f"#!{engine.decode()} name={library_name.decode()}\n{code.decode()}"
 
-            self.scripting_engine.load_function(script.encode(), replace=self.replace)
+            self.functions_engine.load_function(self.client_context, script.encode(), replace=self.replace)
 
         return RESP_OK
 
@@ -245,24 +271,25 @@ class FunctionRestore(Command):
     flags={b"write"},
 )
 class FunctionLoad(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    client_context: ClientContext = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     replace: bool = flag_parameter(token=b"REPLACE")
     function_code: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        name = self.scripting_engine.load_function(self.function_code, self.replace)
+        name = self.functions_engine.load_function(self.client_context, self.function_code, self.replace)
         return name
 
 
 @command(b"delete", {b"scripting", b"slow"}, parent_command=b"function", flags={b"write"})
 class FunctionDelete(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     function_name: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        deleted = self.scripting_engine.delete_function(self.function_name)
+        deleted = self.functions_engine.delete_library(self.function_name)
 
         if not deleted:
             raise ServerError(b"ERR Library not found")
@@ -271,49 +298,52 @@ class FunctionDelete(Command):
 
 @command(b"kill", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionKill(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     def execute(self) -> ValueType:
-        if not self.scripting_engine.currently_running:
+        if not self.functions_engine.currently_running is not None:
             raise ServerError(b"ERR No scripts in execution right now")
-        self.scripting_engine.should_stop = True
+        self.functions_engine.kill.set()
         return RESP_OK
 
 
 @command(b"kill", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptKill(Command):
+    scripts_engine: ScriptsEngine = dependency()
+
     def execute(self) -> ValueType:
+        if not self.scripts_engine.currently_running:
+            raise ServerError(b"ERR No scripts in execution right now")
+        self.scripts_engine.kill.set()
         return RESP_OK
 
 
 @command(b"exists", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptExists(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    scripts_engine: ScriptsEngine = dependency()
     sha1s: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
-        return [1 if sha1.lower() in self.scripting_engine.script_cache else 0 for sha1 in self.sha1s]
+        return [1 if sha1.lower() in self.scripts_engine.registered_scripts else 0 for sha1 in self.sha1s]
 
 
 @command(b"flush", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptFlush(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    scripts_engine: ScriptsEngine = dependency()
     async_sync: bool | None = keyword_parameter(flag={b"ASYNC": True, b"SYNC": False}, default=None)
 
     def execute(self) -> ValueType:
-        self.scripting_engine.script_cache.clear()
+        self.scripts_engine.registered_scripts.clear()
         return RESP_OK
 
 
 @command(b"load", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptLoad(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    scripts_engine: ScriptsEngine = dependency()
     script: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        sha1 = hashlib.sha1(self.script).hexdigest().encode()
-        self.scripting_engine.script_cache[sha1] = self.script
-        return sha1
+        return self.scripts_engine.load(self.script)
 
 
 @command(b"help", {b"scripting", b"slow"}, parent_command=b"script")
@@ -362,37 +392,37 @@ class FunctionHelp(Command):
 
 @command(b"stats", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionStats(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     def execute(self) -> ValueType:
-        engines = {
-            b"LUA": {
-                b"libraries_count": len(self.scripting_engine.registered_libraries),
-                b"functions_count": len(self.scripting_engine.registered_functions),
-            }
-        }
-        res = {
-            b"running_script": None,
-            b"engines": engines,
-        }
+        res = {}
         # In a real server we would track the currently running function name/command
-        if self.scripting_engine.currently_running:
+        if self.functions_engine.currently_running is not None:
             res[b"running_script"] = {
+                b"name": self.functions_engine.currently_running.register_function.function_name,
+                b"command": self.functions_engine.currently_running.command,
                 b"duration_ms": 0,
             }
+
+        res[b"engines"] = {
+            b"LUA": {
+                b"libraries_count": len(self.functions_engine.registered_libraries),
+                b"functions_count": len(self.functions_engine.registered_functions),
+            }
+        }
         return res
 
 
 @command(b"list", {b"scripting", b"slow"}, parent_command=b"function")
 class FunctionList(Command):
-    scripting_engine: ScriptingEngine = dependency()
+    functions_engine: FunctionsEngine = dependency()
 
     library_name_pattern: bytes | None = keyword_parameter(token=b"LIBRARYNAME", default=None)
     with_code: bool = flag_parameter(token=b"WITHCODE")
 
     def execute(self) -> ValueType:
         result = []
-        for library in self.scripting_engine.registered_libraries.values():
+        for library in self.functions_engine.registered_libraries.values():
             if self.library_name_pattern:
                 # Simple pattern match (could use fnmatch for real glob support)
                 if self.library_name_pattern != b"*" and self.library_name_pattern not in library.name:

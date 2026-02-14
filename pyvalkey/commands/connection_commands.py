@@ -283,7 +283,7 @@ class Ping(Command):
         return b"PONG"
 
 
-@command(b"select", {b"connection", b"fast"})
+@command(b"select", {b"connection", b"fast", b"no-script"})
 class SelectDatabase(Command):
     client_context: ClientContext = dependency()
     index: int = positional_parameter()

@@ -1,120 +1,240 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
-import re
 from dataclasses import dataclass, field
-from functools import partial
 from traceback import print_exc
 from typing import TYPE_CHECKING, Any, Self
 
-from lupa.lua51 import LuaError, unpacks_lua_table
+from lupa.lua51 import LuaError, LuaSyntaxError
 
+from pyvalkey.commands.lua.core import RegisteredFunction, RegisteredLibrary
 from pyvalkey.commands.lua.helpers import (
+    CallContext,
     LuaRuntimeWrapper,
     ServerLuaError,
     convert_lua_value_to_valkey_value,
     create_lua_runtime,
+    fill_server_globals,
     register_function,
 )
-from pyvalkey.commands.lua.scripts import LUA_RUN_WITH_TIMEOUT
+from pyvalkey.commands.lua.scripts import (
+    FUNCTION_LOAD_EXECUTOR,
+    LIBRARY_NAME_PATTERN,
+    LUA_REGISTER_FUNCTION_WRAPPER,
+    WRITEABLE_FUNCTION_EXECUTOR,
+)
+from pyvalkey.commands.utils import is_integer
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
+from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.router import CommandsRouter
 
-LIBRARY_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
+
+@dataclass
+class CurrentlyRunningFunction:
+    start_ms: int
+    register_function: RegisteredFunction
+    command: bytes
 
 
 @dataclass
-class RegisteredFunction:
-    library_name: bytes
-    compiled_function: Any | None
-    readonly_compiled_function: Any | None
-    flags: list[str]
+class FunctionsCompiler:
+    _writeable_lua_runtime: LuaRuntimeWrapper = field(default_factory=create_lua_runtime)
+    _readonly_lua_runtime: LuaRuntimeWrapper = field(default_factory=create_lua_runtime)
+
+    def eval(self, code: bytes) -> CompiledFunction:
+        return CompiledFunction(
+            writeable=self._writeable_lua_runtime.eval(code),
+            readonly=self._readonly_lua_runtime.eval(code),
+        )
+
+    def compile(self, code: bytes) -> CompiledFunction:
+        return CompiledFunction(
+            writeable=self._writeable_lua_runtime.compile(code),
+            readonly=self._readonly_lua_runtime.compile(code),
+        )
+
+    def get_runtime(self, writeable: bool) -> LuaRuntimeWrapper:
+        return self._writeable_lua_runtime if writeable else self._readonly_lua_runtime
 
 
 @dataclass
-class RegisteredLibrary:
-    name: bytes
-    code: bytes
-    engine: bytes
-    functions: dict[bytes, RegisteredFunction] = field(default_factory=dict)
+class CompiledFunction:
+    writeable: Any
+    readonly: Any
+
+    def get(self, writeable: bool) -> Any:  # noqa: ANN401
+        return self.writeable if writeable else self.readonly
 
 
 @dataclass
-class ScriptingEngine:
+class LuaEngineBase:
     configuration: Configurations
+    commands_router: CommandsRouter
 
-    registered_libraries: dict[bytes, RegisteredLibrary] = field(default_factory=dict)
-    registered_functions: dict[bytes, RegisteredFunction] = field(default_factory=dict)
-    script_cache: dict[bytes, bytes] = field(default_factory=dict)
+    kill: asyncio.Event = field(init=False, default_factory=asyncio.Event)
+    is_busy: asyncio.Event = field(init=False, default_factory=asyncio.Event)
 
-    should_stop: bool = field(init=False, default=False)
+    _function_compiler: FunctionsCompiler = field(init=False, default_factory=FunctionsCompiler)
+
+    _function_call_executor: CompiledFunction = field(init=False)
+    _function_load_executor: CompiledFunction = field(init=False)
+
+    @classmethod
+    def create(cls, configurations: Configurations, commands_router: CommandsRouter) -> Self:
+        return cls(configurations, commands_router)
+
+    def __post_init__(self) -> None:
+        self._function_call_executor = self._function_compiler.eval(WRITEABLE_FUNCTION_EXECUTOR)
+        self._function_load_executor = self._function_compiler.eval(FUNCTION_LOAD_EXECUTOR)
+
+    def check_killed(self) -> bool:
+        return self.kill.is_set()
+
+    def check_busy_reply_threshold(self, start_ms: int) -> None:
+        if self.is_busy.is_set():
+            return
+
+        if self.check_timeout(start_ms):
+            self.is_busy.set()
+
+    def check_timeout(self, start_ms: int) -> bool:
+        elapsed = now_ms() - start_ms
+        return elapsed > self.configuration.busy_reply_threshold
+
+    async def execute_compiled_code(
+        self,
+        writeable: bool,
+        start_ms: int,
+        client_context: ClientContext,
+        compiled_func: Any,  # noqa: ANN401
+        keys: list[bytes],
+        argv: list[bytes],
+    ) -> ValueType:
+        print("Executing function with keys", keys, "and argv", argv)
+
+        arguments: list[int | bytes] = []
+        for argument in argv:
+            if is_integer(argument):
+                arguments.append(int(argument))
+            else:
+                arguments.append(argument)
+
+        lua_runtime = self._function_compiler.get_runtime(writeable)
+        try:
+            function_executor = self._function_call_executor.get(writeable)
+
+            call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
+            fill_server_globals(call_context)
+
+            status, return_value = await asyncio.to_thread(
+                function_executor,
+                compiled_func,
+                start_ms,
+                self.check_busy_reply_threshold,
+                self.check_killed,
+                lua_runtime.table(*keys),
+                lua_runtime.table(*arguments),
+            )
+
+            if status is False:
+                if "Timeout reached!" in str(return_value):
+                    self.is_busy.clear()
+                    self.kill.clear()
+                    raise TimeoutError()
+
+                msg = return_value
+                if not isinstance(msg, bytes):
+                    msg = str(msg).encode()
+                raise ServerError(msg)
+
+            return convert_lua_value_to_valkey_value(return_value)
+
+        except ServerError:
+            raise
+        except TimeoutError:
+            raise
+        except ServerLuaError as e:
+            raise ServerError(e.message)
+        except LuaError as e:
+            raise ServerError(str(e.args[0]).encode())
+        except Exception as e:
+            print_exc()
+            raise ServerError(str(e).encode())
+        finally:
+            del lua_runtime.globals().server
+            del lua_runtime.globals().redis
+
+
+@dataclass
+class RegisteredScript:
+    script: bytes
+    compiled_script: CompiledFunction
+
+
+@dataclass
+class ScriptsEngine(LuaEngineBase):
+    registered_scripts: dict[bytes, RegisteredScript] = field(default_factory=dict)
+
     currently_running: bool = field(init=False, default=False)
 
-    _client_context: ClientContext = field(init=False)
-    _commands_router: CommandsRouter = field(init=False)
-    _lua_runtime: LuaRuntimeWrapper | None = field(init=False, default=None)
-    _ro_lua_runtime: LuaRuntimeWrapper | None = field(init=False, default=None)
-    _lua_run_with_timeout: Any = field(init=False, default=None)
-    _readonly_lua_run_with_timeout: Any = field(init=False, default=None)
-
-    @property
-    def lua_runtime(self) -> LuaRuntimeWrapper:
-        if self._lua_runtime is None:
-            self._lua_runtime = create_lua_runtime(self)
-        return self._lua_runtime
-
-    @property
-    def ro_lua_runtime(self) -> LuaRuntimeWrapper:
-        if self._ro_lua_runtime is None:
-            self._ro_lua_runtime = create_lua_runtime(self, readonly=True)
-        return self._ro_lua_runtime
-
-    @property
-    def mortal_lua_function_wrapper(self) -> Any:  # noqa: ANN401
-        if self._lua_run_with_timeout is None:
-            self._lua_run_with_timeout = self.lua_runtime.eval(LUA_RUN_WITH_TIMEOUT)
-        return self._lua_run_with_timeout
-
-    @property
-    def readonly_mortal_lua_function_wrapper(self) -> Any:  # noqa: ANN401
-        if self._readonly_lua_run_with_timeout is None:
-            self._readonly_lua_run_with_timeout = self.ro_lua_runtime.eval(LUA_RUN_WITH_TIMEOUT)
-        return self._readonly_lua_run_with_timeout
-
-    def register_function(
-        self,
-        library_name: bytes,
-        readonly: bool,
-        function_name: bytes,
-        callback: Any,  # noqa: ANN401
-        flags: list[str] | None = None,
-    ) -> None:
-        registered_function = None
-        if function_name.lower() in self.registered_functions:
-            registered_function = self.registered_functions[function_name.lower()]
-
-            if (not readonly and registered_function.compiled_function is not None) or (
-                readonly and registered_function.readonly_compiled_function is not None
-            ):
-                raise ServerError(b"ERR Library already exists")
-
-        if registered_function is None:
-            registered_function = RegisteredFunction(
-                library_name, callback if not readonly else None, callback if readonly else None, flags or []
+    def load(self, script: bytes) -> bytes:
+        script_hash = hashlib.sha1(script).hexdigest().encode()
+        if script_hash not in self.registered_scripts:
+            self.registered_scripts[script_hash] = RegisteredScript(
+                script,
+                self._function_compiler.compile(script),
             )
-            self.registered_libraries[library_name].functions[function_name.lower()] = registered_function
-            self.registered_functions[function_name.lower()] = registered_function
-        elif not readonly:
-            registered_function.compiled_function = callback
-        elif readonly:
-            registered_function.readonly_compiled_function = callback
+        return script_hash
 
-    def parse_load_function_script(self, script: bytes) -> tuple[bytes, bytes, bytes]:
+    async def eval(
+        self,
+        client_context: ClientContext,
+        script: bytes,
+        keys: list[bytes],
+        argv: list[bytes],
+        readonly: bool = False,
+    ) -> ValueType:
+        script_hash = hashlib.sha1(script).hexdigest().encode()
+        if script_hash not in self.registered_scripts:
+            self.registered_scripts[script_hash] = RegisteredScript(
+                script,
+                self._function_compiler.compile(script),
+            )
+
+        registered_script = self.registered_scripts[script_hash]
+        self.currently_running = True
+        try:
+            return await self.execute_compiled_code(
+                not readonly,
+                now_ms(),
+                client_context,
+                registered_script.compiled_script.get(not readonly),
+                keys,
+                argv,
+            )
+        except TimeoutError:
+            raise ServerError(b"ERR Script killed by user with SCRIPT KILL")
+        finally:
+            self.currently_running = False
+
+
+@dataclass
+class FunctionsEngine(LuaEngineBase):
+    registered_libraries: dict[bytes, RegisteredLibrary] = field(default_factory=dict)
+    registered_functions: dict[bytes, RegisteredFunction] = field(default_factory=dict)
+
+    kill: asyncio.Event = field(init=False, default_factory=asyncio.Event)
+    currently_running: CurrentlyRunningFunction | None = field(init=False, default=None)
+    is_busy: asyncio.Event = field(init=False, default_factory=asyncio.Event)
+
+    @classmethod
+    def parse_load_function_script(cls, script: bytes) -> tuple[bytes, bytes, bytes]:
         metadata, code = script.split(b"\n", 1)
 
         shebang, *args = metadata.split()
@@ -137,113 +257,120 @@ class ScriptingEngine:
 
         return engine, library_name, code
 
-    def load_function_to_runtime(self, lua_runtime: LuaRuntimeWrapper, library_name: bytes, code: bytes) -> None:
-        readonly = lua_runtime is self.ro_lua_runtime
+    def load_function_to_runtime(
+        self, writeable: bool, library: RegisteredLibrary, client_context: ClientContext, code: bytes
+    ) -> None:
+        lua_runtime = self._function_compiler.get_runtime(writeable)
 
-        lua_runtime.globals().server.register_function = unpacks_lua_table(
-            partial(register_function, self, readonly, library_name)
+        call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
+        fill_server_globals(call_context)
+
+        wrapped_register_function = lua_runtime.eval(LUA_REGISTER_FUNCTION_WRAPPER)(
+            register_function, not writeable, library
         )
-        try:
-            lua_runtime.execute(code)
-        finally:
-            lua_runtime.globals().server.register_function = None
 
-    def load_function(self, script: bytes, replace: bool = False) -> bytes:
+        lua_runtime.globals().server.register_function = wrapped_register_function
+
+        start_ms = now_ms()
+
+        try:
+            compiled_code = lua_runtime.compile(code)
+        except LuaSyntaxError:
+            raise ServerError(b"ERR Error compiling function")
+
+        try:
+            self._function_load_executor.get(writeable)(start_ms, compiled_code, self.check_timeout)
+        except ServerLuaError as e:
+            raise ServerError(e.message)
+        except LuaError as e:
+            if "Timeout reached!" in str(e.args[0]):
+                raise ServerError(b"ERR FUNCTION LOAD timeout")
+            raise e
+        except Exception as e:
+            raise e
+        finally:
+            del lua_runtime.globals().server
+            del lua_runtime.globals().redis
+
+    def load_function(self, client_context: ClientContext, script: bytes, replace: bool = False) -> bytes:
         engine, library_name, code = self.parse_load_function_script(script)
 
-        old_library: RegisteredLibrary | None = None
-        if replace and library_name in self.registered_libraries:
-            old_library = self.registered_libraries.pop(library_name)
-            for function_name in old_library.functions:
-                del self.registered_functions[function_name]
+        if not replace and library_name in self.registered_libraries:
+            raise ServerError(b"ERR Library already exists")
 
-        if library_name not in self.registered_libraries:
-            self.registered_libraries[library_name] = RegisteredLibrary(library_name, code, engine)
+        new_library = RegisteredLibrary(library_name, code, engine)
 
         try:
-            self.load_function_to_runtime(self.lua_runtime, library_name, code)
-            self.load_function_to_runtime(self.ro_lua_runtime, library_name, code)
+            print(f"Loading library '{library_name.decode()}' to runtime")
+            self.load_function_to_runtime(True, new_library, client_context, code)
+            print(f"Loading library '{library_name.decode()}' to readonly runtime")
+            self.load_function_to_runtime(False, new_library, client_context, code)
+
+            if not new_library.functions:
+                print("No functions registered in library")
+                raise ServerError(b"ERR No functions registered")
+        except ServerError as e:
+            raise e
         except LuaError as e:
-            self.registered_libraries.pop(library_name, None)
-            raise ServerError(b"ERR Error compiling function: " + str(e.args[0]).encode())
-        finally:
-            if old_library and library_name not in self.registered_libraries:
-                self.registered_libraries[library_name] = old_library
-                for function_name, registered_function in old_library.functions.items():
-                    self.registered_functions[function_name] = registered_function
+            print(f"Caught error during load: {e}")
+            msg = e.message if isinstance(e, ServerError) else str(e.args[0]).encode()
+            raise ServerError(b"ERR Error compiling function: " + msg)
+
+        for function_name, registered_function in new_library.functions.items():
+            if function_name.lower() in self.registered_functions:
+                registered_function = self.registered_functions[function_name.lower()]
+                if registered_function.library_name != library_name:
+                    raise ServerError(b"ERR Function " + function_name + b" already exists")
+        self.registered_libraries[library_name] = new_library
+        for function_name, registered_function in new_library.functions.items():
+            self.registered_functions[function_name.lower()] = registered_function
 
         return library_name
 
-    def call_function(
-        self, function_name: bytes, keys: list[bytes], argv: list[bytes | int], readonly: bool = False
+    async def call_function(
+        self,
+        command: bytes,
+        client_context: ClientContext,
+        function_name: bytes,
+        keys: list[bytes],
+        argv: list[bytes],
+        readonly: bool = False,
     ) -> ValueType:
         if function_name.lower() not in self.registered_functions:
             raise ServerError(b"ERR Function not found")
 
+        registered_function = self.registered_functions[function_name.lower()]
+        readonly = readonly or "no-writes" in registered_function.flags
+        compiled_function = (
+            registered_function.readonly_compiled_function if readonly else registered_function.compiled_function
+        )
+        if compiled_function is None:
+            raise Exception()
+
+        if self.currently_running is not None:
+            raise Exception("Another function is currently running, this should not happen")
+
         try:
-            registered_function = self.registered_functions[function_name.lower()]
-            if "no-writes" in registered_function.flags or readonly:
-                lua_runtime = self.ro_lua_runtime
-                if registered_function.readonly_compiled_function is None:
-                    raise Exception()
-                compiled_func = registered_function.readonly_compiled_function
-            else:
-                lua_runtime = self.lua_runtime
-                if registered_function.compiled_function is None:
-                    raise Exception()
-                compiled_func = registered_function.compiled_function
+            self.currently_running = CurrentlyRunningFunction(now_ms(), registered_function, command)
+            return await self.execute_compiled_code(
+                not readonly,
+                self.currently_running.start_ms,
+                client_context,
+                compiled_function,
+                keys,
+                argv,
+            )
+        except TimeoutError:
+            raise ServerError(b"ERR Script killed by user with FUNCTION KILL")
+        finally:
+            self.currently_running = None
 
-            print("call_function", keys, argv)
-            return_value = compiled_func(lua_runtime.table(*keys), lua_runtime.table(*argv))
-        except ServerLuaError as e:
-            raise ServerError(e.message)
-        except LuaError as e:
-            raise ServerError(str(e.args[0]).encode())
-        except Exception as e:
-            print_exc()
-            raise ServerError(str(e).encode())
-        return convert_lua_value_to_valkey_value(return_value)
-
-    def delete_function(self, function_name: bytes) -> bool:
-        function_name_lower = function_name.lower()
-        if function_name_lower in self.registered_functions:
-            del self.registered_libraries[self.registered_functions[function_name_lower].library_name].functions[
-                function_name_lower
-            ]
-            del self.registered_functions[function_name_lower]
+    def delete_library(self, library_name: bytes) -> bool:
+        library_name_lower = library_name.lower()
+        if library_name_lower in self.registered_libraries:
+            library = self.registered_libraries[library_name_lower]
+            del self.registered_libraries[library_name_lower]
+            for function_name in library.functions:
+                del self.registered_functions[function_name]
             return True
         return False
-
-
-    def eval(self, script: bytes, keys: list[bytes], argv: list[bytes], readonly: bool = False) -> ValueType:
-        sha1 = hashlib.sha1(script).hexdigest().encode()
-        self.script_cache[sha1] = script
-
-        lua_runtime = self.ro_lua_runtime if readonly else self.lua_runtime
-        mortal_wrapper = self.readonly_mortal_lua_function_wrapper if readonly else self.mortal_lua_function_wrapper
-        compiled = lua_runtime.compile(script)
-
-        self.currently_running = True
-        status, return_value = mortal_wrapper(
-            compiled,
-            self.configuration.busy_reply_threshold,
-            lambda: self.should_stop,
-            lua_runtime.table(*keys),
-            lua_runtime.table(*argv),
-        )
-        self.currently_running = False
-
-        if status is False:
-            if b"Timeout reached!" in str(return_value).encode():
-                raise ServerError(b"ERR Lua script execution timed out.")
-
-            msg = return_value
-            if not isinstance(msg, bytes):
-                msg = str(msg).encode()
-            raise ServerError(msg)
-
-        return convert_lua_value_to_valkey_value(return_value)
-
-    @classmethod
-    def create(cls, configurations: Configurations) -> Self:
-        return cls(configurations)

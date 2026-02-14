@@ -108,7 +108,7 @@ def json_encode_invalid_numbers(lua_runtime: LuaRuntimeWrapper, value: bool) -> 
 
 
 def register_cjson_module(lua_runtime: LuaRuntimeWrapper, lua_globals: Any) -> None:  # noqa: ANN401
-    lua_globals.cjson = lua_runtime.table(
+    lua_globals.cjson = lua_runtime.table(  # type: ignore[attr-defined]
         decode=partial(json_decode, lua_runtime),
         encode=partial(json_encode, lua_runtime),
         encode_keep_buffer=json_encode_keep_buffer,
@@ -118,4 +118,4 @@ def register_cjson_module(lua_runtime: LuaRuntimeWrapper, lua_globals: Any) -> N
         _decode_max_depth=1000,
         encode_invalid_numbers=partial(json_encode_invalid_numbers, lua_runtime),
         _encode_invalid_numbers=False,
-    )  # type: ignore[attr-defined]
+    )

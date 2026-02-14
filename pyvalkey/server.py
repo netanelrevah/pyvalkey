@@ -12,12 +12,13 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from traceback import print_exc
 from types import FrameType
-from typing import cast
+from typing import Self, cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.executors import CommandExecutor
 from pyvalkey.commands.router import CommandsRouter
+from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
@@ -97,12 +98,12 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self.pubsub_task = asyncio.create_task(self.pubsub())
         server = self._server
         if server is not None:
-            server.connections.add(self)
+            server.connections[id(self)] = self
 
     def connection_lost(self, exc: Exception | None) -> None:
         server = self._server
         if server is not None:
-            server.connections.discard(self)
+            server.connections.pop(id(self), None)
         if self._client_context is not None:
             print(f"{self.current_client.client_id} connection lost")
             self.client_context.subscriptions.unsubscribe_all()
@@ -280,16 +281,26 @@ class ValkeyServer:
     host: str
     port: int
 
-    context: ServerContext = field(default_factory=ServerContext)
-    router: CommandsRouter = field(default_factory=CommandsRouter)
+    context: ServerContext
+    router: CommandsRouter
 
     _captured_signals: list[int] = field(default_factory=list)
     should_exit: bool = False
     force_exit: bool = False
     server: asyncio.Server | None = None
-    connections: set[ValkeyClientProtocol] = field(default_factory=set)
+    connections: dict[int, ValkeyClientProtocol] = field(default_factory=dict)
 
     _database_cleanup_task: asyncio.Task | None = None
+
+    @classmethod
+    def create(cls, host: str, port: int) -> Self:
+        configurations = Configurations()
+        router = CommandsRouter()
+        functions_engine = FunctionsEngine.create(configurations, router)
+        scripts_engine = ScriptsEngine.create(configurations, router)
+
+        context = ServerContext(configurations, functions_engine, scripts_engine)
+        return cls(host, port, context, router)
 
     async def serve(self) -> None:
         with self.capture_signals():
@@ -357,11 +368,11 @@ class ValkeyServer:
         if self.server is not None:
             self.server.close()
             await self.server.wait_closed()
-        
+
         # Close all active connections
-        for conn in list(self.connections):
+        for conn in list(self.connections.values()):
             conn.transport.close()
-        
+
         # Give some time for tasks to be cancelled and cleaned up
         if self.connections:
             await asyncio.sleep(0.1)

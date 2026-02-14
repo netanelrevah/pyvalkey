@@ -141,11 +141,18 @@ def test_eval_lua_client_using_currently_selected_db(s: valkey.Valkey):
     """EVAL - Is the Lua client using the currently selected DB?"""
     # Fixture s is already set to DB 9
     s.set("mykey", "this is DB 9")
-    # Note: select is not easily testable with single client s if it's shared, 
-    # but here s is a fresh client for the test.
-    # However, pyvalkey might not support multiple DBs fully in the same way.
-    # We skip select tests if DB 10 is not available or if it affects other tests.
-    pass
+    
+    # Check from Lua
+    assert s.eval("return redis.call('get', KEYS[1])", 1, "mykey") == b"this is DB 9"
+
+    # Select another DB
+    s.select(10)
+    s.set("mykey", "this is DB 10")
+    assert s.eval("return redis.call('get', KEYS[1])", 1, "mykey") == b"this is DB 10"
+    
+    # Back to DB 9
+    s.select(9)
+    assert s.eval("return redis.call('get', KEYS[1])", 1, "mykey") == b"this is DB 9"
 
 def test_eval_scripts_do_not_block_on_blpop(s: valkey.Valkey):
     """EVAL - Scripts do not block on blpop command"""

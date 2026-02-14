@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from pyvalkey.blocking import BlockingManager
-from pyvalkey.commands.scripting import ScriptingEngine
+from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
@@ -26,11 +26,14 @@ if TYPE_CHECKING:
 
 @dataclass
 class ServerContext:
+    configurations: Configurations
+    functions_engine: FunctionsEngine
+    scripts_engine: ScriptsEngine
+
     databases: dict[int, Database] = field(default_factory=dict)
     acl: ACL = field(default_factory=ACL.create)
     client_ids: Iterable[int] = field(default_factory=lambda: itertools.count(0))
     clients: ClientsMap = field(default_factory=ClientsMap)
-    configurations: Configurations = field(default_factory=Configurations)
     information: Information = field(default_factory=Information)
     blocking_manager: BlockingManager = field(default_factory=BlockingManager)
 
@@ -100,7 +103,6 @@ class ClientContext:
     server_context: ServerContext
     current_client: Client
 
-    scripting_manager: ScriptingEngine
     subscriptions: ClientSubscriptions
 
     current_database: int = 0
@@ -123,18 +125,13 @@ class ClientContext:
 
     @classmethod
     def create(cls, server_context: ServerContext, host: bytes, port: int, router: CommandsRouter) -> Self:
-        scripting_manager = ScriptingEngine.create(server_context.configurations)
-
         client = server_context.clients.create_client(host, port)
         client_context = cls(
             server_context,
             client,
-            scripting_manager=scripting_manager,
             subscriptions=ClientSubscriptions(
                 client.push_message_queue,
                 server_context.subscriptions_manager,
             ),
         )
-        scripting_manager._client_context = client_context
-        scripting_manager._commands_router = router
         return client_context
