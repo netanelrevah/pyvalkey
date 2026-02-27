@@ -8,21 +8,27 @@ from typing import TYPE_CHECKING, Any, Self
 
 from lupa.lua51 import LuaError, LuaSyntaxError
 
-from pyvalkey.commands.lua.core import RegisteredFunction, RegisteredLibrary
+from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
+from pyvalkey.commands.lua.core import (
+    CompiledFunction,
+    CurrentlyRunningFunction,
+    FunctionsCompiler,
+    RegisteredFunction,
+    RegisteredLibrary,
+    RegisteredScript,
+)
 from pyvalkey.commands.lua.helpers import (
     CallContext,
-    LuaRuntimeWrapper,
-    ServerLuaError,
+    LuaServerError,
     convert_lua_value_to_valkey_value,
-    create_lua_runtime,
+    fill_load_server_globals,
     fill_server_globals,
     register_function,
 )
 from pyvalkey.commands.lua.scripts import (
+    FUNCTION_CALL_EXECUTOR,
     FUNCTION_LOAD_EXECUTOR,
-    LIBRARY_NAME_PATTERN,
     LUA_REGISTER_FUNCTION_WRAPPER,
-    WRITEABLE_FUNCTION_EXECUTOR,
 )
 from pyvalkey.commands.utils import is_integer
 from pyvalkey.database_objects.configurations import Configurations
@@ -33,43 +39,6 @@ from pyvalkey.utils.times import now_ms
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.router import CommandsRouter
-
-
-@dataclass
-class CurrentlyRunningFunction:
-    start_ms: int
-    register_function: RegisteredFunction
-    command: bytes
-
-
-@dataclass
-class FunctionsCompiler:
-    _writeable_lua_runtime: LuaRuntimeWrapper = field(default_factory=create_lua_runtime)
-    _readonly_lua_runtime: LuaRuntimeWrapper = field(default_factory=create_lua_runtime)
-
-    def eval(self, code: bytes) -> CompiledFunction:
-        return CompiledFunction(
-            writeable=self._writeable_lua_runtime.eval(code),
-            readonly=self._readonly_lua_runtime.eval(code),
-        )
-
-    def compile(self, code: bytes) -> CompiledFunction:
-        return CompiledFunction(
-            writeable=self._writeable_lua_runtime.compile(code),
-            readonly=self._readonly_lua_runtime.compile(code),
-        )
-
-    def get_runtime(self, writeable: bool) -> LuaRuntimeWrapper:
-        return self._writeable_lua_runtime if writeable else self._readonly_lua_runtime
-
-
-@dataclass
-class CompiledFunction:
-    writeable: Any
-    readonly: Any
-
-    def get(self, writeable: bool) -> Any:  # noqa: ANN401
-        return self.writeable if writeable else self.readonly
 
 
 @dataclass
@@ -90,7 +59,7 @@ class LuaEngineBase:
         return cls(configurations, commands_router)
 
     def __post_init__(self) -> None:
-        self._function_call_executor = self._function_compiler.eval(WRITEABLE_FUNCTION_EXECUTOR)
+        self._function_call_executor = self._function_compiler.eval(FUNCTION_CALL_EXECUTOR)
         self._function_load_executor = self._function_compiler.eval(FUNCTION_LOAD_EXECUTOR)
 
     def check_killed(self) -> bool:
@@ -116,7 +85,7 @@ class LuaEngineBase:
         keys: list[bytes],
         argv: list[bytes],
     ) -> ValueType:
-        print("Executing function with keys", keys, "and argv", argv)
+        print("Executing compiled code with keys", keys, "and argv", argv)
 
         arguments: list[int | bytes] = []
         for argument in argv:
@@ -159,7 +128,7 @@ class LuaEngineBase:
             raise
         except TimeoutError:
             raise
-        except ServerLuaError as e:
+        except LuaServerError as e:
             raise ServerError(e.message)
         except LuaError as e:
             raise ServerError(str(e.args[0]).encode())
@@ -169,12 +138,6 @@ class LuaEngineBase:
         finally:
             del lua_runtime.globals().server
             del lua_runtime.globals().redis
-
-
-@dataclass
-class RegisteredScript:
-    script: bytes
-    compiled_script: CompiledFunction
 
 
 @dataclass
@@ -263,10 +226,11 @@ class FunctionsEngine(LuaEngineBase):
         lua_runtime = self._function_compiler.get_runtime(writeable)
 
         call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
-        fill_server_globals(call_context)
+
+        fill_load_server_globals(call_context)
 
         wrapped_register_function = lua_runtime.eval(LUA_REGISTER_FUNCTION_WRAPPER)(
-            register_function, not writeable, library
+            register_function, writeable, library
         )
 
         lua_runtime.globals().server.register_function = wrapped_register_function
@@ -280,7 +244,7 @@ class FunctionsEngine(LuaEngineBase):
 
         try:
             self._function_load_executor.get(writeable)(start_ms, compiled_code, self.check_timeout)
-        except ServerLuaError as e:
+        except LuaServerError as e:
             raise ServerError(e.message)
         except LuaError as e:
             if "Timeout reached!" in str(e.args[0]):
@@ -341,11 +305,7 @@ class FunctionsEngine(LuaEngineBase):
 
         registered_function = self.registered_functions[function_name.lower()]
         readonly = readonly or "no-writes" in registered_function.flags
-        compiled_function = (
-            registered_function.readonly_compiled_function if readonly else registered_function.compiled_function
-        )
-        if compiled_function is None:
-            raise Exception()
+        compiled_function = registered_function.compiled_function.get(not readonly)
 
         if self.currently_running is not None:
             raise Exception("Another function is currently running, this should not happen")

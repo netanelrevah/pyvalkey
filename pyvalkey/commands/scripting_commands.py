@@ -1,3 +1,4 @@
+import fnmatch
 import json
 from dataclasses import field
 from typing import Any
@@ -395,7 +396,7 @@ class FunctionStats(Command):
     functions_engine: FunctionsEngine = dependency()
 
     def execute(self) -> ValueType:
-        res = {}
+        res: dict = {b"running_script": {}}
         # In a real server we would track the currently running function name/command
         if self.functions_engine.currently_running is not None:
             res[b"running_script"] = {
@@ -413,35 +414,48 @@ class FunctionStats(Command):
         return res
 
 
-@command(b"list", {b"scripting", b"slow"}, parent_command=b"function")
+@command(
+    b"list",
+    {b"scripting", b"slow"},
+    parent_command=b"function",
+    metadata={
+        CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR Unknown argument {next_parameter}",
+    },
+)
 class FunctionList(Command):
     functions_engine: FunctionsEngine = dependency()
 
-    library_name_pattern: bytes | None = keyword_parameter(token=b"LIBRARYNAME", default=None)
+    library_name_pattern: bytes | None = keyword_parameter(
+        token=b"LIBRARYNAME", default=None, parse_error=b"ERR library name argument was not given"
+    )
     with_code: bool = flag_parameter(token=b"WITHCODE")
 
     def execute(self) -> ValueType:
         result = []
         for library in self.functions_engine.registered_libraries.values():
             if self.library_name_pattern:
-                # Simple pattern match (could use fnmatch for real glob support)
-                if self.library_name_pattern != b"*" and self.library_name_pattern not in library.name:
+                if self.library_name_pattern != b"*" and not fnmatch.fnmatch(
+                    library.name.decode(), self.library_name_pattern.decode()
+                ):
                     continue
 
+            functions = []
             for function_name, registered_function in library.functions.items():
-                res = {
-                    b"library_name": registered_function.library_name,
-                    b"engine": b"LUA",
-                    b"functions": [
-                        {
-                            b"name": function_name,
-                            b"description": b"",
-                            b"flags": list(registered_function.flags),
-                        }
-                    ],
-                }
-                if self.with_code:
-                    res[b"library_code"] = library.code
-                result.append(res)
+                functions.append(
+                    {
+                        b"name": function_name,
+                        b"description": registered_function.description or b"",
+                        b"flags": list(registered_function.flags),
+                    }
+                )
+
+            res = {
+                b"library_name": library.name,
+                b"engine": library.engine.upper(),
+                b"functions": functions,
+            }
+            if self.with_code:
+                res[b"library_code"] = library.code
+            result.append(res)
 
         return result
