@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from traceback import print_exc
 from typing import TYPE_CHECKING
 
-from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.scripting_commands import FunctionKill, FunctionStats, ScriptKill
 from pyvalkey.commands.transactions_commands import (
     TransactionDiscard,
@@ -12,7 +11,6 @@ from pyvalkey.commands.transactions_commands import (
     TransactionStart,
     TransactionWatch,
 )
-from pyvalkey.database_objects.acl import ACLUser
 from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     ServerError,
@@ -23,7 +21,9 @@ from pyvalkey.resp import RespError, ValueType
 from pyvalkey.utils.times import now_us
 
 if TYPE_CHECKING:
+    from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.core import Command
+    from pyvalkey.database_objects.acl import ACLUser
 
 
 TransactionCommand = TransactionExecute | TransactionDiscard | TransactionStart | TransactionWatch
