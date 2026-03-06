@@ -3,6 +3,8 @@ from dataclasses import Field, dataclass, field
 from hashlib import sha256
 from typing import Any, ClassVar, Literal, TypeVar, dataclass_transform
 
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.enums import NOTIFICATION_TYPE_ORDER
 
 
@@ -93,6 +95,7 @@ def configurations(cls: type[ConfigurationType]) -> type[ConfigurationType]:
     return dataclass(cls)
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.configurations)
 @configurations
 class Configurations(ConfigurationBase):
     requirepass: bytes = configuration(default=b"")

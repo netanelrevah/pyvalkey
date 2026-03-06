@@ -6,9 +6,10 @@ from asyncio import wait_for
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
-from pyvalkey.commands.utils import _decrease_entry_id, _format_entry_id, _parse_strict_entry_id
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
+from pyvalkey.commands.utils import decrease_entry_id, format_entry_id, parse_strict_entry_id
 from pyvalkey.database_objects.clients import BlockingContext
-from pyvalkey.database_objects.databases import Database, KeyValueTypeVar
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, EntryID, Stream
@@ -17,8 +18,10 @@ from pyvalkey.utils.collections import OrderedBiMap
 
 if typing.TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
+    from pyvalkey.database_objects.databases import Database, KeyValueTypeVar
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager)
 @dataclass
 class BlockingManagerBase:
     notifications: OrderedBiMap[bytes, BlockingContext] = field(default_factory=OrderedBiMap)
@@ -106,6 +109,7 @@ class BlockingManagerBase:
                 await blocking_context.queue.put(key)
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager.list_blocking_manager)
 class ListBlockingManager(BlockingManagerBase):
     def has_key(self, database: Database, key: bytes) -> bool:
         return database.list_database.has_key(key)
@@ -114,6 +118,9 @@ class ListBlockingManager(BlockingManagerBase):
         return isinstance(value, list)
 
 
+@registered_as_dependency_for(
+    CommandCreator, lambda ctx: ctx.server_context.blocking_manager.sorted_set_blocking_manager
+)
 class SortedSetBlockingManager(BlockingManagerBase):
     def has_key(self, database: Database, key: bytes) -> bool:
         return database.sorted_set_database.has_key(key)
@@ -143,6 +150,7 @@ class StreamWaitingContext:
         self.key_to_history_only.clear()
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager.stream_blocking_manager)
 @dataclass
 class StreamBlockingManager:
     notifications: OrderedBiMap[bytes, BlockingContext] = field(default_factory=OrderedBiMap)
@@ -185,7 +193,7 @@ class StreamBlockingManager:
             else:
                 waiting_context.key_to_history_only[key] = True
                 try:
-                    waiting_context.keys_to_minimum_id[key] = _parse_strict_entry_id(id_, sequence_fill=0)
+                    waiting_context.keys_to_minimum_id[key] = parse_strict_entry_id(id_, sequence_fill=0)
                 except ValueError:
                     raise ServerError(b"ERR wrong type of argument for 'xread' command")
 
@@ -288,21 +296,21 @@ class StreamBlockingManager:
                 if len(value) > 0:
                     last_entry_id = value.last_id
                     waiting_context.keys_to_minimum_id[key] = last_entry_id
-                    keys_to_ids[key] = _format_entry_id(last_entry_id)
+                    keys_to_ids[key] = format_entry_id(last_entry_id)
                 else:
                     waiting_context.keys_to_minimum_id[key] = (0, 0)
-                    keys_to_ids[key] = _format_entry_id((0, 0))
+                    keys_to_ids[key] = format_entry_id((0, 0))
                 continue
             if id_ == StreamSpecialIds.LAST_ENTRY_ID:
                 if len(value) > 0:
-                    waiting_context.keys_to_minimum_id[key] = _decrease_entry_id(value.last_id)
+                    waiting_context.keys_to_minimum_id[key] = decrease_entry_id(value.last_id)
                     had_keys = True
                 else:
                     waiting_context.keys_to_minimum_id[key] = (0, 0)
                 continue
 
             try:
-                timestamp, sequence = _parse_strict_entry_id(id_, sequence_fill=0)
+                timestamp, sequence = parse_strict_entry_id(id_, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR wrong type of argument for 'xread' command")
             waiting_context.keys_to_minimum_id[key] = (timestamp, sequence)

@@ -37,10 +37,26 @@ class BaseStreamTest:
 
         information = Information()
         server_context = ServerContext(
-            {}, None, None, None, self.configurations, information, self.blocking_manager, None
+            configurations=self.configurations,
+            functions_engine=None,  # type: ignore[invalid-argument-type]
+            scripts_engine=None,  # type: ignore[invalid-argument-type]
+            databases=None,  # type: ignore[invalid-argument-type]
+            acl=None,  # type: ignore[invalid-argument-type]
+            client_ids=None,  # type: ignore[invalid-argument-type]
+            clients=None,  # type: ignore[invalid-argument-type]
+            information=information,
+            blocking_manager=self.blocking_manager,  # type: ignore[invalid-argument-type]
+            subscriptions_manager=None,  # type: ignore[invalid-argument-type]
         )
-        information.server_context = server_context
-        self.client_context = ClientContext(server_context, Client(0, b"localhost", 1234), None, None, 0, None)
+        self.client_context = ClientContext(
+            server_context=server_context,
+            current_client=Client(0, b"localhost", 1234),
+            subscriptions=None,  # type: ignore[invalid-argument-type]
+            current_database=0,
+            current_user=None,
+            transaction_context=None,
+            client_watchlist=None,  # type: ignore[invalid-argument-type]
+        )
 
         self.content = server_context.databases[0].content
         self.database = server_context.databases[0]

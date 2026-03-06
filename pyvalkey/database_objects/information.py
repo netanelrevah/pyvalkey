@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 
 from psutil import Process
 
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.database_objects.utils import to_bytes
+from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ServerContext
@@ -32,8 +35,10 @@ class CommandStatistics:
         )
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.information)
 @dataclass
 class Information:
+    start_time: float = field(default_factory=now_ms)
     server_version: bytes = b"255.255.255"
     arch_bits: bytes = b"64"
     cluster_enabled: bool = False

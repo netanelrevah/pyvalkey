@@ -9,7 +9,7 @@ from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata, parameters_object
 from pyvalkey.commands.router import command
-from pyvalkey.commands.utils import _format_entry_id, _parse_entry_id, _parse_strict_entry_id
+from pyvalkey.commands.utils import _parse_entry_id, format_entry_id, parse_strict_entry_id
 from pyvalkey.consts import LONG_MAX, UINT64_MAX
 from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database
@@ -84,7 +84,7 @@ class StreamTrim(Command):
             raise ServerError(b"ERR syntax error, MAXLEN and MINID options at the same time are not compatible")
 
         if self.minimum_id is not None or self.maximum_length is not None:
-            limiter = cast(MaxLength | MinimumId, self.maximum_length or self.minimum_id)
+            limiter = cast("MaxLength | MinimumId", self.maximum_length or self.minimum_id)
 
             if limiter.equal and limiter.approximate:
                 raise ServerError(b"ERR value is not an integer or out of range")
@@ -137,7 +137,7 @@ class StreamAdd(Command):
             raise ServerError(b"ERR syntax error, MAXLEN and MINID options at the same time are not compatible")
 
         if self.minimum_id is not None or self.maximum_length is not None:
-            limiter = cast(MaxLength | MinimumId, self.maximum_length or self.minimum_id)
+            limiter = cast("MaxLength | MinimumId", self.maximum_length or self.minimum_id)
 
             if limiter.equal and limiter.approximate:
                 raise ServerError(b"ERR value is not an integer or out of range")
@@ -185,7 +185,7 @@ class StreamAdd(Command):
 
         self.database.notify(NotificationType.STREAM, b"xadd", self.key)
 
-        return _format_entry_id(self._entry_id)
+        return format_entry_id(self._entry_id)
 
     async def after(self, in_multi: bool = False) -> None:
         if self._entry_id is not None:
@@ -254,7 +254,7 @@ class StreamDelete(Command):
         deleted_count = 0
         for stream_id in self.ids:
             try:
-                timestamp, sequence = _parse_strict_entry_id(stream_id)
+                timestamp, sequence = parse_strict_entry_id(stream_id)
 
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
@@ -337,7 +337,7 @@ class StreamRange(Command):
             count=count,
             is_reversed=is_reversed,
         )
-        return [[_format_entry_id(entry_id), entry_data] for entry_id, entry_data in entries]
+        return [[format_entry_id(entry_id), entry_data] for entry_id, entry_data in entries]
 
     def execute(self) -> ValueType:
         return self.range(self.database.stream_database.get_value_or_empty(self.key), self.start, self.end, self.count)
@@ -391,7 +391,7 @@ class StreamGroupCreate(Command):
         if self.stream_id == b"$":
             entry_id = value.last_id
         else:
-            entry_id = _parse_strict_entry_id(self.stream_id, sequence_fill=0)
+            entry_id = parse_strict_entry_id(self.stream_id, sequence_fill=0)
 
         if self.entries_read is not None and self.entries_read < -1:
             raise ServerError(b"ERR value for ENTRIESREAD must be positive or -1")
@@ -434,7 +434,7 @@ class StreamGroupSetId(Command):
             entry_id = value.last_id
         else:
             try:
-                entry_id = _parse_strict_entry_id(self.stream_id, sequence_fill=0)
+                entry_id = parse_strict_entry_id(self.stream_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -464,7 +464,7 @@ class StreamInfoGroups(Command):
                 b"pending",
                 len(group.pending_entries),
                 b"last-delivered-id",
-                _format_entry_id(group.last_id),
+                format_entry_id(group.last_id),
                 b"entries-read",
                 group.read_entries,
                 b"lag",
@@ -478,7 +478,7 @@ class StreamInfoGroups(Command):
     b"xsetid",
     {b"fast", b"stream"},
     flags={b"write"},
-    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
 class StreamSetId(Command):
     database: Database = dependency()
@@ -493,14 +493,14 @@ class StreamSetId(Command):
             raise ServerError(b"ERR entries_added must be positive")
 
         try:
-            last_id = _parse_strict_entry_id(self.last_id, sequence_fill=0)
+            last_id = parse_strict_entry_id(self.last_id, sequence_fill=0)
         except ValueError:
             raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
         max_deleted_entry_id = None
         if self.max_deleted_entry_id is not None:
             try:
-                max_deleted_entry_id = _parse_strict_entry_id(self.max_deleted_entry_id, sequence_fill=0)
+                max_deleted_entry_id = parse_strict_entry_id(self.max_deleted_entry_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -622,13 +622,13 @@ class StreamInfoStream(Command):
             b"radix-tree-nodes",
             math.ceil(len(value) / self.configuration.stream_node_max_entries) if len(value) > 0 else 1,
             b"last-generated-id",
-            _format_entry_id(value.last_id),
+            format_entry_id(value.last_id),
             b"max-deleted-entry-id",
-            _format_entry_id(value.max_deleted_entry_id),
+            format_entry_id(value.max_deleted_entry_id),
             b"entries-added",
             value.added_entries,
             b"recorded-first-entry-id",
-            _format_entry_id(value.first_id),
+            format_entry_id(value.first_id),
         ]
         if not self.full:
             return info
@@ -636,21 +636,21 @@ class StreamInfoStream(Command):
         return [
             *info,
             b"entries",
-            [[_format_entry_id(entry_id), entry_data] for entry_id, entry_data in value.range(count=self.count)],
+            [[format_entry_id(entry_id), entry_data] for entry_id, entry_data in value.range(count=self.count)],
             b"groups",
             [
                 [
                     b"name",
                     group.name,
                     b"last-delivered-id",
-                    _format_entry_id(group.last_id),
+                    format_entry_id(group.last_id),
                     b"entries-read",
                     group.read_entries if group.read_entries != -1 else None,
                     b"lag",
                     value.calculate_consumer_group_lag(group),
                     b"pending",
                     [
-                        [_format_entry_id(entry_id), pending_entry.times_delivered]
+                        [format_entry_id(entry_id), pending_entry.times_delivered]
                         for entry_id, pending_entry in group.pending_entries.items()
                     ],
                     b"consumers",
@@ -666,7 +666,7 @@ class StreamInfoStream(Command):
                             len(consumer.pending_entries),
                             b"pending",
                             [
-                                [_format_entry_id(entry_id), pending_entry.times_delivered]
+                                [format_entry_id(entry_id), pending_entry.times_delivered]
                                 for entry_id, pending_entry in consumer.pending_entries.items()
                             ],
                         ]
@@ -715,7 +715,7 @@ class StreamRead(Command):
             value = self.database.stream_database.get_value_or_empty(key)
 
             entries = [
-                [_format_entry_id(entry_id), entry_data]
+                [format_entry_id(entry_id), entry_data]
                 for entry_id, entry_data in value.range(
                     minimum_timestamp=entry_id[0],
                     minimum_sequence=entry_id[1],
@@ -819,22 +819,22 @@ class StreamGroupRead(Command):
                                 group.name,
                                 consumer.name,
                                 0,
-                                [_format_entry_id(entry_id)],
+                                [format_entry_id(entry_id)],
                                 time_milliseconds=consumer.pending_entries[entry_id].last_delivery,
                                 retry_count=consumer.pending_entries[entry_id].times_delivered,
                                 force=True,
                                 just_id=True,
-                                last_id=_format_entry_id(group.last_id),
+                                last_id=format_entry_id(group.last_id),
                             )
                         )
 
-                    entries.append([_format_entry_id(entry_id), entry_data])
+                    entries.append([format_entry_id(entry_id), entry_data])
                 self.client_context.propagated_commands.append(
                     StreamGroupSetId(
                         self.database,
                         key,
                         group.name,
-                        _format_entry_id(group.last_id),
+                        format_entry_id(group.last_id),
                         group.read_entries,
                     )
                 )
@@ -849,7 +849,7 @@ class StreamGroupRead(Command):
                     pending_entry = consumer.pending_entries[entry_id]
                     pending_entry.times_delivered += 1
                     pending_entry.last_delivery = self.client_context.current_client.command_time_snapshot
-                    entries.append([_format_entry_id(entry_id), value.entries.get(entry_id, {}) or {}])
+                    entries.append([format_entry_id(entry_id), value.entries.get(entry_id, {}) or {}])
 
             result.append([key, entries])
 
@@ -889,8 +889,8 @@ class StreamGroupPending(Command):
                 if entry_id not in value.entries or value.entries[entry_id] is None:
                     continue
                 if first_non_deleted_pending_entry is None:
-                    first_non_deleted_pending_entry = _format_entry_id(entry_id)
-                last_non_deleted_pending_entry = _format_entry_id(entry_id)
+                    first_non_deleted_pending_entry = format_entry_id(entry_id)
+                last_non_deleted_pending_entry = format_entry_id(entry_id)
 
             return [
                 len(group.pending_entries),
@@ -934,7 +934,7 @@ class StreamGroupPending(Command):
 
             result.append(
                 [
-                    _format_entry_id(entry_id),
+                    format_entry_id(entry_id),
                     entry_data.consumer.name,
                     now_ms() - entry_data.last_delivery,
                     entry_data.times_delivered,
@@ -965,7 +965,7 @@ class StreamGroupAcknowledge(Command):
 
         for stream_id in self.ids:
             try:
-                parsed_ids.add(_parse_strict_entry_id(stream_id, sequence_fill=0))
+                parsed_ids.add(parse_strict_entry_id(stream_id, sequence_fill=0))
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -1045,7 +1045,7 @@ class StreamGroupAutoClaim(Command):
             is_reversed=False,
         ):
             if entry_id not in value.entries or value.entries[entry_id] is None:
-                deleted_entries.append(_format_entry_id(entry_id))
+                deleted_entries.append(format_entry_id(entry_id))
                 continue
             if now_ms() - entry.last_delivery < self.minimum_idle_time:
                 continue
@@ -1058,9 +1058,9 @@ class StreamGroupAutoClaim(Command):
             if not self.just_id:
                 entry.last_delivery = now_ms()
                 entry.times_delivered += 1
-                stream_entries.append([_format_entry_id(entry_id), value.entries.get(entry_id)])
+                stream_entries.append([format_entry_id(entry_id), value.entries.get(entry_id)])
                 continue
-            stream_entries.append(_format_entry_id(entry_id))
+            stream_entries.append(format_entry_id(entry_id))
 
         next_entry_id = (0, 0)
         for next_entry_id, _ in range_entries(
@@ -1073,7 +1073,7 @@ class StreamGroupAutoClaim(Command):
         ):
             pass
 
-        return [_format_entry_id(next_entry_id), stream_entries, deleted_entries]
+        return [format_entry_id(next_entry_id), stream_entries, deleted_entries]
 
 
 @command(b"xclaim", {b"fast", b"stream"}, flags={b"write"})
@@ -1106,7 +1106,7 @@ class StreamGroupClaim(Command):
         last_id = (0, 0)
         if self.last_id is not None:
             try:
-                last_id = _parse_strict_entry_id(self.last_id, sequence_fill=0)
+                last_id = parse_strict_entry_id(self.last_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -1123,7 +1123,7 @@ class StreamGroupClaim(Command):
         stream_entries: list = []
         for stream_id in self.entry_ids:
             try:
-                entry_id = _parse_strict_entry_id(stream_id, sequence_fill=0)
+                entry_id = parse_strict_entry_id(stream_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(f"ERR Unrecognized XCLAIM option '{stream_id.decode()}'".encode())
 

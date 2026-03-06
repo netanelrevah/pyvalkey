@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
 from pyvalkey.blocking import BlockingManager
-from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.database_objects.acl import ACL, ACLUser
 from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
@@ -20,10 +20,14 @@ from pyvalkey.notifications import ClientSubscriptions, NotificationsManager, Su
 from pyvalkey.resp import RespProtocolVersion, ValueType
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from pyvalkey.commands.core import Command
     from pyvalkey.commands.router import CommandsRouter
+    from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context)
 @dataclass
 class ServerContext:
     configurations: Configurations
@@ -98,6 +102,7 @@ class PubSubContext:
         return len(self.subscribed_channels) + len(self.subscribed_patterns)
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx)
 @dataclass
 class ClientContext:
     server_context: ServerContext

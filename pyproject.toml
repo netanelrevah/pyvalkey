@@ -83,6 +83,7 @@ lint.select = [
     # "TRY",
     "UP",
     "YTT",
+    "TC",
 ]
 lint.ignore = [
     "E731",

@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Transport
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import IntEnum
-from io import IOBase
-from typing import Any, AnyStr, BinaryIO, Self
+from typing import TYPE_CHECKING, Any, AnyStr, BinaryIO, Self
 
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.utils import convert_float_value_to_bytes
 
+if TYPE_CHECKING:
+    from io import IOBase
 
+
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.protocol)
 class RespProtocolVersion(IntEnum):
     RESP2 = 2
     RESP3 = 3

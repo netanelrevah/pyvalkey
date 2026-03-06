@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-import asyncio
 import fnmatch
-import typing
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from pyvalkey.database_objects.configurations import Configurations
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.enums import NOTIFICATION_TYPE_ALL, NotificationType
-from pyvalkey.resp import ValueType
 from pyvalkey.utils.collections import SetMap
 
-if typing.TYPE_CHECKING:
-    pass
+if TYPE_CHECKING:
+    import asyncio
+
+    from pyvalkey.database_objects.configurations import Configurations
+    from pyvalkey.resp import ValueType
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.notifications_manager)
 @dataclass
 class NotificationsManager:
     configurations: Configurations
@@ -63,6 +66,7 @@ class SubscriptionsManager:
         return receivers
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.subscriptions)
 @dataclass
 class ClientSubscriptions:
     queue: asyncio.Queue[ValueType]

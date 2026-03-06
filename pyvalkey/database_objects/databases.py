@@ -2,25 +2,27 @@ from __future__ import annotations
 
 import operator
 import random
-from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, TypeVar, cast
 
 from sortedcontainers import SortedSet
 
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.utils import is_integer
 from pyvalkey.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
-from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
 from pyvalkey.database_objects.stream import Stream
 from pyvalkey.enums import NotificationType
-from pyvalkey.notifications import NotificationsManager
 from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Callable, Iterable, Iterator
+
+    from pyvalkey.database_objects.configurations import Configurations
+    from pyvalkey.notifications import NotificationsManager
 
 
 def create_empty_keys_with_expiration() -> SortedSet:
@@ -57,15 +59,15 @@ class KeyValue(Generic[KeyValueTypeVar]):
     def copy(self, new_key: bytes) -> KeyValue:
         new_value: KeyValueTypeVar
         if isinstance(self.value, bytes | int):
-            new_value = cast(KeyValueTypeVar, self.value)
+            new_value = cast("KeyValueTypeVar", self.value)
         elif isinstance(self.value, dict):
-            new_value = cast(KeyValueTypeVar, dict(self.value))
+            new_value = cast("KeyValueTypeVar", dict(self.value))
         elif isinstance(self.value, ScoredSortedSet):
-            new_value = cast(KeyValueTypeVar, ScoredSortedSet(self.value.members_scores.items()))
+            new_value = cast("KeyValueTypeVar", ScoredSortedSet(self.value.members_scores.items()))
         elif isinstance(self.value, list):
-            new_value = cast(KeyValueTypeVar, list(self.value))
+            new_value = cast("KeyValueTypeVar", list(self.value))
         elif isinstance(self.value, set):
-            new_value = cast(KeyValueTypeVar, set(self.value))
+            new_value = cast("KeyValueTypeVar", set(self.value))
         else:
             raise NotImplementedError(f"copy of {type(self.value)} not implemented")
 
@@ -470,6 +472,7 @@ class AnySetDatabase(DatabaseBase[ScoredSortedSet | set[bytes]]):
         return self.has_typed_key(key, lambda value: isinstance(value, ScoredSortedSet | set))
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.database)
 @dataclass
 class Database(DatabaseBase[KeyValueType]):
     index: int

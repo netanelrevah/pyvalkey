@@ -1,75 +1,35 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import Field, dataclass, fields
-from typing import TYPE_CHECKING, Self, get_type_hints
+from dataclasses import fields
+from typing import TYPE_CHECKING, Any, ClassVar, Self, get_type_hints
 
-from pyvalkey.blocking import BlockingManager, ListBlockingManager, SortedSetBlockingManager, StreamBlockingManager
-from pyvalkey.commands.context import ClientContext, ServerContext
-from pyvalkey.commands.dependencies import DependencyMetadata
-from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
-from pyvalkey.database_objects.acl import ACL
-from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database
-from pyvalkey.database_objects.information import Information
-from pyvalkey.notifications import ClientSubscriptions, NotificationsManager, SubscriptionsManager
-from pyvalkey.resp import RespProtocolVersion
+from pyvalkey.commands.dependencies import DependencyMetadata, dependency_registerer
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.core import Command
 
 
-@dataclass
+@dependency_registerer
 class CommandCreator:
     command_cls: type[Command]
     command_creator: Callable[..., Command]
-    dependencies: list[Field]
-    dependencies_types: list[Field]
+    dependencies: list[Any]  # qa: ANN401
+    dependencies_types: list[Any]  # qa: ANN401
+
+    if TYPE_CHECKING:
+        RESOLVERS: ClassVar[dict[type, Callable[[ClientContext], Any]]]
 
     def __call__(self, parameters: list[bytes], client_context: ClientContext) -> Command:
         command_kwargs = self.command_cls.parse(parameters)
 
         for command_dependency, command_dependency_type in zip(self.dependencies, self.dependencies_types):
-            if command_dependency_type == Database:
-                command_kwargs[command_dependency.name] = client_context.database
-            elif command_dependency_type == ACL:
-                command_kwargs[command_dependency.name] = client_context.server_context.acl
-            elif command_dependency_type == ClientContext:
-                command_kwargs[command_dependency.name] = client_context
-            elif command_dependency_type == ServerContext:
-                command_kwargs[command_dependency.name] = client_context.server_context
-            elif command_dependency_type == Information:
-                command_kwargs[command_dependency.name] = client_context.server_context.information
-            elif command_dependency_type == Configurations:
-                command_kwargs[command_dependency.name] = client_context.server_context.configurations
-            elif command_dependency_type == RespProtocolVersion:
-                command_kwargs[command_dependency.name] = client_context.protocol
-            elif command_dependency_type == BlockingManager:
-                command_kwargs[command_dependency.name] = client_context.server_context.blocking_manager
-            elif command_dependency_type == ListBlockingManager:
-                command_kwargs[command_dependency.name] = (
-                    client_context.server_context.blocking_manager.list_blocking_manager
-                )
-            elif command_dependency_type == SortedSetBlockingManager:
-                command_kwargs[command_dependency.name] = (
-                    client_context.server_context.blocking_manager.sorted_set_blocking_manager
-                )
-            elif command_dependency_type == StreamBlockingManager:
-                command_kwargs[command_dependency.name] = (
-                    client_context.server_context.blocking_manager.stream_blocking_manager
-                )
-            elif command_dependency_type == FunctionsEngine:
-                command_kwargs[command_dependency.name] = client_context.server_context.functions_engine
-            elif command_dependency_type == ScriptsEngine:
-                command_kwargs[command_dependency.name] = client_context.server_context.scripts_engine
-            elif command_dependency_type == NotificationsManager:
-                command_kwargs[command_dependency.name] = client_context.notifications_manager
-            elif command_dependency_type == ClientSubscriptions:
-                command_kwargs[command_dependency.name] = client_context.subscriptions
-            elif command_dependency_type == SubscriptionsManager:
-                command_kwargs[command_dependency.name] = client_context.server_context.subscriptions_manager
-            else:
-                raise TypeError()
+            resolver = self.RESOLVERS.get(command_dependency_type)
+            if resolver is None:
+                raise TypeError(f"Unregistered dependency type: {command_dependency_type}")
+            command_kwargs[command_dependency.name] = resolver(client_context)
 
         return self.command_creator(**command_kwargs)
 
