@@ -2,7 +2,7 @@ import fnmatch
 import json
 import random
 from dataclasses import field
-from typing import Any
+from typing import Any, cast
 
 from pyvalkey.blocking import BlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
@@ -114,18 +114,18 @@ class Dump(DatabaseCommand):
             "value": key_value.value,
         }
         if isinstance(key_value.value, list):
+            list_value = cast("list[bytes]", key_value.value)
             dump_value = {
                 "type": "list",
-                "value": [item.decode() for item in key_value.value],
+                "value": [item.decode() for item in list_value],
             }
         elif isinstance(key_value.value, set):
             dump_value["type"] = "set"
         elif isinstance(key_value.value, dict):
+            dict_value = cast("dict[bytes, bytes | int]", key_value.value)
             dump_value = {
                 "type": "hash",
-                "value": {
-                    k.decode(): (v.decode() if isinstance(v, bytes) else str(v)) for k, v in key_value.value.items()
-                },
+                "value": {k.decode(): (v.decode() if isinstance(v, bytes) else str(v)) for k, v in dict_value.items()},
             }
         elif isinstance(key_value.value, int):
             dump_value["type"] = "int"
@@ -302,15 +302,17 @@ class ObjectEncoding(DatabaseCommand):
         if key_value is None:
             return None
         if isinstance(key_value.value, list):
-            if self.is_list_listpack(key_value.value):
+            list_value = cast("list[bytes]", key_value.value)
+            if self.is_list_listpack(list_value):
                 return b"listpack"
             return b"quicklist"
 
         if isinstance(key_value.value, set):
-            if self.is_set_intset(key_value.value):
+            set_value = cast("set[bytes]", key_value.value)
+            if self.is_set_intset(set_value):
                 return b"intset"
-            if len(key_value.value) <= self.configuration.set_max_listpack_entries and all(
-                map(lambda k: len(k) <= self.configuration.set_max_listpack_value, key_value.value)
+            if len(set_value) <= self.configuration.set_max_listpack_entries and all(
+                map(lambda k: len(k) <= self.configuration.set_max_listpack_value, set_value)
             ):
                 return b"listpack"
             return b"hashtable"
@@ -321,7 +323,8 @@ class ObjectEncoding(DatabaseCommand):
             return b"skiplist"
 
         if isinstance(key_value.value, dict):
-            if self.is_dict_listpack(key_value.value):
+            dict_value = cast("dict[bytes, bytes | int]", key_value.value)
+            if self.is_dict_listpack(dict_value):
                 return b"listpack"
             return b"hashtable"
 
@@ -626,8 +629,11 @@ class Sort(Command):
             self.database.pop(self.destination, None)
             return 0
 
+        destination_values: list[bytes] = [
+            (v if isinstance(v, bytes) else (str(v).encode() if isinstance(v, int) else b"")) for v in result_values
+        ]
         self.database.set_key_value(
-            KeyValue(self.destination, [(v if v is not None else b"") for v in result_values]),
+            KeyValue(self.destination, destination_values),
         )
         return len(result_values)
 
@@ -658,7 +664,8 @@ class SortReadOnly(Command):
             return None
         if reference_field:
             if isinstance(key_value.value, dict):
-                return key_value.value[reference_field]
+                dict_val = cast("dict[bytes, bytes | int]", key_value.value)
+                return dict_val[reference_field]
             return None
         if isinstance(key_value.value, int):
             return key_value.value
@@ -678,8 +685,10 @@ class SortReadOnly(Command):
         values: list[bytes]
         if isinstance(key_value.value, ScoredSortedSet):
             values = [member for score, member in key_value.value.members]
+        elif isinstance(key_value.value, list):
+            values = list(cast("list[bytes]", key_value.value))
         else:
-            values = list(key_value.value)
+            values = list(cast("set[bytes]", key_value.value))
 
         if self.by != b"nosort":
             referenced_values: dict[bytes, bytes | int] | None = None

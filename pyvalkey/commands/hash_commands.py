@@ -39,7 +39,7 @@ def increment_by_float(database: Database, key: bytes, field: bytes, increment: 
     if isinstance(previous_value, bytes):
         if not is_floating_point(previous_value):
             raise ServerError(b"ERR hash value is not an float")
-    elif isinstance(previous_value, int):
+    if isinstance(previous_value, int):
         previous_value = str(previous_value).encode()
     new_value = increment_bytes_value_as_float(previous_value, increment)
     hash_value[field] = new_value

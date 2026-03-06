@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import warnings
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -11,6 +10,8 @@ from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pyvalkey.commands.core import Command
 
 

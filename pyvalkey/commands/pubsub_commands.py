@@ -1,3 +1,5 @@
+import fnmatch
+
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import positional_parameter
@@ -87,14 +89,12 @@ class PubSubChannels(Command):
 
     def execute(self) -> ValueType:
         if self.pattern is None:
-            return list(self.subscriptions_manager.channels_queues.keys())
-
-        import fnmatch
+            return list(self.subscriptions_manager.channels_queues.iter_keys())
 
         decoded_pattern = self.pattern.decode()
         return [
             channel
-            for channel in self.subscriptions_manager.channels_queues.keys()
+            for channel in self.subscriptions_manager.channels_queues.iter_keys()
             if fnmatch.fnmatch(channel.decode() if isinstance(channel, bytes) else str(channel), decoded_pattern)
         ]
 

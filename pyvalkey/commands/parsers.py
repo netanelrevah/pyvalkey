@@ -497,7 +497,6 @@ class ObjectParametersParser(ParameterParser):
         )
 
 
-@dataclass_transform()
 def move_mandatory_field_to_start(command_cls: type) -> list[str]:
     cls_annotations = getattr(command_cls, "__annotations__", {})
 
@@ -541,7 +540,6 @@ class CommandMetadata(Enum):
     PARAMETERS_LEFT_ERROR = auto()
 
 
-@dataclass_transform()
 def transform_command(
     command_cls: type[CommandType], metadata: dict[CommandMetadata, Any] | None = None
 ) -> type[CommandType]:

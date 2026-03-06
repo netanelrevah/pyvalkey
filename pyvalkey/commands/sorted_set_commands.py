@@ -334,7 +334,7 @@ class SortedSetBlockingPopMinimum(DatabaseCommand):
     b"zadd",
     {b"fast", b"sortedset"},
     flags={b"write"},
-    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
 class SortedSetAdd(DatabaseCommand):
     blocking_manager: SortedSetBlockingManager = dependency()

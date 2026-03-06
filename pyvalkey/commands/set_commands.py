@@ -3,7 +3,7 @@ from __future__ import annotations
 import fnmatch
 import functools
 import random
-from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING
 
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
@@ -12,10 +12,14 @@ from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.consts import LONG_MAX
-from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.enums import NotificationType
-from pyvalkey.resp import ValueType
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from pyvalkey.database_objects.databases import Database
+    from pyvalkey.resp import ValueType
 
 
 @command(b"smove", {b"fast", b"set"}, flags={b"write"})
@@ -145,9 +149,7 @@ class SetIntersection(DatabaseCommand):
 
 
 @command(
-    b"sintercard",
-    {b"read", b"set", b"slow"},
-    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    b"sintercard", {b"read", b"set", b"slow"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
 )
 class SetIntersectionCardinality(DatabaseCommand):
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
