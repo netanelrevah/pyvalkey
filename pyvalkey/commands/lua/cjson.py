@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from lupa.lua51 import lua_type
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.lua.helpers import LuaRuntimeWrapper
+    from pyvalkey.commands.lua.runtimes import LuaRuntimeWrapper
 
 
 def json_convert_lua_to_python_values(lua_runtime: LuaRuntimeWrapper, lua_value: Any, depth: int = 1) -> Any:  # noqa: ANN401

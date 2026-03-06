@@ -16,6 +16,7 @@ function(f, start_ms, check_busy_reply_threshold, check_killed, KEYS, ARGV)
 end
 """.strip()
 
+
 FUNCTION_LOAD_EXECUTOR = b"""
 function(start_ms, f, check_timeout)
     debug.sethook(function()
@@ -36,6 +37,7 @@ function(start_ms, f, check_timeout)
 end
 """.strip()
 
+
 LUA_IMITATE_LUA_FUNCTION = b"""
 function(f)
   return function(x) 
@@ -47,6 +49,7 @@ function(f)
 end
 """.strip()
 
+
 LUA_CALL_WRAPPER = b"""
 function(f, call_context)
   return function(command, ...)
@@ -56,6 +59,7 @@ function(f, call_context)
   end
 end
 """.strip()
+
 
 LUA_REGISTER_FUNCTION_WRAPPER = b"""
 function(f, writeable, library)

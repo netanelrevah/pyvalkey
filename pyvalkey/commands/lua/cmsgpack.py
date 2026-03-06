@@ -8,7 +8,7 @@ import umsgpack as msgpack
 from lupa.lua51 import lua_type
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.lua.helpers import LuaRuntimeWrapper
+    from pyvalkey.commands.lua.runtimes import LuaRuntimeWrapper
 
 
 def convert_to_msgpack_values(lua_runtime: LuaRuntimeWrapper, lua_value: Any, depth: int = 1) -> Any:  # noqa: ANN401

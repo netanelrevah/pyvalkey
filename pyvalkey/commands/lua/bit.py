@@ -6,7 +6,7 @@ from functools import reduce
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.lua.helpers import LuaRuntimeWrapper
+    from pyvalkey.commands.lua.runtimes import LuaRuntimeWrapper
 
 
 HIGHEST_TO_HEX_LENGTH = 8
