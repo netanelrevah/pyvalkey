@@ -4,14 +4,11 @@ import fnmatch
 import math
 import operator
 import random
-from collections.abc import Callable, Iterable
 from dataclasses import field
 from enum import Enum
 from itertools import zip_longest
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
-from pyvalkey.blocking import SortedSetBlockingManager
-from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
@@ -24,12 +21,18 @@ from pyvalkey.commands.router import command
 from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.consts import LONG_MAX
-from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError, ServerWrongNumberOfArgumentsError
 from pyvalkey.database_objects.scored_sorted_set import MAX_BYTES, RangeLimit, ScoredSortedSet
 from pyvalkey.database_objects.utils import flatten
 from pyvalkey.enums import NotificationType
 from pyvalkey.resp import ArrayNone, RespProtocolVersion, ValueType
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from pyvalkey.blocking import SortedSetBlockingManager
+    from pyvalkey.commands.context import ClientContext
+    from pyvalkey.database_objects.databases import Database
 
 
 class AggregateMode(Enum):
@@ -77,10 +80,9 @@ def parse_score_parameter(score: bytes, is_lexical: bool = False) -> tuple[bytes
 def parse_ordered_range_parameters(
     min_score: bytes, max_score: bytes, is_lexical: bool = False
 ) -> tuple[bytes, bool, bytes, bool]:
-    # noinspection PyTypeChecker
-    return parse_score_parameter(min_score, is_lexical=is_lexical) + parse_score_parameter(
-        max_score, is_lexical=is_lexical
-    )
+    min_val, min_inc = parse_score_parameter(min_score, is_lexical=is_lexical)
+    max_val, max_inc = parse_score_parameter(max_score, is_lexical=is_lexical)
+    return min_val, min_inc, max_val, max_inc
 
 
 class RangeMode(Enum):
@@ -891,7 +893,7 @@ def sorted_set_store_operation(
             raise ValueError()
         any_set = database.any_set_database.get_value_or_empty(key)
         if isinstance(any_set, set):
-            value = ScoredSortedSet((member, weight or 1.0) for member in any_set)
+            value = ScoredSortedSet((cast("bytes", member), weight or 1.0) for member in any_set)
         elif weight is not None and weight != 1.0:
             members_and_scores = []
             for score, member in any_set.members:

@@ -60,7 +60,7 @@ class TransactionExecute(Command):
     _result: ValueType = field(default=None, init=False)
     _keys_to_notify: set[bytes] = field(default_factory=set, init=False)
 
-    async def before(self, _: bool = False) -> None:
+    async def before(self, in_multi: bool = False) -> None:
         if (
             self.client_context.transaction_context is not None
             and self.client_context.transaction_context.is_aborted is True
@@ -93,7 +93,7 @@ class TransactionExecute(Command):
 
         return self._result
 
-    async def after(self, _: bool = False) -> None:
+    async def after(self, in_multi: bool = False) -> None:
         await self.list_blocking_manager.notify_lazy(self.database)
         await self.sorted_set_blocking_manager.notify_lazy(self.database)
         await self.stream_blocking_manager.notify_lazy(self.database)

@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import field
 from enum import Enum
 from math import isinf, isnan
+from typing import TYPE_CHECKING, cast
 
-from pyvalkey.blocking import StreamBlockingManager
 from pyvalkey.commands.core import Command, DatabaseCommand
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
@@ -10,11 +12,15 @@ from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
 from pyvalkey.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
-from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue
+from pyvalkey.database_objects.databases import KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
 from pyvalkey.utils.times import now_ms
+
+if TYPE_CHECKING:
+    from pyvalkey.blocking import StreamBlockingManager
+    from pyvalkey.database_objects.databases import Database, DatabaseBase
 
 
 def increment_by_int(database: Database, key: bytes, increment: int = 1) -> int:
@@ -393,7 +399,7 @@ class Set(Command):
             if self.existence_mode == ExistenceMode.OnlyIfExist:
                 return None
         elif self.existence_mode == ExistenceMode.OnlyIfNotExist:
-            return previous_value if self.get else None
+            return cast("ValueType", previous_value) if self.get else None
 
         if self.condition is not None and previous_value != self.condition:
             return None
@@ -408,7 +414,7 @@ class Set(Command):
 
         self.database.notifications_manager.notify(NotificationType.STRING, b"set", self.key)
 
-        return RESP_OK if not self.get else previous_value
+        return RESP_OK if not self.get else cast("ValueType", previous_value)
 
     async def after(self, in_multi: bool = False) -> None:
         if self._is_key_updated:
