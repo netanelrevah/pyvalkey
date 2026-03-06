@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Self, TypeVar
+from typing import TYPE_CHECKING, Self, TypeVar
 
 from sortedcontainers import SortedDict
 
 from pyvalkey.consts import UINT64_MAX
 from pyvalkey.utils.times import now_ms
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 EntryID = tuple[int, int]
 EntryData = dict[bytes, bytes]

@@ -7,22 +7,16 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import Generator
 from dataclasses import dataclass, field
 from io import BytesIO
 from traceback import print_exc
-from types import FrameType
-from typing import Self, cast
+from typing import TYPE_CHECKING, Self, cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
-from pyvalkey.commands.core import Command
 from pyvalkey.commands.executors import CommandExecutor
 from pyvalkey.commands.router import CommandsRouter
 from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
-from pyvalkey.database_objects.acl import ACL, ACLUser
-from pyvalkey.database_objects.clients import Client, ClientsMap
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
     RouterKeyError,
     ServerError,
@@ -31,6 +25,16 @@ from pyvalkey.database_objects.errors import (
 from pyvalkey.enums import ReplyMode, UnblockMessage
 from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 from pyvalkey.utils.times import now_f_s
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from types import FrameType
+
+    from pyvalkey.commands.core import Command
+    from pyvalkey.database_objects.acl import ACL, ACLUser
+    from pyvalkey.database_objects.clients import Client, ClientsMap
+    from pyvalkey.database_objects.databases import Database
+
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +89,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
     def transport(self) -> asyncio.Transport:
         if self._transport is None:
             raise Exception("must initialize client first")
-        return cast(asyncio.Transport, self._transport)
+        return cast("asyncio.Transport", self._transport)
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self._transport = transport
