@@ -1,11 +1,11 @@
 import fnmatch
 
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.notifications import ClientSubscriptions, SubscriptionsManager
 from pyvalkey.resp import BulkArray, DoNotReply, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 @command(b"subscribe", {b"pubsub", b"slow"})

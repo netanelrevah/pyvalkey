@@ -5,13 +5,13 @@ from os import urandom
 from typing import TYPE_CHECKING
 
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import ParameterMetadata, flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import CommandsRouter, command
 from pyvalkey.database_objects.acl import ACL, ACLUser, CommandRule, KeyPattern, Permission
 from pyvalkey.database_objects.configurations import ConfigurationError, Configurations
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, RespError, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 if TYPE_CHECKING:
     from pyvalkey.blocking import BlockingManager, StreamBlockingManager

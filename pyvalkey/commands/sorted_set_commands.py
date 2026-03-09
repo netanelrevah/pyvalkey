@@ -10,7 +10,6 @@ from itertools import zip_longest
 from typing import TYPE_CHECKING, Protocol, cast
 
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
     flag_parameter,
     keyword_parameter,
@@ -25,6 +24,7 @@ from pyvalkey.database_objects.scored_sorted_set import MAX_BYTES, RangeLimit, S
 from pyvalkey.database_objects.utils import flatten
 from pyvalkey.enums import NotificationType
 from pyvalkey.resp import ArrayNone, RespProtocolVersion, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

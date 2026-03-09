@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 
 from psutil import Process
 
-from pyvalkey.commands.creators import CommandCreator
-from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.database_objects.utils import to_bytes
 from pyvalkey.utils.times import now_ms
 
@@ -35,7 +33,6 @@ class CommandStatistics:
         )
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.information)
 @dataclass
 class Information:
     start_time: float = field(default_factory=now_ms)

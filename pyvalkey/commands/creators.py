@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Self, get_type_hints
 
-from pyvalkey.commands.dependencies import collect_dependencies, dependency_registerer
+from pyvalkey.utils.dependencies import collect_dependencies, dependency_registerer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,6 +20,10 @@ class CommandCreator:
 
     if TYPE_CHECKING:
         RESOLVERS: ClassVar[dict[type, Callable[[ClientContext], Any]]]
+
+        @classmethod
+        def register_dependency(cls, dependency_cls: type, resolver: Callable[..., Any]) -> Callable[[type], type]:
+            pass
 
     def __call__(self, parameters: list[bytes], client_context: ClientContext) -> Command:
         command_kwargs = self.command_cls.parse(parameters)

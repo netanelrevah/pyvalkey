@@ -5,7 +5,6 @@ from typing import cast
 from pyvalkey.blocking import StreamBlockingManager, StreamWaitingContext
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata, parameters_object
 from pyvalkey.commands.router import command
@@ -24,6 +23,7 @@ from pyvalkey.database_objects.stream import (
 )
 from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.utils.times import now_ms
 
 

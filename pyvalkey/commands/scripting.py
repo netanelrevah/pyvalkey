@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Self
 
 from lupa.lua51 import LuaError, LuaSyntaxError
 
-from pyvalkey.commands.creators import CommandCreator
-from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.lua.core import (
     CompiledFunction,
@@ -142,7 +140,6 @@ class LuaEngineBase:
             del lua_runtime.globals().redis
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.scripts_engine)
 @dataclass
 class ScriptsEngine(LuaEngineBase):
     commands_router: Any
@@ -191,7 +188,6 @@ class ScriptsEngine(LuaEngineBase):
             self.currently_running = False
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.functions_engine)
 @dataclass
 class FunctionsEngine(LuaEngineBase):
     commands_router: Any

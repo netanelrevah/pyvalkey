@@ -6,7 +6,6 @@ from math import isinf, isnan
 from typing import TYPE_CHECKING, cast
 
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
@@ -16,6 +15,7 @@ from pyvalkey.database_objects.databases import KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:

@@ -4,7 +4,6 @@ from hashlib import sha256
 
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
     flag_parameter,
     keyword_parameter,
@@ -17,6 +16,7 @@ from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.enums import ReplyMode, UnblockMessage
 from pyvalkey.notifications import ClientSubscriptions
 from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespProtocolVersion, ValueType
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.utils.times import now_f_s
 
 

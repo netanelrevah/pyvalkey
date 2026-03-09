@@ -3,7 +3,6 @@ from dataclasses import field
 from pyvalkey.blocking import ListBlockingManager, SortedSetBlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, TransactionContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.database_objects.databases import (
@@ -11,6 +10,7 @@ from pyvalkey.database_objects.databases import (
     Database,
 )
 from pyvalkey.resp import RESP_OK, BulkArray, DoNotReply, RespError, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 def unwatch(databases: dict[int, Database], client_watchlist: ClientWatchlist) -> None:

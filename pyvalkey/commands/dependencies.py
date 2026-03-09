@@ -1,89 +1,34 @@
-from collections.abc import Callable
-from dataclasses import Field, dataclass, field, fields, is_dataclass
-from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Self, TypeVar, dataclass_transform, get_type_hints
+from pyvalkey.blocking import BlockingManager, ListBlockingManager, SortedSetBlockingManager, StreamBlockingManager
+from pyvalkey.commands.context import ClientContext, ServerContext
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
+from pyvalkey.database_objects.acl import ACL
+from pyvalkey.database_objects.configurations import Configurations
+from pyvalkey.database_objects.databases import Database
+from pyvalkey.database_objects.information import Information
+from pyvalkey.notifications import ClientSubscriptions, NotificationsManager
+from pyvalkey.resp import RespProtocolVersion
 
 
-class DependencyMetadata(Enum):
-    DEPENDENCY = auto()
-
-
-T = TypeVar("T")
-
-
-@dataclass_transform()
-def dependency_registerer(cls: type[T]) -> type[T]:
-    if not is_dataclass(cls):
-        cls = dataclass(cls)
-    setattr(cls, "RESOLVERS", {})
-
-    def register_dependency(_cls: type, resolver: Callable[..., Any]) -> Callable[[type], type]:
-        def decorator(dependency_type: type) -> type:
-            getattr(_cls, "RESOLVERS")[dependency_type] = resolver
-            return dependency_type
-
-        return decorator
-
-    setattr(cls, "register_dependency", classmethod(register_dependency))
-    return cls
-
-
-def registered_as_dependency_for(
-    registry_cls: Any,  # noqa: ANN401
-    resolver: Callable[..., Any],
-) -> Callable[[type[T]], type[T]]:
-    def decorator(cls: type[T]) -> type[T]:
-        getattr(registry_cls, "RESOLVERS")[cls] = resolver
-        return cls
-
-    return decorator
-
-
-def dependency() -> Any:  # noqa: ANN401
-    return field(metadata={DependencyMetadata.DEPENDENCY: True})
-
-
-def collect_dependencies(cls: type[T], field_types: Any) -> tuple[list[Field[Any]], list[Any]]:  # noqa: ANN401
-    if not is_dataclass(cls):
-        raise TypeError()
-
-    command_dependencies = []
-    command_dependencies_types = []
-    for command_dependency in fields(cls):
-        if not command_dependency.metadata.get(DependencyMetadata.DEPENDENCY):
-            continue
-
-        command_dependencies.append(command_dependency)
-        command_dependencies_types.append(field_types[command_dependency.name])
-
-    return command_dependencies, command_dependencies_types
-
-
-class DependencyRegisterer:
-    RESOLVERS: ClassVar[dict[type, Callable[..., Any]]]
-
-
-@dataclass
-class DependenciesInjector(Generic[T]):
-    dependencies: list[Field[Any]]
-    dependencies_types: list[Any]
-
-    if TYPE_CHECKING:
-        RESOLVERS: ClassVar[dict[type, Callable[..., Any]]]
-
-    def __call__(self, kwargs: dict[str, Any]) -> None:
-        for command_dependency, command_dependency_type in zip(self.dependencies, self.dependencies_types):
-            resolver = self.RESOLVERS.get(command_dependency_type)
-            if resolver is None:
-                raise TypeError(f"Unregistered dependency type: {command_dependency_type}")
-            kwargs[command_dependency.name] = resolver(**kwargs)
-
-    @classmethod
-    def create(cls, created_cls: type[T]) -> Self:
-        type_hints = get_type_hints(created_cls, localns={d.__name__: d for d in cls.RESOLVERS.keys()})
-        command_dependencies, command_dependencies_types = collect_dependencies(created_cls, type_hints)
-        return cls(command_dependencies, command_dependencies_types)
-
-
-def get_type_hints_with_dependencies(created_cls: type[T], creator_cls: type[DependencyRegisterer]) -> dict:
-    return get_type_hints(created_cls, localns={d.__name__: d for d in creator_cls.RESOLVERS.keys()})
+def register_dependencies() -> None:
+    CommandCreator.register_dependency(ACL, lambda ctx: ctx.server_context.acl)
+    CommandCreator.register_dependency(BlockingManager, lambda ctx: ctx.server_context.blocking_manager)
+    CommandCreator.register_dependency(
+        ListBlockingManager, lambda ctx: ctx.server_context.blocking_manager.list_blocking_manager
+    )
+    CommandCreator.register_dependency(
+        SortedSetBlockingManager, lambda ctx: ctx.server_context.blocking_manager.sorted_set_blocking_manager
+    )
+    CommandCreator.register_dependency(
+        StreamBlockingManager, lambda ctx: ctx.server_context.blocking_manager.stream_blocking_manager
+    )
+    CommandCreator.register_dependency(ServerContext, lambda ctx: ctx.server_context)
+    CommandCreator.register_dependency(ClientContext, lambda ctx: ctx)
+    CommandCreator.register_dependency(ScriptsEngine, lambda ctx: ctx.server_context.scripts_engine)
+    CommandCreator.register_dependency(FunctionsEngine, lambda ctx: ctx.server_context.functions_engine)
+    CommandCreator.register_dependency(Configurations, lambda ctx: ctx.server_context.configurations)
+    CommandCreator.register_dependency(Database, lambda ctx: ctx.database)
+    CommandCreator.register_dependency(Information, lambda ctx: ctx.server_context.information)
+    CommandCreator.register_dependency(NotificationsManager, lambda ctx: ctx.notifications_manager)
+    CommandCreator.register_dependency(ClientSubscriptions, lambda ctx: ctx.subscriptions)
+    CommandCreator.register_dependency(RespProtocolVersion, lambda ctx: ctx.protocol)

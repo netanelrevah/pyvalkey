@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Generic, TypeVar, cast
 
 from sortedcontainers import SortedSet
 
-from pyvalkey.commands.creators import CommandCreator
-from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.utils import is_integer
 from pyvalkey.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
@@ -472,7 +470,6 @@ class AnySetDatabase(DatabaseBase[ScoredSortedSet | set[bytes]]):
         return self.has_typed_key(key, lambda value: isinstance(value, ScoredSortedSet | set))
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.database)
 @dataclass
 class Database(DatabaseBase[KeyValueType]):
     index: int

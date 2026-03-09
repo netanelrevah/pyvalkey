@@ -6,13 +6,13 @@ import random
 from typing import TYPE_CHECKING
 
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.enums import NotificationType
+from pyvalkey.utils.dependencies import dependency
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

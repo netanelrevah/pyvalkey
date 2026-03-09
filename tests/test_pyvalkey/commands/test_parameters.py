@@ -1,5 +1,4 @@
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
     ParameterMetadata,
     flag_parameter,
@@ -12,6 +11,7 @@ from pyvalkey.commands.parsers import ObjectParametersParser
 from pyvalkey.commands.router import transform_command
 from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 def test_positional_boolean_flag_default_false():

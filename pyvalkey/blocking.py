@@ -6,8 +6,6 @@ from asyncio import wait_for
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
-from pyvalkey.commands.creators import CommandCreator
-from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.utils import decrease_entry_id, format_entry_id, parse_strict_entry_id
 from pyvalkey.database_objects.clients import BlockingContext
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
@@ -21,7 +19,6 @@ if typing.TYPE_CHECKING:
     from pyvalkey.database_objects.databases import Database, KeyValueTypeVar
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager)
 @dataclass
 class BlockingManagerBase:
     notifications: OrderedBiMap[bytes, BlockingContext] = field(default_factory=OrderedBiMap)
@@ -109,7 +106,6 @@ class BlockingManagerBase:
                 await blocking_context.queue.put(key)
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager.list_blocking_manager)
 class ListBlockingManager(BlockingManagerBase):
     def has_key(self, database: Database, key: bytes) -> bool:
         return database.list_database.has_key(key)
@@ -118,9 +114,6 @@ class ListBlockingManager(BlockingManagerBase):
         return isinstance(value, list)
 
 
-@registered_as_dependency_for(
-    CommandCreator, lambda ctx: ctx.server_context.blocking_manager.sorted_set_blocking_manager
-)
 class SortedSetBlockingManager(BlockingManagerBase):
     def has_key(self, database: Database, key: bytes) -> bool:
         return database.sorted_set_database.has_key(key)
@@ -150,7 +143,6 @@ class StreamWaitingContext:
         self.key_to_history_only.clear()
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager.stream_blocking_manager)
 @dataclass
 class StreamBlockingManager:
     notifications: OrderedBiMap[bytes, BlockingContext] = field(default_factory=OrderedBiMap)
@@ -440,7 +432,6 @@ class StreamBlockingManager:
                 await blocking_context.queue.put(key)
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager)
 @dataclass
 class BlockingManager:
     list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)

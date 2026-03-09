@@ -6,8 +6,6 @@ from dataclasses import dataclass, field, fields
 from hashlib import sha256
 from typing import TYPE_CHECKING, ClassVar, Self
 
-from pyvalkey.commands.creators import CommandCreator
-from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.parameters import ParameterMetadata
 from pyvalkey.database_objects.errors import CommandPermissionError, KeyPermissionError, NoPermissionError
 
@@ -163,7 +161,6 @@ class ACLUser:
             raise exception
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.acl)
 class ACL(dict[bytes, ACLUser]):
     CATEGORIES: ClassVar[dict[bytes, set[bytes]]] = defaultdict(set)
     COMMANDS_NAMES: ClassVar[dict[type[Command], bytes]] = {}

@@ -3,10 +3,9 @@ import random
 from collections.abc import Iterable
 from math import isinf, isnan
 
-from pyvalkey.commands.dependencies import dependency
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.commands.core import Command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, is_floating_point, is_integer
 from pyvalkey.consts import LONG_MAX, LONG_MIN
 from pyvalkey.database_objects.databases import Database
@@ -15,6 +14,7 @@ from pyvalkey.database_objects.utils import flatten
 from pyvalkey.enums import NotificationType
 from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, RespProtocolVersion, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 def increment_by_int(database: Database, key: bytes, field: bytes, increment: int) -> int:

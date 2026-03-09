@@ -7,7 +7,6 @@ from typing import Any, cast
 from pyvalkey.blocking import BlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import is_integer
@@ -25,6 +24,7 @@ from pyvalkey.enums import NotificationType
 from pyvalkey.listpack import listpack
 from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.utils.times import now_ms
 
 
@@ -218,6 +218,7 @@ class Keys(Command):
 @command(b"migrate", {b"dangerous", b"keyspace", b"slow"}, flags={b"write"})
 class Migrate(Command):
     database: Database = dependency()
+
     def execute(self) -> ValueType:
         return None
 
@@ -760,6 +761,7 @@ class SortReadOnly(Command):
 @command(b"touch", {b"fast", b"keyspace", b"read"}, flags={b"write"})
 class Touch(Command):
     database: Database = dependency()
+
     def execute(self) -> ValueType:
         return RESP_OK
 

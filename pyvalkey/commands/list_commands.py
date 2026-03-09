@@ -4,7 +4,6 @@ from enum import Enum
 from pyvalkey.blocking import ListBlockingManager
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import parse_range_parameters
@@ -15,6 +14,7 @@ from pyvalkey.database_objects.information import Information
 from pyvalkey.enums import NotificationType
 from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, ArrayNone, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 class DirectionMode(Enum):

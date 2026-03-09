@@ -5,13 +5,13 @@ from typing import Any
 
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 @command(b"eval", {b"scripting", b"slow"})

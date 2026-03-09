@@ -6,15 +6,12 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any, AnyStr, BinaryIO, Self
 
-from pyvalkey.commands.creators import CommandCreator
-from pyvalkey.commands.dependencies import registered_as_dependency_for
 from pyvalkey.commands.utils import convert_float_value_to_bytes
 
 if TYPE_CHECKING:
     from io import IOBase
 
 
-@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.protocol)
 class RespProtocolVersion(IntEnum):
     RESP2 = 2
     RESP3 = 3
