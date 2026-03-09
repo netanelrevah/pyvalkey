@@ -6,7 +6,7 @@ from math import isinf, isnan
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.commands.string_commands import DatabaseCommand
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, is_floating_point, is_integer
 from pyvalkey.consts import LONG_MAX, LONG_MIN
 from pyvalkey.database_objects.databases import Database
@@ -56,7 +56,8 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
 
 
 @command(b"hdel", {b"fast", b"hash"}, flags={b"write"})
-class HashMapDelete(DatabaseCommand):
+class HashMapDelete(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     fields: list[bytes] = positional_parameter()
 
@@ -67,7 +68,8 @@ class HashMapDelete(DatabaseCommand):
 
 
 @command(b"hexists", {b"fast", b"hash", b"read"})
-class HashMapExists(DatabaseCommand):
+class HashMapExists(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
 
@@ -76,7 +78,8 @@ class HashMapExists(DatabaseCommand):
 
 
 @command(b"hget", {b"fast", b"hash", b"read"})
-class HashMapGet(DatabaseCommand):
+class HashMapGet(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
 
@@ -85,7 +88,8 @@ class HashMapGet(DatabaseCommand):
 
 
 @command(b"hgetall", {b"hash", b"read", b"slow"})
-class HashMapGetAll(DatabaseCommand):
+class HashMapGetAll(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -98,7 +102,8 @@ class HashMapGetAll(DatabaseCommand):
 
 
 @command(b"hincrby", {b"fast", b"hash"}, flags={b"write"})
-class HashMapIncreaseBy(DatabaseCommand):
+class HashMapIncreaseBy(Command):
+    database: Database = dependency()
     notifications: NotificationsManager = dependency()
 
     key: bytes = positional_parameter()
@@ -112,7 +117,8 @@ class HashMapIncreaseBy(DatabaseCommand):
 
 
 @command(b"hincrbyfloat", {b"fast", b"hash"}, flags={b"write"})
-class HashMapIncreaseByFloat(DatabaseCommand):
+class HashMapIncreaseByFloat(Command):
+    database: Database = dependency()
     notifications: NotificationsManager = dependency()
 
     key: bytes = positional_parameter()
@@ -129,7 +135,8 @@ class HashMapIncreaseByFloat(DatabaseCommand):
 
 
 @command(b"hkeys", {b"hash", b"read", b"slow"})
-class HashMapKeys(DatabaseCommand):
+class HashMapKeys(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -137,7 +144,8 @@ class HashMapKeys(DatabaseCommand):
 
 
 @command(b"hlen", {b"fast", b"hash", b"read"})
-class HashMapLength(DatabaseCommand):
+class HashMapLength(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -145,7 +153,8 @@ class HashMapLength(DatabaseCommand):
 
 
 @command(b"hmget", {b"fast", b"hash", b"read"})
-class HashMapGetMultiple(DatabaseCommand):
+class HashMapGetMultiple(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     fields: list[bytes] = positional_parameter()
 
@@ -155,7 +164,8 @@ class HashMapGetMultiple(DatabaseCommand):
 
 
 @command(b"hmset", {b"fast", b"hash"}, flags={b"write"})
-class HashMapSetMultiple(DatabaseCommand):
+class HashMapSetMultiple(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
@@ -170,7 +180,8 @@ class HashMapSetMultiple(DatabaseCommand):
 
 
 @command(b"hrandfield", {b"hash", b"read", b"slow"}, flags={b"write"})
-class HashRandomField(DatabaseCommand):
+class HashRandomField(Command):
+    database: Database = dependency()
     protocol: RespProtocolVersion = dependency()
 
     key: bytes = positional_parameter()
@@ -207,7 +218,8 @@ class HashRandomField(DatabaseCommand):
 
 
 @command(b"hscan", {b"hash", b"read", b"slow"})
-class HashMapScan(DatabaseCommand):
+class HashMapScan(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
@@ -233,7 +245,8 @@ class HashMapScan(DatabaseCommand):
 
 
 @command(b"hset", {b"fast", b"hash"}, flags={b"write"})
-class HashMapSet(DatabaseCommand):
+class HashMapSet(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
@@ -251,7 +264,8 @@ class HashMapSet(DatabaseCommand):
 
 
 @command(b"hsetnx", {b"fast", b"hash"}, flags={b"write"})
-class HashMapSetIfNotExists(DatabaseCommand):
+class HashMapSetIfNotExists(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
     value: bytes = positional_parameter()
@@ -266,7 +280,8 @@ class HashMapSetIfNotExists(DatabaseCommand):
 
 
 @command(b"hstrlen", {b"fast", b"hash", b"read"})
-class HashMapStringLength(DatabaseCommand):
+class HashMapStringLength(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     field: bytes = positional_parameter()
 
@@ -279,7 +294,8 @@ class HashMapStringLength(DatabaseCommand):
 
 
 @command(b"hvals", {b"hash", b"read", b"slow"})
-class HashMapValues(DatabaseCommand):
+class HashMapValues(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:

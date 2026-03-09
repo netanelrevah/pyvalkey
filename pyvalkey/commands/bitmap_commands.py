@@ -3,7 +3,7 @@ from enum import Enum
 from functools import reduce
 from typing import Any, ClassVar
 
-from pyvalkey.commands.core import DatabaseCommand
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import (
@@ -14,7 +14,7 @@ from pyvalkey.commands.utils import (
     get_bit_from_bytes,
     set_bit_to_bytes,
 )
-from pyvalkey.database_objects.databases import KeyValue
+from pyvalkey.database_objects.databases import Database, KeyValue
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
 
@@ -27,7 +27,9 @@ class BitOperationMode(Enum):
 
 
 @command(b"bitcount", {b"bitmap", b"read", b"slow"})
-class BitCount(DatabaseCommand):
+class BitCount(Command):
+    database: Database
+
     key: bytes = positional_parameter()
     count_range: tuple[int, int] | None = positional_parameter(default=None)
     bit_mode: bool = positional_parameter(default=False, values_mapping={b"BYTE": False, b"BIT": True})
@@ -75,19 +77,25 @@ class BitCount(DatabaseCommand):
 
 
 @command(b"bitfield", {b"bitmap", b"slow"}, flags={b"write"})
-class BitField(DatabaseCommand):
+class BitField(Command):
+    database: Database
+
     def execute(self) -> ValueType:
         return None
 
 
 @command(b"bitfield_ro", {b"bitmap", b"fast", b"read"})
-class BitFieldReadOnly(DatabaseCommand):
+class BitFieldReadOnly(Command):
+    database: Database
+
     def execute(self) -> ValueType:
         return None
 
 
 @command(b"bitop", {b"bitmap", b"slow"}, flags={b"write"})
-class BitOperation(DatabaseCommand):
+class BitOperation(Command):
+    database: Database
+
     OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
         BitOperationMode.AND: operator.and_,
         BitOperationMode.OR: operator.or_,
@@ -121,13 +129,17 @@ class BitOperation(DatabaseCommand):
 
 
 @command(b"bitpos", {b"bitmap", b"read", b"slow"})
-class BitPosition(DatabaseCommand):
+class BitPosition(Command):
+    database: Database
+
     def execute(self) -> ValueType:
         return None
 
 
 @command(b"getbit", {b"bitmap", b"fast", b"read"})
-class GetBit(DatabaseCommand):
+class GetBit(Command):
+    database: Database
+
     key: bytes = positional_parameter()
     offset: int = positional_parameter()
 
@@ -136,7 +148,9 @@ class GetBit(DatabaseCommand):
 
 
 @command(b"setbit", {b"bitmap", b"slow"}, flags={b"write"})
-class SetBit(DatabaseCommand):
+class SetBit(Command):
+    database: Database
+
     key: bytes = positional_parameter()
     offset: int = positional_parameter()
     value: int = positional_parameter()

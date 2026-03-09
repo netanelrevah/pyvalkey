@@ -4,7 +4,7 @@ from dataclasses import field, fields
 from os import urandom
 from typing import TYPE_CHECKING
 
-from pyvalkey.commands.core import Command, DatabaseCommand
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import ParameterMetadata, flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import CommandsRouter, command
@@ -252,7 +252,9 @@ class ConfigResetStatistics(Command):
 
 
 @command(b"dbsize", {b"fast", b"keyspace", b"read"})
-class DatabaseSize(DatabaseCommand):
+class DatabaseSize(Command):
+    database: Database = dependency()
+
     def execute(self) -> ValueType:
         return self.database.size()
 

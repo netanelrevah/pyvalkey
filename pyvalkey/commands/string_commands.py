@@ -5,7 +5,7 @@ from enum import Enum
 from math import isinf, isnan
 from typing import TYPE_CHECKING, cast
 
-from pyvalkey.commands.core import Command, DatabaseCommand
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
@@ -53,7 +53,8 @@ def increment_by(database: Database, key: bytes, increment: int | float = 1) -> 
 
 
 @command(b"append", {b"fast", b"string"}, flags={b"write"})
-class Append(DatabaseCommand):
+class Append(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     value: bytes = positional_parameter()
 
@@ -65,7 +66,8 @@ class Append(DatabaseCommand):
 
 
 @command(b"decr", {b"fast", b"string"}, flags={b"write"})
-class Decrement(DatabaseCommand):
+class Decrement(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -73,7 +75,8 @@ class Decrement(DatabaseCommand):
 
 
 @command(b"decrby", {b"fast", b"string"}, flags={b"write"})
-class DecrementBy(DatabaseCommand):
+class DecrementBy(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     decrement: int = positional_parameter()
 
@@ -85,7 +88,8 @@ class DecrementBy(DatabaseCommand):
 
 
 @command(b"get", {b"admin", b"dangerous", b"fast", b"read", b"slow", b"string"})
-class Get(DatabaseCommand):
+class Get(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
@@ -93,7 +97,8 @@ class Get(DatabaseCommand):
 
 
 @command(b"getdel", {b"fast", b"string"}, flags={b"write"})
-class GetDelete(DatabaseCommand):
+class GetDelete(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -109,7 +114,8 @@ class GetDelete(DatabaseCommand):
     flags={b"write"},
     metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
-class GetExpire(DatabaseCommand):
+class GetExpire(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
     ex: int | None = keyword_parameter(flag=b"EX", default=None)
     px: int | None = keyword_parameter(flag=b"PX", default=None)
@@ -145,7 +151,8 @@ class GetExpire(DatabaseCommand):
 
 
 @command(b"getrange", {b"read", b"slow", b"string"}, flags={b"write"})
-class StringGetRange(DatabaseCommand):
+class StringGetRange(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     start: int = positional_parameter()
     end: int = positional_parameter()
@@ -156,7 +163,8 @@ class StringGetRange(DatabaseCommand):
 
 
 @command(b"getset", {b"fast", b"string"}, flags={b"write"})
-class GetSet(DatabaseCommand):
+class GetSet(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
 
@@ -167,7 +175,8 @@ class GetSet(DatabaseCommand):
 
 
 @command(b"incr", {b"fast", b"string"}, flags={b"write"})
-class Increment(DatabaseCommand):
+class Increment(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -175,7 +184,8 @@ class Increment(DatabaseCommand):
 
 
 @command(b"incrby", {b"fast", b"string"}, flags={b"write"})
-class IncrementBy(DatabaseCommand):
+class IncrementBy(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     increment: int = positional_parameter()
 
@@ -184,7 +194,8 @@ class IncrementBy(DatabaseCommand):
 
 
 @command(b"incrbyfloat", {b"fast", b"string"}, flags={b"write"})
-class IncrementByFloat(DatabaseCommand):
+class IncrementByFloat(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     increment: float = positional_parameter()
 
@@ -195,7 +206,8 @@ class IncrementByFloat(DatabaseCommand):
 
 
 @command(b"lcs", {b"read", b"slow", b"string"}, flags={b"write"})
-class LongestCommonSubsequence(DatabaseCommand):
+class LongestCommonSubsequence(Command):
+    database: Database = dependency()
     key1: bytes = positional_parameter()
     key2: bytes = positional_parameter()
     length: bool = flag_parameter(token=b"LEN")
@@ -298,7 +310,8 @@ class LongestCommonSubsequence(DatabaseCommand):
 
 
 @command(b"mget", {b"fast", b"read", b"string"})
-class MultipleGet(DatabaseCommand):
+class MultipleGet(Command):
+    database: Database = dependency()
     keys: list[bytes] = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
@@ -318,7 +331,8 @@ class MultipleGet(DatabaseCommand):
 
 
 @command(b"mset", {b"slow", b"string"}, flags={b"write"})
-class SetMultiple(DatabaseCommand):
+class SetMultiple(Command):
+    database: Database = dependency()
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -328,7 +342,8 @@ class SetMultiple(DatabaseCommand):
 
 
 @command(b"msetnx", {b"slow", b"string"}, flags={b"write"})
-class SetIfNotExistsMultiple(DatabaseCommand):
+class SetIfNotExistsMultiple(Command):
+    database: Database = dependency()
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -422,7 +437,8 @@ class Set(Command):
 
 
 @command(b"setex", {b"slow", b"string"}, flags={b"write"})
-class SetExpire(DatabaseCommand):
+class SetExpire(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     seconds: int = positional_parameter()
     value: bytes = positional_parameter()
@@ -434,7 +450,8 @@ class SetExpire(DatabaseCommand):
 
 
 @command(b"psetex", {b"slow", b"string"}, flags={b"write"})
-class SetExpireMilliseconds(DatabaseCommand):
+class SetExpireMilliseconds(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     milliseconds: int = positional_parameter()
     value: bytes = positional_parameter()
@@ -446,7 +463,8 @@ class SetExpireMilliseconds(DatabaseCommand):
 
 
 @command(b"setnx", {b"fast", b"string"}, flags={b"write"})
-class SetIfNotExists(DatabaseCommand):
+class SetIfNotExists(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
 
     value: bytes = positional_parameter()
@@ -459,7 +477,8 @@ class SetIfNotExists(DatabaseCommand):
 
 
 @command(b"setrange", {b"slow", b"string"}, flags={b"write"})
-class SetRange(DatabaseCommand):
+class SetRange(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     offset: int = positional_parameter()
     value: bytes = positional_parameter()
@@ -486,7 +505,8 @@ class SetRange(DatabaseCommand):
 
 
 @command(b"strlen", {b"fast", b"read", b"string"})
-class StringLength(DatabaseCommand):
+class StringLength(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -494,7 +514,8 @@ class StringLength(DatabaseCommand):
 
 
 @command(b"substr", {b"read", b"slow", b"string"}, flags={b"write"})
-class StringSubstring(DatabaseCommand):
+class StringSubstring(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     start: int = positional_parameter()
     end: int = positional_parameter()

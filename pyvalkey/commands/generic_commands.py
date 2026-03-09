@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from pyvalkey.blocking import BlockingManager, StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
-from pyvalkey.commands.core import Command, DatabaseCommand
+from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
@@ -62,7 +62,8 @@ class Copy(Command):
 
 
 @command(b"del", {b"keyspace", b"slow"}, flags={b"write"})
-class Delete(DatabaseCommand):
+class Delete(Command):
+    database: Database = dependency()
     notifications: NotificationsManager = dependency()
 
     blocking_manager: StreamBlockingManager = dependency()
@@ -88,7 +89,8 @@ class Delete(DatabaseCommand):
 
 
 @command(b"delifeq", {b"fast", b"string"}, flags={b"write"})
-class DeleteIdEqual(DatabaseCommand):
+class DeleteIdEqual(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     value: bytes = positional_parameter()
 
@@ -102,7 +104,8 @@ class DeleteIdEqual(DatabaseCommand):
 
 
 @command(b"dump", {b"keyspace", b"read", b"scripting", b"slow"})
-class Dump(DatabaseCommand):
+class Dump(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -150,7 +153,8 @@ class Dump(DatabaseCommand):
 
 
 @command(b"exists", {b"fast", b"keyspace", b"read", b"scripting", b"slow"})
-class Exists(DatabaseCommand):
+class Exists(Command):
+    database: Database = dependency()
     keys: list[bytes] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -158,7 +162,8 @@ class Exists(DatabaseCommand):
 
 
 @command(b"expire", {b"fast", b"keyspace"}, flags={b"write"})
-class Expire(DatabaseCommand):
+class Expire(Command):
+    database: Database = dependency()
     notifications: NotificationsManager = dependency()
 
     key: bytes = positional_parameter()
@@ -172,7 +177,8 @@ class Expire(DatabaseCommand):
 
 
 @command(b"expireat", {b"fast", b"keyspace"}, flags={b"write"})
-class ExpireAt(DatabaseCommand):
+class ExpireAt(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     timestamp: int = positional_parameter()
 
@@ -181,7 +187,8 @@ class ExpireAt(DatabaseCommand):
 
 
 @command(b"expiretime", {b"fast", b"keyspace", b"read"}, flags={b"write"})
-class Expiration(DatabaseCommand):
+class Expiration(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -192,7 +199,8 @@ class Expiration(DatabaseCommand):
 
 
 @command(b"keys", {b"dangerous", b"keyspace", b"read", b"slow"})
-class Keys(DatabaseCommand):
+class Keys(Command):
+    database: Database = dependency()
     MAXIMUM_NESTING = 1000
 
     pattern: bytes = positional_parameter()
@@ -208,7 +216,8 @@ class Keys(DatabaseCommand):
 
 
 @command(b"migrate", {b"dangerous", b"keyspace", b"slow"}, flags={b"write"})
-class Migrate(DatabaseCommand):
+class Migrate(Command):
+    database: Database = dependency()
     def execute(self) -> ValueType:
         return None
 
@@ -237,7 +246,8 @@ class Move(Command):
 
 
 @command(b"encoding", {b"keyspace", b"read", b"slow"}, parent_command=b"object")
-class ObjectEncoding(DatabaseCommand):
+class ObjectEncoding(Command):
+    database: Database = dependency()
     configuration: Configurations = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
@@ -353,7 +363,8 @@ class ObjectHelp(Command):
 
 
 @command(b"freq", {b"keyspace", b"read", b"slow"}, parent_command=b"object")
-class ObjectFrequency(DatabaseCommand):
+class ObjectFrequency(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -364,7 +375,8 @@ class ObjectFrequency(DatabaseCommand):
 
 
 @command(b"refcount", {b"keyspace", b"read", b"slow"}, parent_command=b"object")
-class ObjectRefCount(DatabaseCommand):
+class ObjectRefCount(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -375,7 +387,8 @@ class ObjectRefCount(DatabaseCommand):
 
 
 @command(b"idletime", {b"keyspace", b"read", b"slow"}, parent_command=b"object")
-class ObjectIdleTime(DatabaseCommand):
+class ObjectIdleTime(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -386,7 +399,8 @@ class ObjectIdleTime(DatabaseCommand):
 
 
 @command(b"persist", {b"fast", b"keyspace"}, flags={b"write"})
-class Persist(DatabaseCommand):
+class Persist(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -396,7 +410,8 @@ class Persist(DatabaseCommand):
 
 
 @command(b"pexpire", {b"fast", b"keyspace"}, flags={b"write"})
-class ExpireMilliseconds(DatabaseCommand):
+class ExpireMilliseconds(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     seconds: int = positional_parameter()
 
@@ -405,7 +420,8 @@ class ExpireMilliseconds(DatabaseCommand):
 
 
 @command(b"pexpireat", {b"fast", b"keyspace"}, flags={b"write"})
-class ExpireAtMilliseconds(DatabaseCommand):
+class ExpireAtMilliseconds(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     timestamp: int = positional_parameter()
 
@@ -414,7 +430,8 @@ class ExpireAtMilliseconds(DatabaseCommand):
 
 
 @command(b"pexpiretime", {b"fast", b"keyspace", b"read"}, flags={b"write"})
-class ExpirationMilliseconds(DatabaseCommand):
+class ExpirationMilliseconds(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -424,7 +441,8 @@ class ExpirationMilliseconds(DatabaseCommand):
 
 
 @command(b"pttl", {b"fast", b"keyspace", b"read"})
-class TimeToLiveMilliseconds(DatabaseCommand):
+class TimeToLiveMilliseconds(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
@@ -486,7 +504,8 @@ class Rename(Command):
 
 
 @command(b"renamenx", {b"fast", b"keyspace"}, flags={b"write"})
-class RenameIfNotExists(DatabaseCommand):
+class RenameIfNotExists(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
     new_key: bytes = positional_parameter(key_mode=b"W")
 
@@ -502,7 +521,8 @@ class RenameIfNotExists(DatabaseCommand):
 
 
 @command(b"restore", {b"dangerous", b"keyspace", b"scripting", b"slow"}, flags={b"write"})
-class Restore(DatabaseCommand):
+class Restore(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     ttl: int = positional_parameter()
     serialized_value: bytes = positional_parameter()
@@ -566,7 +586,8 @@ class Restore(DatabaseCommand):
 
 
 @command(b"scan", {b"keyspace", b"read", b"slow"}, flags={b"write"})
-class Scan(DatabaseCommand):
+class Scan(Command):
+    database: Database = dependency()
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
     count: int | None = keyword_parameter(token=b"COUNT", default=None)
@@ -737,13 +758,15 @@ class SortReadOnly(Command):
 
 
 @command(b"touch", {b"fast", b"keyspace", b"read"}, flags={b"write"})
-class Touch(DatabaseCommand):
+class Touch(Command):
+    database: Database = dependency()
     def execute(self) -> ValueType:
         return RESP_OK
 
 
 @command(b"ttl", {b"fast", b"keyspace", b"read"})
-class TimeToLive(DatabaseCommand):
+class TimeToLive(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
@@ -757,7 +780,8 @@ class TimeToLive(DatabaseCommand):
 
 
 @command(b"type", {b"fast", b"keyspace", b"read"}, flags={b"write"})
-class Type(DatabaseCommand):
+class Type(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -806,7 +830,8 @@ class Unlink(Command):
 
 
 @command(b"wait", {b"blocking", b"connection", b"slow"}, flags={b"write"})
-class Wait(DatabaseCommand):
+class Wait(Command):
+    database: Database = dependency()
     numreplicas: int = positional_parameter()
     timeout: int = positional_parameter()
 
@@ -815,7 +840,8 @@ class Wait(DatabaseCommand):
 
 
 @command(b"waitaof", {b"blocking", b"connection", b"slow"}, flags={b"write"})
-class WaitAOF(DatabaseCommand):
+class WaitAOF(Command):
+    database: Database = dependency()
     numlocal: int = positional_parameter()
     numreplicas: int = positional_parameter()
     timeout: int = positional_parameter()

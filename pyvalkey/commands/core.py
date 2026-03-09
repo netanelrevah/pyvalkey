@@ -3,11 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Self, dataclass_transform
 
-from pyvalkey.commands.dependencies import dependency
-
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
-    from pyvalkey.database_objects.databases import Database
     from pyvalkey.resp import ValueType
 
 
@@ -37,8 +34,3 @@ class Command:
     @classmethod
     def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
         pass
-
-
-@dataclass
-class DatabaseCommand(Command):
-    database: Database = dependency()

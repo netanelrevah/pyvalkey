@@ -26,10 +26,7 @@ from pyvalkey.database_objects.errors import (
 )
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.core import Command
-
     ParameterObjectType = TypeVar("ParameterObjectType", bound=object)
-    CommandType = TypeVar("CommandType", bound=Command)
 
 
 class ParametersParserCreator:
@@ -438,7 +435,7 @@ class ObjectParametersParser(ParameterParser):
 
     @classmethod
     def create(cls, object_cls: Any, allow_more_parameters: bool = False) -> Self:  # noqa: ANN401
-        resolved_hints = get_type_hints(object_cls)
+        resolved_hints = get_type_hints(object_cls, localns={d.__name__: d for d in CommandCreator.RESOLVERS.keys()})
 
         parameter_fields = {
             parameter_field.name: parameter_field
@@ -538,17 +535,3 @@ def parameters_object(parameter_object_cls: type[ParameterObjectType]) -> type[P
 
 class CommandMetadata(Enum):
     PARAMETERS_LEFT_ERROR = auto()
-
-
-def transform_command(
-    command_cls: type[CommandType], metadata: dict[CommandMetadata, Any] | None = None
-) -> type[CommandType]:
-    original_order = move_mandatory_field_to_start(command_cls)
-
-    command_cls = dataclass(command_cls)
-    setattr(command_cls, "__command_metadata__", metadata or {})
-    setattr(command_cls, "__original_order__", original_order)
-    setattr(command_cls, "parse", ObjectParametersParser.create(command_cls))
-    setattr(command_cls, "create", CommandCreator.create(command_cls))
-
-    return command_cls

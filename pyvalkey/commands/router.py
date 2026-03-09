@@ -3,9 +3,14 @@ from __future__ import annotations
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from pyvalkey.commands.parsers import CommandMetadata, transform_command
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.parsers import (
+    CommandMetadata,
+    ObjectParametersParser,
+    move_mandatory_field_to_start,
+)
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
@@ -13,6 +18,22 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from pyvalkey.commands.core import Command
+
+    CommandType = TypeVar("CommandType", bound=Command)
+
+
+def transform_command(
+    command_cls: type[CommandType], metadata: dict[CommandMetadata, Any] | None = None
+) -> type[CommandType]:
+    original_order = move_mandatory_field_to_start(command_cls)
+
+    command_cls = dataclass(command_cls)
+    setattr(command_cls, "__command_metadata__", metadata or {})
+    setattr(command_cls, "__original_order__", original_order)
+    setattr(command_cls, "parse", ObjectParametersParser.create(command_cls))
+    setattr(command_cls, "create", CommandCreator.create(command_cls))
+
+    return command_cls
 
 
 @dataclass

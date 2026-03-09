@@ -10,7 +10,6 @@ from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
-from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.enums import NotificationType
@@ -23,7 +22,8 @@ if TYPE_CHECKING:
 
 
 @command(b"smove", {b"fast", b"set"}, flags={b"write"})
-class SetMove(DatabaseCommand):
+class SetMove(Command):
+    database: Database = dependency()
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
     member: bytes = positional_parameter()
@@ -42,7 +42,8 @@ class SetMove(DatabaseCommand):
 
 
 @command(b"smismember", {b"fast", b"read", b"set"})
-class SetAreMembers(DatabaseCommand):
+class SetAreMembers(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     members: list[bytes] = positional_parameter(sequence_allow_empty=False)
 
@@ -52,7 +53,8 @@ class SetAreMembers(DatabaseCommand):
 
 
 @command(b"sismember", {b"fast", b"read", b"set"})
-class SetIsMember(DatabaseCommand):
+class SetIsMember(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     member: bytes = positional_parameter()
 
@@ -61,7 +63,8 @@ class SetIsMember(DatabaseCommand):
 
 
 @command(b"smembers", {b"read", b"set", b"slow"})
-class SetMembers(DatabaseCommand):
+class SetMembers(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -69,7 +72,8 @@ class SetMembers(DatabaseCommand):
 
 
 @command(b"scard", {b"fast", b"read", b"set"})
-class SetCardinality(DatabaseCommand):
+class SetCardinality(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -95,7 +99,8 @@ class SetAdd(Command):
 
 
 @command(b"spop", {b"fast", b"set"}, flags={b"write"})
-class SetPop(DatabaseCommand):
+class SetPop(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     count: int = positional_parameter(default=None)
 
@@ -133,7 +138,8 @@ def apply_set_operation(database: Database, operation: Callable[[set, set], set]
 
 
 @command(b"sunion", {b"read", b"set", b"slow"})
-class SetUnion(DatabaseCommand):
+class SetUnion(Command):
+    database: Database = dependency()
     keys: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -141,7 +147,8 @@ class SetUnion(DatabaseCommand):
 
 
 @command(b"sinter", {b"read", b"set", b"slow"})
-class SetIntersection(DatabaseCommand):
+class SetIntersection(Command):
+    database: Database = dependency()
     keys: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -151,7 +158,8 @@ class SetIntersection(DatabaseCommand):
 @command(
     b"sintercard", {b"read", b"set", b"slow"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
 )
-class SetIntersectionCardinality(DatabaseCommand):
+class SetIntersectionCardinality(Command):
+    database: Database = dependency()
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
     keys: list[bytes] = positional_parameter(
         length_field_name="numkeys",
@@ -174,7 +182,8 @@ class SetIntersectionCardinality(DatabaseCommand):
 
 
 @command(b"sdiff", {b"read", b"set", b"slow"})
-class SetDifference(DatabaseCommand):
+class SetDifference(Command):
+    database: Database = dependency()
     keys: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -191,7 +200,8 @@ def apply_set_store_operation(
 
 
 @command(b"sunionstore", {b"set", b"slow"}, flags={b"write"})
-class SetUnionStore(DatabaseCommand):
+class SetUnionStore(Command):
+    database: Database = dependency()
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
 
@@ -200,7 +210,8 @@ class SetUnionStore(DatabaseCommand):
 
 
 @command(b"sinterstore", {b"set", b"slow"}, flags={b"write"})
-class SetIntersectionStore(DatabaseCommand):
+class SetIntersectionStore(Command):
+    database: Database = dependency()
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
 
@@ -209,7 +220,8 @@ class SetIntersectionStore(DatabaseCommand):
 
 
 @command(b"sdiffstore", {b"set", b"slow"}, flags={b"write"})
-class SetDifferenceStore(DatabaseCommand):
+class SetDifferenceStore(Command):
+    database: Database = dependency()
     destination: bytes = positional_parameter()
     keys: list[bytes] = positional_parameter()
 
@@ -218,7 +230,8 @@ class SetDifferenceStore(DatabaseCommand):
 
 
 @command(b"srandmember", {b"read", b"set", b"slow"}, flags={b"write"})
-class SetRandomMember(DatabaseCommand):
+class SetRandomMember(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
 
@@ -254,7 +267,8 @@ class SetRandomMember(DatabaseCommand):
 
 
 @command(b"sscan", {b"read", b"set", b"slow"})
-class SetScan(DatabaseCommand):
+class SetScan(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)

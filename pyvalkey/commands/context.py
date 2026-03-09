@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from pyvalkey.commands.core import Command
-    from pyvalkey.commands.router import CommandsRouter
     from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 
 
@@ -129,7 +128,7 @@ class ClientContext:
         return self.server_context.create_notification_manager(self.current_database)
 
     @classmethod
-    def create(cls, server_context: ServerContext, host: bytes, port: int, router: CommandsRouter) -> Self:
+    def create(cls, server_context: ServerContext, host: bytes, port: int) -> Self:
         client = server_context.clients.create_client(host, port)
         client_context = cls(
             server_context,

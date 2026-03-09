@@ -96,7 +96,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         host: str
         port: int
         host, port = transport.get_extra_info("peername")
-        self._client_context = ClientContext.create(self.server_context, host.encode(), port, self.router)
+        self._client_context = ClientContext.create(self.server_context, host.encode(), port)
 
         self.parser_task = asyncio.create_task(self.parse())
         self.pubsub_task = asyncio.create_task(self.pubsub())

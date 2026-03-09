@@ -7,7 +7,6 @@ from pyvalkey.commands.core import Command
 from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.consts import LONG_MAX
 from pyvalkey.database_objects.databases import Database
@@ -237,7 +236,8 @@ class ListMove(Command):
 
 
 @command(b"lindex", {b"list", b"read", b"slow"})
-class ListIndex(DatabaseCommand):
+class ListIndex(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     index: int = positional_parameter()
 
@@ -251,7 +251,8 @@ class ListIndex(DatabaseCommand):
 
 
 @command(b"linsert", {b"list", b"slow"}, flags={b"write"})
-class ListInsert(DatabaseCommand):
+class ListInsert(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     direction: DirectionMode = positional_parameter()
     pivot: bytes = positional_parameter()
@@ -272,7 +273,8 @@ class ListInsert(DatabaseCommand):
 
 
 @command(b"lset", {b"list", b"slow"}, flags={b"write"})
-class ListSet(DatabaseCommand):
+class ListSet(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     index: int = positional_parameter()
     element: bytes = positional_parameter()
@@ -291,7 +293,8 @@ class ListSet(DatabaseCommand):
 
 
 @command(b"llen", {b"fast", b"list", b"read"})
-class ListLength(DatabaseCommand):
+class ListLength(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -299,7 +302,8 @@ class ListLength(DatabaseCommand):
 
 
 @command(b"lrange", {b"list", b"read", b"slow"})
-class ListRange(DatabaseCommand):
+class ListRange(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     start: int = positional_parameter()
     stop: int = positional_parameter()
@@ -309,7 +313,8 @@ class ListRange(DatabaseCommand):
 
 
 @command(b"ltrim", {b"list", b"slow"}, flags={b"write"})
-class ListTrim(DatabaseCommand):
+class ListTrim(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     start: int = positional_parameter()
     stop: int = positional_parameter()
@@ -323,7 +328,8 @@ class ListTrim(DatabaseCommand):
 
 
 @command(b"lpop", {b"fast", b"list"}, flags={b"write"})
-class ListPop(DatabaseCommand):
+class ListPop(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     count: int | None = positional_parameter(default=None)
 
@@ -342,7 +348,8 @@ class ListPop(DatabaseCommand):
 
 
 @command(b"lpos", {b"list", b"read", b"slow"})
-class ListPosition(DatabaseCommand):
+class ListPosition(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     element: bytes = positional_parameter()
     rank: int | None = keyword_parameter(token=b"RANK", default=None)
@@ -394,7 +401,8 @@ class ListPosition(DatabaseCommand):
 
 
 @command(b"lpush", {b"fast", b"list"}, flags={b"write", b"denyoom"})
-class ListPush(DatabaseCommand):
+class ListPush(Command):
+    database: Database = dependency()
     notification: NotificationsManager = dependency()
     information: Information = dependency()
     blocking_manager: ListBlockingManager = dependency()
@@ -417,7 +425,8 @@ class ListPush(DatabaseCommand):
 
 
 @command(b"lpushx", {b"fast", b"list"}, flags={b"write", b"denyoom"})
-class ListPushIfExists(DatabaseCommand):
+class ListPushIfExists(Command):
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"W")
@@ -438,7 +447,8 @@ class ListPushIfExists(DatabaseCommand):
 
 
 @command(b"rpop", {b"fast", b"list"}, flags={b"write"})
-class ListRightPop(DatabaseCommand):
+class ListRightPop(Command):
+    database: Database = dependency()
     notification: NotificationsManager = dependency()
 
     key: bytes = positional_parameter()
@@ -464,7 +474,8 @@ class ListRightPop(DatabaseCommand):
 
 
 @command(b"rpoplpush", {b"list", b"slow"}, flags={b"write"})
-class ListRightPopLeftPush(DatabaseCommand):
+class ListRightPopLeftPush(Command):
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
     source: bytes = positional_parameter()
     destination: bytes = positional_parameter()
@@ -484,7 +495,8 @@ class ListRightPopLeftPush(DatabaseCommand):
 
 
 @command(b"lrem", {b"list", b"slow"}, flags={b"write"})
-class ListRemove(DatabaseCommand):
+class ListRemove(Command):
+    database: Database = dependency()
     key: bytes = positional_parameter()
     count: int = positional_parameter()
     element: bytes = positional_parameter()
@@ -512,7 +524,8 @@ class ListRemove(DatabaseCommand):
 
 
 @command(b"rpush", {b"fast", b"list"}, flags={b"write"})
-class ListPushAtTail(DatabaseCommand):
+class ListPushAtTail(Command):
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
     notification: NotificationsManager = dependency()
@@ -534,7 +547,8 @@ class ListPushAtTail(DatabaseCommand):
 
 
 @command(b"rpushx", {b"fast", b"list"}, flags={b"write"})
-class ListPushAtTailIfExists(DatabaseCommand):
+class ListPushAtTailIfExists(Command):
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter()

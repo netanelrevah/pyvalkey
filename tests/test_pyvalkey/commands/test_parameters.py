@@ -1,4 +1,5 @@
-from pyvalkey.commands.core import DatabaseCommand
+from pyvalkey.commands.core import Command
+from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import (
     ParameterMetadata,
     flag_parameter,
@@ -7,7 +8,9 @@ from pyvalkey.commands.parameters import (
     positional_boolean_flag,
     positional_parameter,
 )
-from pyvalkey.commands.parsers import ObjectParametersParser, transform_command
+from pyvalkey.commands.parsers import ObjectParametersParser
+from pyvalkey.commands.router import transform_command
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.resp import ValueType
 
 
@@ -64,7 +67,9 @@ def test_all_parameter_types_have_metadata():
 
 
 @transform_command
-class GetSetTestCommand(DatabaseCommand):
+class GetSetTestCommand(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
     get_flag: bool = positional_boolean_flag(default=False)
@@ -74,7 +79,9 @@ class GetSetTestCommand(DatabaseCommand):
 
 
 @transform_command
-class SetTestCommand(DatabaseCommand):
+class SetTestCommand(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
     ex_seconds: int | None = keyword_numeric_option(flag=b"EX", default=None)
@@ -86,7 +93,9 @@ class SetTestCommand(DatabaseCommand):
 
 
 @transform_command
-class SelectTestCommand(DatabaseCommand):
+class SelectTestCommand(Command):
+    database: Database = dependency()
+
     db_index: int = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -94,7 +103,9 @@ class SelectTestCommand(DatabaseCommand):
 
 
 @transform_command
-class ClientTestCommand(DatabaseCommand):
+class ClientTestCommand(Command):
+    database: Database = dependency()
+
     client_type: bytes | None = keyword_string_option(flag=b"TYPE", default=None)
     client_id: int | None = keyword_numeric_option(flag=b"ID", default=None)
 
@@ -103,7 +114,9 @@ class ClientTestCommand(DatabaseCommand):
 
 
 @transform_command
-class ZAddTestCommand(DatabaseCommand):
+class ZAddTestCommand(Command):
+    database: Database = dependency()
+
     key: bytes = positional_parameter()
     score_member: list[tuple[float, bytes]] = positional_parameter()
     changed_flag: bool = flag_parameter(token=b"CH", default=False)

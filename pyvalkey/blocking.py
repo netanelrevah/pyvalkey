@@ -440,6 +440,7 @@ class StreamBlockingManager:
                 await blocking_context.queue.put(key)
 
 
+@registered_as_dependency_for(CommandCreator, lambda ctx: ctx.server_context.blocking_manager)
 @dataclass
 class BlockingManager:
     list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)
