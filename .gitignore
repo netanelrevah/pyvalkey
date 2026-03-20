@@ -16,3 +16,6 @@ __pycache__
 
 AGENTS.local.md
 opencode.json
+
+CLAUDE.local.md
+.claude
