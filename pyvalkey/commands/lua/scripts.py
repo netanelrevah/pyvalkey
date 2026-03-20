@@ -61,6 +61,22 @@ end
 """.strip()
 
 
+LUA_MAKE_READONLY_SERVER_TABLE = b"""
+function(t)
+    return setmetatable({}, {
+        __index = function(_, k)
+            local v = rawget(t, k)
+            if v ~= nil then return v end
+            error(("Script attempted to access nonexistent global variable '%s'"):format(tostring(k)), 2)
+        end,
+        __newindex = function(_, k, v)
+            error("Attempt to modify a readonly table", 2)
+        end
+    })
+end
+""".strip()
+
+
 LUA_REGISTER_FUNCTION_WRAPPER = b"""
 function(f, writeable, library)
   print("bla")

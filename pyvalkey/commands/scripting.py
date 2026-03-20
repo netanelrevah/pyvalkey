@@ -23,6 +23,7 @@ from pyvalkey.commands.lua.helpers import (
     convert_lua_value_to_valkey_value,
     fill_load_server_globals,
     fill_server_globals,
+    lua_safe,
     register_function,
 )
 from pyvalkey.commands.lua.scripts import (
@@ -62,9 +63,11 @@ class LuaEngineBase:
         self._function_call_executor = self._function_compiler.eval(FUNCTION_CALL_EXECUTOR)
         self._function_load_executor = self._function_compiler.eval(FUNCTION_LOAD_EXECUTOR)
 
+    @lua_safe
     def check_killed(self) -> bool:
         return self.kill.is_set()
 
+    @lua_safe
     def check_busy_reply_threshold(self, start_ms: int) -> None:
         if self.is_busy.is_set():
             return
@@ -72,6 +75,7 @@ class LuaEngineBase:
         if self.check_timeout(start_ms):
             self.is_busy.set()
 
+    @lua_safe
     def check_timeout(self, start_ms: int) -> bool:
         elapsed = now_ms() - start_ms
         return elapsed > self.configuration.busy_reply_threshold
@@ -210,9 +214,15 @@ class FunctionsEngine(LuaEngineBase):
         if engine != b"lua":
             raise ServerError(f"ERR Engine '{shebang[2:].decode()}' not found".encode())
 
-        if not args or not args[0].startswith(b"name="):
-            raise Exception()
-        library_name = args[0].split(b"=", 1)[1].lower()
+        library_name = None
+        for arg in args:
+            if arg.startswith(b"name="):
+                if library_name is not None:
+                    raise ServerError(b"ERR multiple name arguments given")
+                library_name = arg.split(b"=", 1)[1].lower()
+
+        if library_name is None:
+            raise ServerError(b"ERR Expecting engine name before library name")
 
         if LIBRARY_NAME_PATTERN.match(library_name.decode()) is None:
             raise ServerError(
@@ -229,16 +239,15 @@ class FunctionsEngine(LuaEngineBase):
 
         call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
 
-        fill_load_server_globals(call_context)
+        writeable_redis_server = fill_load_server_globals(call_context)
 
         wrapped_register_function = lua_runtime.eval(LUA_REGISTER_FUNCTION_WRAPPER)(
             register_function, writeable, library
         )
 
-        lua_runtime.globals().server.register_function = wrapped_register_function
+        writeable_redis_server.register_function = wrapped_register_function
 
         start_ms = now_ms()
-
         try:
             compiled_code = lua_runtime.compile(code)
         except LuaSyntaxError:
@@ -254,6 +263,11 @@ class FunctionsEngine(LuaEngineBase):
             raise e
         except Exception as e:
             raise e
+        else:
+            prohibit = lua_runtime.eval(b"function(msg) return function(...) error(msg, 2) end end")(
+                b"server.register_function can only be called on FUNCTION LOAD command"
+            )
+            writeable_redis_server.register_function = prohibit
         finally:
             del lua_runtime.globals().server
             del lua_runtime.globals().redis
@@ -267,26 +281,25 @@ class FunctionsEngine(LuaEngineBase):
         new_library = RegisteredLibrary(library_name, code, engine)
 
         try:
-            print(f"Loading library '{library_name.decode()}' to runtime")
             self.load_function_to_runtime(True, new_library, client_context, code)
-            print(f"Loading library '{library_name.decode()}' to readonly runtime")
             self.load_function_to_runtime(False, new_library, client_context, code)
 
             if not new_library.functions:
-                print("No functions registered in library")
                 raise ServerError(b"ERR No functions registered")
         except ServerError as e:
             raise e
         except LuaError as e:
-            print(f"Caught error during load: {e}")
             msg = e.message if isinstance(e, ServerError) else str(e.args[0]).encode()
             raise ServerError(b"ERR Error compiling function: " + msg)
 
-        for function_name, registered_function in new_library.functions.items():
-            if function_name.lower() in self.registered_functions:
-                registered_function = self.registered_functions[function_name.lower()]
-                if registered_function.library_name != library_name:
-                    raise ServerError(b"ERR Function " + function_name + b" already exists")
+        for function_name_str, registered_function in new_library.functions.items():
+            function_name_bytes = (
+                function_name_str.encode() if isinstance(function_name_str, str) else function_name_str
+            )
+            if function_name_bytes.lower() in self.registered_functions:
+                existing_func = self.registered_functions[function_name_bytes.lower()]
+                if existing_func.library_name != library_name:
+                    raise ServerError(b"ERR Function " + function_name_bytes + b" already exists")
         self.registered_libraries[library_name] = new_library
         for function_name, registered_function in new_library.functions.items():
             self.registered_functions[function_name.lower()] = registered_function

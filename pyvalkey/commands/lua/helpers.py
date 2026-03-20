@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from functools import partial
+import inspect
+from functools import partial, wraps
 from hashlib import sha1
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from lupa import lua51
 from lupa.lua51 import lua_type, unpacks_lua_table
@@ -10,7 +11,7 @@ from lupa.lua51 import lua_type, unpacks_lua_table
 from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.lua.core import CallContext, CompiledFunction, RegisteredFunction, RegisteredLibrary
 from pyvalkey.commands.lua.errors import LuaServerError
-from pyvalkey.commands.lua.scripts import LUA_CALL_WRAPPER, LUA_IMITATE_LUA_FUNCTION
+from pyvalkey.commands.lua.scripts import LUA_CALL_WRAPPER, LUA_IMITATE_LUA_FUNCTION, LUA_MAKE_READONLY_SERVER_TABLE
 from pyvalkey.database_objects.errors import (
     RouterKeyError,
     ServerError,
@@ -20,9 +21,30 @@ from pyvalkey.database_objects.errors import (
 from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespProtocolVersion, ValueType
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pyvalkey.commands.context import ClientContext
 
+LuaSafeReturnType = TypeVar("LuaSafeReturnType")
+
 MAX_CONVERT_DEPTH = 100
+
+
+def lua_safe(func: Callable[..., LuaSafeReturnType]) -> Callable[..., LuaSafeReturnType]:
+    params = inspect.signature(func).parameters
+    if any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params.values()):
+        return func
+    n_params = sum(
+        1
+        for p in params.values()
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    )
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> LuaSafeReturnType:  # noqa: ANN401
+        return func(*args[:n_params])
+
+    return wrapper
 
 
 def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueType:  # noqa: ANN401
@@ -250,7 +272,7 @@ def lua_server_error_raiser(message: bytes) -> None:
     raise LuaServerError(message)
 
 
-def fill_load_server_globals(call_context: CallContext) -> None:
+def fill_load_server_globals(call_context: CallContext) -> Any:  # noqa: ANN401
     lua_runtime = call_context.lua_runtime
     lua_globals = lua_runtime.globals()
 
@@ -267,22 +289,19 @@ def fill_load_server_globals(call_context: CallContext) -> None:
     lua_imitate_lua_function = lua_runtime.eval(LUA_IMITATE_LUA_FUNCTION)
     redis_server.sha1hex = lua_imitate_lua_function(sha1hex)
 
-    redis_server.set_repl = set_repl
-    redis_server.setresp = unpacks_lua_table(partial(set_resp, call_context.client_context))
-    redis_server.acl_check_cmd = acl_check_cmd
-
     call_wrapper = lua_runtime.eval(LUA_CALL_WRAPPER)
-    redis_server.call = prohibit_calling(
-        lua_server_error_raiser, b"ERR attempted to access nonexistent global variable 'call'"
-    )
     redis_server.pcall = call_wrapper(pcall, call_context)
 
     lua_globals.math.random = prohibit_calling(
         lua_server_error_raiser, b"ERR attempted to access nonexistent global variable 'math'"
     )
 
-    lua_globals.server = redis_server
-    lua_globals.redis = redis_server
+    make_readonly = lua_runtime.eval(LUA_MAKE_READONLY_SERVER_TABLE)
+    readonly_server = make_readonly(redis_server)
+    lua_globals.server = readonly_server
+    lua_globals.redis = readonly_server
+
+    return redis_server
 
 
 def fill_server_globals(call_context: CallContext) -> None:
@@ -301,5 +320,7 @@ def fill_server_globals(call_context: CallContext) -> None:
     redis_server.call = call_wrapper(call, call_context)
     redis_server.pcall = call_wrapper(pcall, call_context)
 
-    lua_globals.server = redis_server
-    lua_globals.redis = redis_server
+    make_readonly = call_context.lua_runtime.eval(LUA_MAKE_READONLY_SERVER_TABLE)
+    readonly_server = make_readonly(redis_server)
+    lua_globals.server = readonly_server
+    lua_globals.redis = readonly_server
