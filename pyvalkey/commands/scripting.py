@@ -260,7 +260,7 @@ class FunctionsEngine(LuaEngineBase):
         except LuaError as e:
             if "Timeout reached!" in str(e.args[0]):
                 raise ServerError(b"ERR FUNCTION LOAD timeout")
-            raise e
+            raise ServerError(str(e.args[0]).encode().split(b"\n")[0])
         except Exception as e:
             raise e
         else:
@@ -272,11 +272,15 @@ class FunctionsEngine(LuaEngineBase):
             del lua_runtime.globals().server
             del lua_runtime.globals().redis
 
-    def load_function(self, client_context: ClientContext, script: bytes, replace: bool = False) -> bytes:
+    def load_function(
+        self, client_context: ClientContext, script: bytes, replace: bool = False, quoted_name: bool = True
+    ) -> bytes:
         engine, library_name, code = self.parse_load_function_script(script)
 
         if not replace and library_name in self.registered_libraries:
-            raise ServerError(b"ERR Library already exists")
+            if quoted_name:
+                raise ServerError(b"ERR Library '" + library_name + b"' already exists")
+            raise ServerError(b"ERR Library " + library_name + b" already exists")
 
         new_library = RegisteredLibrary(library_name, code, engine)
 
@@ -319,7 +323,10 @@ class FunctionsEngine(LuaEngineBase):
             raise ServerError(b"ERR Function not found")
 
         registered_function = self.registered_functions[function_name.lower()]
-        readonly = readonly or "no-writes" in registered_function.flags
+        has_no_writes = b"no-writes" in registered_function.flags
+        if readonly and not has_no_writes:
+            raise ServerError(b"ERR Can not execute a script with write flag using *_ro command")
+        readonly = readonly or has_no_writes
         compiled_function = registered_function.compiled_function.get(not readonly)
 
         if self.currently_running is not None:

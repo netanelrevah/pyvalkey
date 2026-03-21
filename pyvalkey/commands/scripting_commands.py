@@ -257,7 +257,9 @@ class FunctionRestore(Command):
 
             script = f"#!{engine.decode()} name={library_name.decode()}\n{code.decode()}"
 
-            self.functions_engine.load_function(self.client_context, script.encode(), replace=self.replace)
+            self.functions_engine.load_function(
+                self.client_context, script.encode(), replace=self.replace, quoted_name=False
+            )
 
         return RESP_OK
 

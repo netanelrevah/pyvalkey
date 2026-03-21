@@ -15,8 +15,8 @@ uv sync --all-extras
 # Run all tests
 uv run pytest
 
-# Run a specific test tag (from inside tests/test_valkey_docker/)
-pytest -v --tag=<tag_name> tests/test_valkey_docker/test_valkey.py
+# Run a specific test tag
+uv run pytest -v -k test_tag --tag=<tag_name> tests/test_valkey_docker/test_valkey.py
 
 # Lint
 ruff check .
@@ -56,7 +56,7 @@ Tests run the official Valkey TCL test suite inside Docker, pointed at the pyval
 - The Docker container exit code may not reflect actual test results — always read the log
 - Log markers: `[ok]` passed, `[fail]` failed, `[err]` exception, `[ignore]` skipped
 - `tests/test_valkey_docker/test_valkey.py` is the source of truth for what is currently covered
-- When touching Lua/scripting code, always validate with `uv run pytest -v --tag=scripting tests/test_valkey_docker/test_valkey.py`
+- When touching Lua/scripting code, always validate with `uv run pytest -v -k test_tag --tag=scripting tests/test_valkey_docker/test_valkey.py`
 
 ## Code Style
 

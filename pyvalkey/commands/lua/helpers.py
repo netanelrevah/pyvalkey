@@ -11,7 +11,11 @@ from lupa.lua51 import lua_type, unpacks_lua_table
 from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.lua.core import CallContext, CompiledFunction, RegisteredFunction, RegisteredLibrary
 from pyvalkey.commands.lua.errors import LuaServerError
-from pyvalkey.commands.lua.scripts import LUA_CALL_WRAPPER, LUA_IMITATE_LUA_FUNCTION, LUA_MAKE_READONLY_SERVER_TABLE
+from pyvalkey.commands.lua.scripts import (
+    LUA_CALL_WRAPPER,
+    LUA_IMITATE_LUA_FUNCTION,
+    LUA_MAKE_READONLY_SERVER_TABLE,
+)
 from pyvalkey.database_objects.errors import (
     RouterKeyError,
     ServerError,
@@ -103,14 +107,19 @@ def register_function(
         if table_args:
             raise LuaServerError(b"ERR unknown argument given to server.register_function")
 
-    if (function_name is None and callback is None) or args != ():
+    if args != ():
         raise LuaServerError(b"ERR wrong number of arguments to server.register_function")
 
-    if not isinstance(function_name, bytes):
-        raise LuaServerError(
-            f"ERR {'function_name' if called_with_table_args else 'first'} "
-            f"argument to server.register_function must be a string".encode()
-        )
+    if called_with_table_args:
+        if function_name is None:
+            raise LuaServerError(b"ERR server.register_function must get a function name argument")
+        if not isinstance(function_name, bytes):
+            raise LuaServerError(b"ERR function_name argument given to server.register_function must be a string")
+    else:
+        if function_name is None and callback is None:
+            raise LuaServerError(b"ERR wrong number of arguments to server.register_function")
+        if not isinstance(function_name, bytes):
+            raise LuaServerError(b"ERR first argument to server.register_function must be a string")
 
     if LIBRARY_NAME_PATTERN.match(function_name.decode()) is None:
         raise LuaServerError(
@@ -118,16 +127,18 @@ def register_function(
             b"or underscores(_) and must be at least one character long"
         )
 
-    if callback is None:
-        raise LuaServerError(
-            b"ERR calling server.register_function with a single argument is only applicable to Lua table"
-        )
-
-    if lua51.lua_type(callback) != "function":
-        raise LuaServerError(
-            f"ERR {'callback' if called_with_table_args else 'second'}"
-            f" argument to server.register_function must be a function".encode()
-        )
+    if called_with_table_args:
+        if callback is None:
+            raise LuaServerError(b"ERR server.register_function must get a callback argument")
+        if lua51.lua_type(callback) != "function":
+            raise LuaServerError(b"ERR callback argument given to server.register_function must be a function")
+    else:
+        if callback is None:
+            raise LuaServerError(
+                b"ERR calling server.register_function with a single argument is only applicable to Lua table"
+            )
+        if lua51.lua_type(callback) != "function":
+            raise LuaServerError(b"ERR second argument to server.register_function must be a function")
 
     if description is not None and not isinstance(description, bytes):
         raise LuaServerError(b"ERR description argument given to server.register_function must be a string")
@@ -296,6 +307,13 @@ def fill_load_server_globals(call_context: CallContext) -> Any:  # noqa: ANN401
         lua_server_error_raiser, b"ERR attempted to access nonexistent global variable 'math'"
     )
 
+    server_version = call_context.client_context.server_context.information.server_version
+    major, minor, patch = (int(p) for p in server_version.split(b"."))
+    redis_server.REDIS_VERSION = server_version
+    redis_server.REDIS_VERSION_NUM = (major << 16) | (minor << 8) | patch
+    redis_server.VALKEY_VERSION = server_version
+    redis_server.VALKEY_VERSION_NUM = (major << 16) | (minor << 8) | patch
+
     make_readonly = lua_runtime.eval(LUA_MAKE_READONLY_SERVER_TABLE)
     readonly_server = make_readonly(redis_server)
     lua_globals.server = readonly_server
@@ -320,7 +338,17 @@ def fill_server_globals(call_context: CallContext) -> None:
     redis_server.call = call_wrapper(call, call_context)
     redis_server.pcall = call_wrapper(pcall, call_context)
 
-    make_readonly = call_context.lua_runtime.eval(LUA_MAKE_READONLY_SERVER_TABLE)
-    readonly_server = make_readonly(redis_server)
-    lua_globals.server = readonly_server
-    lua_globals.redis = readonly_server
+    redis_server.REPL_NONE = 0
+    redis_server.REPL_AOF = 1
+    redis_server.REPL_REPLICA = 2
+    redis_server.REPL_ALL = 3
+
+    server_version = call_context.client_context.server_context.information.server_version
+    major, minor, patch = (int(p) for p in server_version.split(b"."))
+    redis_server.REDIS_VERSION = server_version
+    redis_server.REDIS_VERSION_NUM = (major << 16) | (minor << 8) | patch
+    redis_server.VALKEY_VERSION = server_version
+    redis_server.VALKEY_VERSION_NUM = (major << 16) | (minor << 8) | patch
+
+    lua_globals.server = redis_server
+    lua_globals.redis = redis_server

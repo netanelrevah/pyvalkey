@@ -424,7 +424,9 @@ class ObjectParametersParser(ParameterParser):
 
         if parameters and not self.allow_more_parameters:
             if self.parameters_left_error is not None:
-                raise ServerError(self.parameters_left_error.decode().format(next_parameter=parameters[0]).encode())
+                raise ServerError(
+                    self.parameters_left_error.decode().format(next_parameter=parameters[0].decode()).encode()
+                )
 
             raise ServerWrongNumberOfArgumentsError()
 

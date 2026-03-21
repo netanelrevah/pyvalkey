@@ -77,6 +77,18 @@ end
 """.strip()
 
 
+LUA_MAKE_WRITE_PROTECTED_TABLE = b"""
+function(t)
+    return setmetatable({}, {
+        __index = t,
+        __newindex = function(_, k, v)
+            error("Attempt to modify a readonly table", 2)
+        end
+    })
+end
+""".strip()
+
+
 LUA_REGISTER_FUNCTION_WRAPPER = b"""
 function(f, writeable, library)
   print("bla")

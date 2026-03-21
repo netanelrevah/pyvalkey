@@ -1,7 +1,7 @@
 import os
+
 import docker
 import pytest
-
 from valkey import Valkey
 
 
@@ -12,7 +12,7 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
 
         image, _ = client.images.build(path=os.path.dirname(os.path.abspath(__file__)), rm=True)
 
-        log_file_name = f"{'-'.join(tags.split())}.docker.log"
+        log_file_name = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{'-'.join(tags.split())}.docker.log")
 
         tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory").strip()
         command = f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
