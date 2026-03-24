@@ -89,6 +89,33 @@ end
 """.strip()
 
 
+LUA_SETUP_LOAD_ENV = b"""
+function(f)
+    local env = setmetatable({}, {
+        __index = _G,
+        __newindex = function(_, k, v)
+            error("Attempt to modify a readonly table", 2)
+        end
+    })
+    setfenv(f, env)
+    return env
+end
+""".strip()
+
+
+LUA_SETUP_CALL_ENV = b"""
+function(f)
+    local env = setmetatable({}, {
+        __index = _G,
+        __newindex = function(_, k, v)
+            error("Attempt to modify a readonly table", 2)
+        end
+    })
+    setfenv(f, env)
+end
+""".strip()
+
+
 LUA_REGISTER_FUNCTION_WRAPPER = b"""
 function(f, writeable, library)
   print("bla")

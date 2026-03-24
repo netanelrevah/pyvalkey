@@ -30,6 +30,7 @@ from pyvalkey.commands.lua.scripts import (
     FUNCTION_CALL_EXECUTOR,
     FUNCTION_LOAD_EXECUTOR,
     LUA_REGISTER_FUNCTION_WRAPPER,
+    LUA_SETUP_CALL_ENV,
 )
 from pyvalkey.commands.utils import is_integer
 from pyvalkey.database_objects.errors import ServerError
@@ -89,8 +90,6 @@ class LuaEngineBase:
         keys: list[bytes],
         argv: list[bytes],
     ) -> ValueType:
-        print("Executing compiled code with keys", keys, "and argv", argv)
-
         arguments: list[int | bytes] = []
         for argument in argv:
             if is_integer(argument):
@@ -202,6 +201,35 @@ class FunctionsEngine(LuaEngineBase):
     currently_running: CurrentlyRunningFunction | None = field(init=False, default=None)
     is_busy: asyncio.Event = field(init=False, default_factory=asyncio.Event)
 
+    _load_env_setup: dict[bool, Any] = field(init=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        for writeable in (True, False):
+            lua_runtime = self._function_compiler.get_runtime(writeable)
+            self._load_env_setup[writeable] = lua_runtime.eval(
+                b"function()\n"
+                b"  local function make_blocked(name)\n"
+                b"    return setmetatable({}, { __call = function(...)\n"
+                b"      error(\"Script attempted to access nonexistent global variable '\" .. name .. \"'\", 2)\n"
+                b"    end })\n"
+                b"  end\n"
+                b"  local blocked_gm = make_blocked('getmetatable')\n"
+                b"  local blocked_sm = make_blocked('setmetatable')\n"
+                b"  return function(f)\n"
+                b"    setfenv(f, setmetatable({\n"
+                b"      getmetatable = blocked_gm,\n"
+                b"      setmetatable = blocked_sm,\n"
+                b"    }, {\n"
+                b"      __index = _G,\n"
+                b"      __newindex = function(_, k, v)\n"
+                b"        error('Attempt to modify a readonly table', 2)\n"
+                b"      end,\n"
+                b"    }))\n"
+                b"  end\n"
+                b"end"
+            )()
+
     @classmethod
     def parse_load_function_script(cls, script: bytes) -> tuple[bytes, bytes, bytes]:
         metadata, code = script.split(b"\n", 1)
@@ -218,11 +246,13 @@ class FunctionsEngine(LuaEngineBase):
         for arg in args:
             if arg.startswith(b"name="):
                 if library_name is not None:
-                    raise ServerError(b"ERR multiple name arguments given")
-                library_name = arg.split(b"=", 1)[1].lower()
+                    raise ServerError(b"ERR Invalid metadata value, name argument was given multiple times")
+                library_name = arg.split(b"=", 1)[1].strip(b"\"'").lower()
+            else:
+                raise ServerError(b"ERR Invalid metadata value given: " + arg)
 
         if library_name is None:
-            raise ServerError(b"ERR Expecting engine name before library name")
+            raise ServerError(b"ERR Library name was not given")
 
         if LIBRARY_NAME_PATTERN.match(library_name.decode()) is None:
             raise ServerError(
@@ -247,12 +277,14 @@ class FunctionsEngine(LuaEngineBase):
 
         writeable_redis_server.register_function = wrapped_register_function
 
-        start_ms = now_ms()
         try:
             compiled_code = lua_runtime.compile(code)
         except LuaSyntaxError:
             raise ServerError(b"ERR Error compiling function")
 
+        self._load_env_setup[writeable](compiled_code)
+
+        start_ms = now_ms()
         try:
             self._function_load_executor.get(writeable)(start_ms, compiled_code, self.check_timeout)
         except LuaServerError as e:
@@ -261,9 +293,13 @@ class FunctionsEngine(LuaEngineBase):
             if "Timeout reached!" in str(e.args[0]):
                 raise ServerError(b"ERR FUNCTION LOAD timeout")
             raise ServerError(str(e.args[0]).encode().split(b"\n")[0])
-        except Exception as e:
-            raise e
         else:
+            setup_call_env = lua_runtime.eval(LUA_SETUP_CALL_ENV)
+            for registered_function in library.functions.values():
+                callback = registered_function.compiled_function.get(writeable)
+                if callback is not None:
+                    setup_call_env(callback)
+
             prohibit = lua_runtime.eval(b"function(msg) return function(...) error(msg, 2) end end")(
                 b"server.register_function can only be called on FUNCTION LOAD command"
             )

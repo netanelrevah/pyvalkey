@@ -44,9 +44,17 @@ python -m pyvalkey
 
 ## Lua↔Python Boundary Rules
 
-Lupa (Python↔Lua 5.1) has two sharp edges that must be respected:
+Lupa (Python↔Lua 5.1) has sharp edges that must be respected:
 
 **`@lua_safe` on every Python callable exposed to Lua.** `debug.sethook` fires callbacks mid-instruction; Lupa passes the interrupted Lua frame's stack arguments into the Python callback as extra positional args. `@lua_safe` (in `helpers.py`) truncates `*args` to the function's declared parameter count, absorbing any leaked args. Apply it to every method or function passed to Lua via `debug.sethook` or as a Lua function argument.
+
+**No metatable proxies on tables used during `debug.sethook` execution.** When `debug.sethook` is active (count mode), wrapping a Lua table in a metatable proxy (e.g. `setmetatable({}, {__index = t})`) can cause Lupa closure upvalue corruption — the hook fires during metamethod resolution and swaps captured variables, leading to `'SomeObject' is not callable` errors. This affects `fill_server_globals` (EVAL/FCALL context): assign the `redis`/`server` table directly to globals instead of wrapping it. `fill_load_server_globals` (FUNCTION LOAD context) can safely use `LUA_MAKE_READONLY_SERVER_TABLE` because the load executor's `debug.sethook` does not interact with `redis.call`/`redis.pcall` closures.
+
+**No Lua closures as table values in env tables used during sethook.** Having Lua closures (even pure Lua, no Python upvalues) as direct entries in a table that the sethook-monitored code accesses causes upvalue corruption. Use tables with `__call` metamethods instead: `setmetatable({}, {__call = function(...) error("msg") end})` works safely as a table entry because the `__call` metamethod is only invoked when the entry is explicitly called, not during hash lookups. Similarly, modifying `_G` entries (replacing existing globals) before or after sethook execution accumulates corruption across multiple loads. Pre-create all Lua objects (blockers, env setup functions) once in `__post_init__` and reuse them — never call `lua_runtime.eval()` per-load.
+
+**Two separate Lua runtimes.** `FunctionsCompiler` maintains `_writeable_lua_runtime` and `_readonly_lua_runtime` — completely isolated Lua states. Functions are compiled in both. The correct runtime is selected via `get(writeable)` / `get_runtime(writeable)`.
+
+**Bare `\n` in Lua error messages.** Lua errors propagated through `LuaError` may contain stack traces with newlines. Always use `.split(b"\n")[0]` to extract just the error message before raising `ServerError`.
 
 ## Testing Methodology
 
@@ -56,7 +64,7 @@ Tests run the official Valkey TCL test suite inside Docker, pointed at the pyval
 - The Docker container exit code may not reflect actual test results — always read the log
 - Log markers: `[ok]` passed, `[fail]` failed, `[err]` exception, `[ignore]` skipped
 - `tests/test_valkey_docker/test_valkey.py` is the source of truth for what is currently covered
-- When touching Lua/scripting code, always validate with `uv run pytest -v -k test_tag --tag=scripting tests/test_valkey_docker/test_valkey.py`
+- When touching Lua/scripting code, always validate with **both** `--tag=functions` and `--tag=scripting`. The scripting suite exercises FUNCTION LOAD + FCALL in rapid succession (via `run_script` with `is_eval=0`), which exposes Lupa upvalue corruption that the functions suite alone doesn't catch.
 
 ## Code Style
 

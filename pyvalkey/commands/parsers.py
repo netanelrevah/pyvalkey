@@ -347,6 +347,7 @@ class OptionalKeywordParameter:
     has_token: bool = False
     is_multi: bool = False
     skip_first: bool = False
+    parse_error: bytes | None = None
 
 
 @dataclass
@@ -366,10 +367,14 @@ class OptionalKeywordParametersGroup(ParameterParser):
                 return parsed_kw_parameters
             keyword_parameter = self.parameters_parsers_map[top_parameter]
 
+            if not keyword_parameter.is_multi and not keyword_parameter.skip_first:
+                if keyword_parameter.parameter.name in parsed_kw_parameters:
+                    return parsed_kw_parameters
+
             if keyword_parameter.has_token:
                 parameters.pop(0)
                 if not parameters:
-                    raise ServerError(b"ERR syntax error")
+                    raise ServerError(keyword_parameter.parse_error or b"ERR syntax error")
 
             if keyword_parameter.is_multi:
                 parsed = keyword_parameter.parameter.parse(parameters, context)
@@ -380,8 +385,6 @@ class OptionalKeywordParametersGroup(ParameterParser):
                         parsed[keyword_parameter.parameter.name]
                     )
             else:
-                if not keyword_parameter.skip_first and keyword_parameter.parameter.name in parsed_kw_parameters:
-                    raise ServerError(b"ERR syntax error")
                 parsed_kw_parameters.update(keyword_parameter.parameter.parse(parameters, context))
 
         return parsed_kw_parameters
@@ -471,8 +474,9 @@ class ObjectParametersParser(ParameterParser):
                 elif isinstance(parameter_field.default, bool):
                     optional_keyword_parameters[flag] = OptionalKeywordParameter(named_parameter_parser, False)
                 else:
+                    parse_error = parameter_field.metadata.get(ParameterMetadata.PARSE_ERROR)
                     optional_keyword_parameters[flag] = OptionalKeywordParameter(
-                        named_parameter_parser, True, is_multi, skip_first=skip_first
+                        named_parameter_parser, True, is_multi, skip_first=skip_first, parse_error=parse_error
                     )
             else:
                 if optional_keyword_parameters:
