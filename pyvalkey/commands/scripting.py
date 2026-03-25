@@ -6,11 +6,10 @@ from dataclasses import dataclass, field
 from traceback import print_exc
 from typing import TYPE_CHECKING, Any, Self
 
-from lupa.lua51 import LuaError, LuaSyntaxError
+from lua_runtime import LuaError, LuaSyntaxError
 
 from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.lua.core import (
-    CompiledFunction,
     CurrentlyRunningFunction,
     FunctionsCompiler,
     RegisteredFunction,
@@ -23,13 +22,11 @@ from pyvalkey.commands.lua.helpers import (
     convert_lua_value_to_valkey_value,
     fill_load_server_globals,
     fill_server_globals,
-    lua_safe,
     register_function,
 )
 from pyvalkey.commands.lua.scripts import (
     FUNCTION_CALL_EXECUTOR,
     FUNCTION_LOAD_EXECUTOR,
-    LUA_REGISTER_FUNCTION_WRAPPER,
     LUA_SETUP_CALL_ENV,
 )
 from pyvalkey.commands.utils import is_integer
@@ -53,8 +50,8 @@ class LuaEngineBase:
 
     _function_compiler: FunctionsCompiler = field(init=False, default_factory=FunctionsCompiler)
 
-    _function_call_executor: CompiledFunction = field(init=False)
-    _function_load_executor: CompiledFunction = field(init=False)
+    _function_call_executor: Any = field(init=False)
+    _function_load_executor: Any = field(init=False)
 
     @classmethod
     def create(cls, configurations: Configurations, commands_router: CommandsRouter) -> Self:
@@ -64,11 +61,9 @@ class LuaEngineBase:
         self._function_call_executor = self._function_compiler.eval(FUNCTION_CALL_EXECUTOR)
         self._function_load_executor = self._function_compiler.eval(FUNCTION_LOAD_EXECUTOR)
 
-    @lua_safe
     def check_killed(self) -> bool:
         return self.kill.is_set()
 
-    @lua_safe
     def check_busy_reply_threshold(self, start_ms: int) -> None:
         if self.is_busy.is_set():
             return
@@ -76,7 +71,6 @@ class LuaEngineBase:
         if self.check_timeout(start_ms):
             self.is_busy.set()
 
-    @lua_safe
     def check_timeout(self, start_ms: int) -> bool:
         elapsed = now_ms() - start_ms
         return elapsed > self.configuration.busy_reply_threshold
@@ -97,15 +91,13 @@ class LuaEngineBase:
             else:
                 arguments.append(argument)
 
-        lua_runtime = self._function_compiler.get_runtime(writeable)
+        lua_runtime = self._function_compiler.lua_runtime
         try:
-            function_executor = self._function_call_executor.get(writeable)
-
             call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
             fill_server_globals(call_context)
 
             status, return_value = await asyncio.to_thread(
-                function_executor,
+                self._function_call_executor,
                 compiled_func,
                 start_ms,
                 self.check_busy_reply_threshold,
@@ -116,13 +108,18 @@ class LuaEngineBase:
 
             if status is False:
                 if "Timeout reached!" in str(return_value):
-                    self.is_busy.clear()
-                    self.kill.clear()
                     raise TimeoutError()
 
                 msg = return_value
                 if not isinstance(msg, bytes):
                     msg = str(msg).encode()
+                msg = msg.split(b"\n")[0]
+                if msg.startswith(b"["):
+                    colon = msg.find(b": ")
+                    if colon != -1:
+                        msg = msg[colon + 2:]
+                if not msg.startswith(b"ERR ") and not msg.startswith(b"WRONGTYPE "):
+                    msg = b"ERR " + msg
                 raise ServerError(msg)
 
             return convert_lua_value_to_valkey_value(return_value)
@@ -134,11 +131,20 @@ class LuaEngineBase:
         except LuaServerError as e:
             raise ServerError(e.message)
         except LuaError as e:
-            raise ServerError(str(e.args[0]).encode())
+            msg = str(e.args[0]).encode().split(b"\n")[0]
+            if msg.startswith(b"["):
+                colon = msg.find(b": ")
+                if colon != -1:
+                    msg = msg[colon + 2:]
+            if not msg.startswith(b"ERR ") and not msg.startswith(b"WRONGTYPE "):
+                msg = b"ERR " + msg
+            raise ServerError(msg)
         except Exception as e:
             print_exc()
             raise ServerError(str(e).encode())
         finally:
+            self.is_busy.clear()
+            self.kill.clear()
             del lua_runtime.globals().server
             del lua_runtime.globals().redis
 
@@ -181,7 +187,7 @@ class ScriptsEngine(LuaEngineBase):
                 not readonly,
                 now_ms(),
                 client_context,
-                registered_script.compiled_script.get(not readonly),
+                registered_script.compiled_script,
                 keys,
                 argv,
             )
@@ -201,34 +207,33 @@ class FunctionsEngine(LuaEngineBase):
     currently_running: CurrentlyRunningFunction | None = field(init=False, default=None)
     is_busy: asyncio.Event = field(init=False, default_factory=asyncio.Event)
 
-    _load_env_setup: dict[bool, Any] = field(init=False, default_factory=dict)
+    _load_env_setup: Any = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        for writeable in (True, False):
-            lua_runtime = self._function_compiler.get_runtime(writeable)
-            self._load_env_setup[writeable] = lua_runtime.eval(
-                b"function()\n"
-                b"  local function make_blocked(name)\n"
-                b"    return setmetatable({}, { __call = function(...)\n"
-                b"      error(\"Script attempted to access nonexistent global variable '\" .. name .. \"'\", 2)\n"
-                b"    end })\n"
-                b"  end\n"
-                b"  local blocked_gm = make_blocked('getmetatable')\n"
-                b"  local blocked_sm = make_blocked('setmetatable')\n"
-                b"  return function(f)\n"
-                b"    setfenv(f, setmetatable({\n"
-                b"      getmetatable = blocked_gm,\n"
-                b"      setmetatable = blocked_sm,\n"
-                b"    }, {\n"
-                b"      __index = _G,\n"
-                b"      __newindex = function(_, k, v)\n"
-                b"        error('Attempt to modify a readonly table', 2)\n"
-                b"      end,\n"
-                b"    }))\n"
-                b"  end\n"
-                b"end"
-            )()
+        lua_runtime = self._function_compiler.lua_runtime
+        self._load_env_setup = lua_runtime.eval(
+            b"function()\n"
+            b"  local function make_blocked(name)\n"
+            b"    return setmetatable({}, { __call = function(...)\n"
+            b"      error(\"Script attempted to access nonexistent global variable '\" .. name .. \"'\", 2)\n"
+            b"    end })\n"
+            b"  end\n"
+            b"  local blocked_gm = make_blocked('getmetatable')\n"
+            b"  local blocked_sm = make_blocked('setmetatable')\n"
+            b"  return function(f)\n"
+            b"    setfenv(f, setmetatable({\n"
+            b"      getmetatable = blocked_gm,\n"
+            b"      setmetatable = blocked_sm,\n"
+            b"    }, {\n"
+            b"      __index = _G,\n"
+            b"      __newindex = function(_, k, v)\n"
+            b"        error('Attempt to modify a readonly table', 2)\n"
+            b"      end,\n"
+            b"    }))\n"
+            b"  end\n"
+            b"end"
+        )()
 
     @classmethod
     def parse_load_function_script(cls, script: bytes) -> tuple[bytes, bytes, bytes]:
@@ -263,30 +268,29 @@ class FunctionsEngine(LuaEngineBase):
         return engine, library_name, code
 
     def load_function_to_runtime(
-        self, writeable: bool, library: RegisteredLibrary, client_context: ClientContext, code: bytes
+        self, library: RegisteredLibrary, client_context: ClientContext, code: bytes
     ) -> None:
-        lua_runtime = self._function_compiler.get_runtime(writeable)
+        lua_runtime = self._function_compiler.lua_runtime
 
-        call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
+        call_context = CallContext(False, self.commands_router, lua_runtime, client_context)
 
-        writeable_redis_server = fill_load_server_globals(call_context)
+        redis_server = fill_load_server_globals(call_context)
 
-        wrapped_register_function = lua_runtime.eval(LUA_REGISTER_FUNCTION_WRAPPER)(
-            register_function, writeable, library
-        )
+        def wrapped_register_function(*args: Any) -> None:  # noqa: ANN401
+            register_function(library, *args)
 
-        writeable_redis_server.register_function = wrapped_register_function
+        redis_server.register_function = wrapped_register_function
 
         try:
             compiled_code = lua_runtime.compile(code)
         except LuaSyntaxError:
             raise ServerError(b"ERR Error compiling function")
 
-        self._load_env_setup[writeable](compiled_code)
+        self._load_env_setup(compiled_code)
 
         start_ms = now_ms()
         try:
-            self._function_load_executor.get(writeable)(start_ms, compiled_code, self.check_timeout)
+            self._function_load_executor(start_ms, compiled_code, self.check_timeout)
         except LuaServerError as e:
             raise ServerError(e.message)
         except LuaError as e:
@@ -296,14 +300,14 @@ class FunctionsEngine(LuaEngineBase):
         else:
             setup_call_env = lua_runtime.eval(LUA_SETUP_CALL_ENV)
             for registered_function in library.functions.values():
-                callback = registered_function.compiled_function.get(writeable)
+                callback = registered_function.compiled_function
                 if callback is not None:
                     setup_call_env(callback)
 
             prohibit = lua_runtime.eval(b"function(msg) return function(...) error(msg, 2) end end")(
                 b"server.register_function can only be called on FUNCTION LOAD command"
             )
-            writeable_redis_server.register_function = prohibit
+            redis_server.register_function = prohibit
         finally:
             del lua_runtime.globals().server
             del lua_runtime.globals().redis
@@ -321,8 +325,7 @@ class FunctionsEngine(LuaEngineBase):
         new_library = RegisteredLibrary(library_name, code, engine)
 
         try:
-            self.load_function_to_runtime(True, new_library, client_context, code)
-            self.load_function_to_runtime(False, new_library, client_context, code)
+            self.load_function_to_runtime(new_library, client_context, code)
 
             if not new_library.functions:
                 raise ServerError(b"ERR No functions registered")
@@ -363,7 +366,7 @@ class FunctionsEngine(LuaEngineBase):
         if readonly and not has_no_writes:
             raise ServerError(b"ERR Can not execute a script with write flag using *_ro command")
         readonly = readonly or has_no_writes
-        compiled_function = registered_function.compiled_function.get(not readonly)
+        compiled_function = registered_function.compiled_function
 
         if self.currently_running is not None:
             raise Exception("Another function is currently running, this should not happen")

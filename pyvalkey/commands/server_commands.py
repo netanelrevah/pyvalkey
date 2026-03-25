@@ -291,10 +291,12 @@ def touch_all_databases_watched_keys(databases: dict[int, Database]) -> None:
 class FlushAllDatabases(Command):
     server_context: ServerContext = dependency()
     blocking_manager: StreamBlockingManager = dependency()
+    configurations: Configurations = dependency()
 
     def execute(self) -> ValueType:
         touch_all_databases_watched_keys(self.server_context.databases)
         self.server_context.databases.clear()
+        self.configurations.busy_reply_threshold = 5000
         return RESP_OK
 
     async def after(self, in_multi: bool = False) -> None:

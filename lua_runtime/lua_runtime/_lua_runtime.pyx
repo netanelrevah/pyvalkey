@@ -11,8 +11,8 @@ cimport cython
 from libc.string cimport strlen, strchr
 from libc.stdlib cimport malloc, free, realloc
 from libc.stdio cimport fprintf, stderr, fflush
-from . cimport luaapi as lua
-from .luaapi cimport lua_State
+cimport luaapi as lua
+from luaapi cimport lua_State
 
 cimport cpython.ref
 cimport cpython.tuple
@@ -86,6 +86,7 @@ cdef struct py_object:
     PyObject* obj
     PyObject* runtime
     int type_flags  # or-ed set of WrappedObjectFlags
+    int n_params  # -1 = varargs (pass all), >= 0 = truncate to this count
 
 
 include "lock.pxi"
@@ -267,7 +268,7 @@ cdef class LuaRuntime:
     cdef bint _unpack_returned_tuples
     cdef MemoryStatus _memory_status
 
-    def __cinit__(self, encoding='UTF-8', source_encoding=None,
+    def __cinit__(self, encoding=None, source_encoding=None,
                   attribute_filter=None, attribute_handlers=None,
                   bint register_eval=True, bint unpack_returned_tuples=False,
                   bint register_builtins=True, overflow_handler=None,
@@ -315,6 +316,21 @@ cdef class LuaRuntime:
 
         lua.lua_atpanic(L, &_lua_panic)
         lua.luaL_openlibs(L)
+
+        # Load Valkey's C extension modules (cjson, cmsgpack, bit, struct)
+        lua.lua_pushcfunction(L, lua.luaopen_cjson)
+        lua.lua_pushstring(L, "cjson")
+        lua.lua_call(L, 1, 0)
+        lua.lua_pushcfunction(L, lua.luaopen_cmsgpack)
+        lua.lua_pushstring(L, "cmsgpack")
+        lua.lua_call(L, 1, 0)
+        lua.lua_pushcfunction(L, lua.luaopen_bit)
+        lua.lua_pushstring(L, "bit")
+        lua.lua_call(L, 1, 0)
+        lua.lua_pushcfunction(L, lua.luaopen_struct)
+        lua.lua_pushstring(L, "struct")
+        lua.lua_call(L, 1, 0)
+
         self.init_python_lib(register_eval, register_builtins)
 
         self.set_overflow_handler(overflow_handler)
@@ -1110,6 +1126,32 @@ cdef class _LuaTable(_LuaObject):
         """
         return _LuaIter(self, ITEMS)
 
+    def set_readonly(self, bint enabled=True):
+        assert self._runtime is not None
+        cdef lua_State* L = self._state
+        lock_runtime(self._runtime)
+        old_top = lua.lua_gettop(L)
+        try:
+            check_lua_stack(L, 1)
+            self.push_lua_object(L)
+            lua.lua_enablereadonlytable(L, -1, enabled)
+        finally:
+            lua.lua_settop(L, old_top)
+            unlock_runtime(self._runtime)
+
+    def is_readonly(self):
+        assert self._runtime is not None
+        cdef lua_State* L = self._state
+        lock_runtime(self._runtime)
+        old_top = lua.lua_gettop(L)
+        try:
+            check_lua_stack(L, 1)
+            self.push_lua_object(L)
+            return <bint>lua.lua_isreadonlytable(L, -1)
+        finally:
+            lua.lua_settop(L, old_top)
+            unlock_runtime(self._runtime)
+
     def __setattr__(self, name, value):
         assert self._runtime is not None
         if isinstance(name, unicode):
@@ -1550,8 +1592,6 @@ cdef py_object* unpack_userdata(lua_State *L, int n) noexcept nogil:
     Like luaL_checkudata(), unpacks a userdata object and validates that
     it's a wrapped Python object.  Returns NULL on failure.
     """
-    if not lua.lua_checkstack(L, 2):
-        return NULL
     p = lua.lua_touserdata(L, n)
     if p and lua.lua_getmetatable(L, n):
         # found userdata with metatable - the one we expect?
@@ -1702,6 +1742,7 @@ cdef bint py_to_lua_custom(LuaRuntime runtime, lua_State *L, object o, int type_
         py_obj.obj = <PyObject*>o            # tbl udata
         py_obj.runtime = <PyObject*>runtime
         py_obj.type_flags = type_flags
+        py_obj.n_params = _compute_n_params(o) if callable(o) else -1
         lua.luaL_getmetatable(L, POBJECT)    # tbl udata metatbl
         lua.lua_setmetatable(L, -2)          # tbl udata
         lua.lua_pushvalue(L, -1)             # tbl udata udata
@@ -2090,9 +2131,31 @@ cdef int py_object_gc(lua_State* L) noexcept nogil:
 
 # calling Python objects
 
+cdef object _inspect_module = None
+
+cdef int _compute_n_params(object f) except -2:
+    global _inspect_module
+    if _inspect_module is None:
+        import inspect
+        _inspect_module = inspect
+    try:
+        params = _inspect_module.signature(f).parameters
+    except (ValueError, TypeError):
+        return -1
+    for p in params.values():
+        if p.kind == _inspect_module.Parameter.VAR_POSITIONAL:
+            return -1
+    return sum(
+        1 for p in params.values()
+        if p.kind in (_inspect_module.Parameter.POSITIONAL_ONLY, _inspect_module.Parameter.POSITIONAL_OR_KEYWORD)
+    )
+
 cdef bint call_python(LuaRuntime runtime, lua_State *L, py_object* py_obj) except -1:
     # Callers must assure that py_obj.obj is not NULL, i.e. it points to a valid Python object.
     cdef int i, nargs = lua.lua_gettop(L) - 1
+    # Truncate extra args (e.g., from debug.sethook stack leaks)
+    if py_obj.n_params >= 0 and nargs > py_obj.n_params:
+        nargs = py_obj.n_params
     cdef tuple args
     cdef dict kwargs
 

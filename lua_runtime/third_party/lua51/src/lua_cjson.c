@@ -47,7 +47,13 @@
 #include "strbuf.h"
 #include "fpconv.h"
 
-#include "../../../src/solarisfixes.h"
+#include "solarisfixes.h"
+
+#ifdef _MSC_VER
+#define strncasecmp _strnicmp
+#endif
+
+#define ENABLE_CJSON_GLOBAL
 
 #ifndef CJSON_MODNAME
 #define CJSON_MODNAME   "cjson"

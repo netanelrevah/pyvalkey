@@ -15,8 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 lua = [
-    "lupa>=2.4",
-    "u-msgpack-python>=2.8.0",
+    "lua-runtime",
 ]
 
 [tool.uv.build-backend]
@@ -39,14 +38,13 @@ dev = [
     "pytest-parametrization>=2022.2.1",
     "ruff>=0.9.6",
     "sortedcontainers-stubs>=2.4.2",
-    "types-lupa>=2.4.0.20250112",
     "valkey>=6.1.0",
-    "lupa>=2.4",
-    "u-msgpack-python>=2.8.0",
+    "lua-runtime",
     "pytest-asyncio>=1.2.0",
     "ty>=0.0.1a23",
     "types-docker>=7.1.0.20251129",
     "types-psutil>=7.1.3.20251211",
+    "cython>=3.2.4",
 ]
 
 
@@ -103,12 +101,14 @@ lint.ignore = [
 module = [
     "sortedcontainers",
     "typer",
-    "umsgpack"
 ]
 ignore_missing_imports = true
 
 [tool.uv.workspace]
 members = [
-    "a",
+    "lua_runtime",
 ]
+
+[tool.uv.sources]
+lua-runtime = { workspace = true, editable = false }
 

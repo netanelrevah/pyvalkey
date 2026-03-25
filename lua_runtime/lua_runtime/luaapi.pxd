@@ -139,6 +139,10 @@ cdef extern from "lua.h" nogil:
     int   lua_setmetatable (lua_State *L, int objindex)
     int   lua_setfenv (lua_State *L, int idx)
 
+    # Valkey readonly table API
+    void lua_enablereadonlytable (lua_State *L, int index, int enabled)
+    int lua_isreadonlytable (lua_State *L, int index)
+
     # `load' and `call' functions (load and run Lua code)
     void  lua_call (lua_State *L, int nargs, int nresults)
     int   lua_pcall (lua_State *L, int nargs, int nresults, int errfunc)
@@ -397,7 +401,7 @@ typedef struct luaL_Buffer {
 #endif
 '''
 
-cdef extern from "lualib.h":
+cdef extern from "lualib.h" nogil:
     char* LUA_COLIBNAME   # "coroutine"
     char* LUA_MATHLIBNAME # "math"
     char* LUA_STRLIBNAME  # "string"
@@ -417,10 +421,15 @@ cdef extern from "lualib.h":
     int luaopen_os(lua_State *L)
     int luaopen_package(lua_State *L)
     int luaopen_debug(lua_State *L)
-    int luaopen_bit(lua_State *L)
     int luaopen_jit(lua_State *L)
 
     void luaL_openlibs(lua_State *L)
+
+cdef extern from "lua_extensions.h" nogil:
+    int luaopen_cjson(lua_State *L)
+    int luaopen_cmsgpack(lua_State *L)
+    int luaopen_bit(lua_State *L)
+    int luaopen_struct(lua_State *L)
 
 
 cdef extern from * nogil:

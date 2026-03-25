@@ -22,7 +22,7 @@ class DirectionMode(Enum):
     AFTER = b"AFTER"
 
 
-@command(b"blpop", {b"blocking", b"list", b"slow"}, flags={b"write", b"no-script"})
+@command(b"blpop", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingLeftPop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -49,7 +49,7 @@ class ListBlockingLeftPop(Command):
         return [self._key, value]
 
 
-@command(b"brpop", {b"blocking", b"list", b"slow"}, flags={b"write", b"no-script"})
+@command(b"brpop", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingRightPop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -79,7 +79,7 @@ class Direction(Enum):
     RIGHT = b"RIGHT"
 
 
-@command(b"blmpop", {b"blocking", b"list", b"slow"}, flags={b"write", b"no-script"})
+@command(b"blmpop", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingMultiplePop(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -135,7 +135,7 @@ class ListMultiplePop(Command):
         return [key, values]
 
 
-@command(b"brpoplpush", {b"blocking", b"list", b"slow"}, flags={b"write", b"no-script"})
+@command(b"brpoplpush", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingRightPopLeftPush(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()
@@ -167,7 +167,7 @@ class ListBlockingRightPopLeftPush(Command):
             await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"blmove", {b"blocking", b"list", b"slow"}, flags={b"write", b"no-script"})
+@command(b"blmove", {b"blocking", b"list", b"slow"}, flags={b"write"})
 class ListBlockingMove(Command):
     client_context: ClientContext = dependency()
     database: Database = dependency()

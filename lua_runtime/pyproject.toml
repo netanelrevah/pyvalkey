@@ -1,0 +1,54 @@
+[project]
+name = "lua-runtime"
+version = "0.0.1"
+description = "Vendored Lua 5.1 runtime with Valkey patches and Lupa Cython wrapper"
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["lua_runtime"]
+
+[[tool.setuptools.ext-modules]]
+name = "lua_runtime._lua_runtime"
+sources = [
+    "lua_runtime/_lua_runtime.c",
+    "third_party/lua51/src/lapi.c",
+    "third_party/lua51/src/lauxlib.c",
+    "third_party/lua51/src/lbaselib.c",
+    "third_party/lua51/src/lcode.c",
+    "third_party/lua51/src/ldblib.c",
+    "third_party/lua51/src/ldebug.c",
+    "third_party/lua51/src/ldo.c",
+    "third_party/lua51/src/ldump.c",
+    "third_party/lua51/src/lfunc.c",
+    "third_party/lua51/src/lgc.c",
+    "third_party/lua51/src/linit.c",
+    "third_party/lua51/src/liolib.c",
+    "third_party/lua51/src/llex.c",
+    "third_party/lua51/src/lmathlib.c",
+    "third_party/lua51/src/lmem.c",
+    "third_party/lua51/src/loadlib.c",
+    "third_party/lua51/src/lobject.c",
+    "third_party/lua51/src/lopcodes.c",
+    "third_party/lua51/src/loslib.c",
+    "third_party/lua51/src/lparser.c",
+    "third_party/lua51/src/lstate.c",
+    "third_party/lua51/src/lstring.c",
+    "third_party/lua51/src/lstrlib.c",
+    "third_party/lua51/src/ltable.c",
+    "third_party/lua51/src/ltablib.c",
+    "third_party/lua51/src/ltm.c",
+    "third_party/lua51/src/lundump.c",
+    "third_party/lua51/src/lvm.c",
+    "third_party/lua51/src/lzio.c",
+    "third_party/lua51/src/fpconv.c",
+    "third_party/lua51/src/strbuf.c",
+    "third_party/lua51/src/lua_cjson.c",
+    "third_party/lua51/src/lua_cmsgpack.c",
+    "third_party/lua51/src/lua_bit.c",
+    "third_party/lua51/src/lua_struct.c",
+]
+include-dirs = ["third_party/lua51/src"]

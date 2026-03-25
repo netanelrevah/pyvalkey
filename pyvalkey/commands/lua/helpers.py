@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import inspect
-from functools import partial, wraps
+import asyncio
+from functools import partial
 from hashlib import sha1
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
-from lupa import lua51
-from lupa.lua51 import lua_type, unpacks_lua_table
+from lua_runtime import LuaRuntime, lua_type, unpacks_lua_table
 
 from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
-from pyvalkey.commands.lua.core import CallContext, CompiledFunction, RegisteredFunction, RegisteredLibrary
+from pyvalkey.commands.core import Command
+from pyvalkey.commands.lua.core import CallContext, RegisteredFunction, RegisteredLibrary
 from pyvalkey.commands.lua.errors import LuaServerError
 from pyvalkey.commands.lua.scripts import (
-    LUA_CALL_WRAPPER,
-    LUA_IMITATE_LUA_FUNCTION,
     LUA_MAKE_READONLY_SERVER_TABLE,
 )
 from pyvalkey.database_objects.errors import (
@@ -29,31 +27,10 @@ if TYPE_CHECKING:
 
     from pyvalkey.commands.context import ClientContext
 
-LuaSafeReturnType = TypeVar("LuaSafeReturnType")
-
 MAX_CONVERT_DEPTH = 100
 
 
-def lua_safe(func: Callable[..., LuaSafeReturnType]) -> Callable[..., LuaSafeReturnType]:
-    params = inspect.signature(func).parameters
-    if any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params.values()):
-        return func
-    n_params = sum(
-        1
-        for p in params.values()
-        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-    )
-
-    @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> LuaSafeReturnType:  # noqa: ANN401
-        return func(*args[:n_params])
-
-    return wrapper
-
-
 def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueType:  # noqa: ANN401
-    print("convert_lua_value_to_valkey_value", depth)
-
     if depth > MAX_CONVERT_DEPTH:
         return RespError(b"ERR reached lua stack limit")
 
@@ -64,12 +41,12 @@ def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueTy
     if isinstance(lua_value, bytes):
         return lua_value
     if lua_type(lua_value) == "table":
-        if b"ok" in lua_value:  # type: ignore[operator, index]
-            return convert_lua_value_to_valkey_value(lua_value.ok, depth + 1)  # type: ignore[attr-defined]
-        elif b"_G" in lua_value:  # type: ignore[operator, index]
+        if b"ok" in lua_value:
+            return convert_lua_value_to_valkey_value(lua_value.ok, depth + 1)
+        elif b"_G" in lua_value:
             return None
-        elif b"err" in lua_value:  # type: ignore[operator, index]
-            raise ServerError(lua_value.err)  # type: ignore[attr-defined]
+        elif b"err" in lua_value:
+            raise ServerError(lua_value.err)
         else:
             all_numbers = True
             values = {}
@@ -87,9 +64,8 @@ def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueTy
 
 def register_function(
     library: RegisteredLibrary,
-    writeable: bool,
-    function_name_or_kwargs: Any,  # noqa: ANN401
-    callback: Any,  # noqa: ANN401
+    function_name_or_kwargs: Any = None,  # noqa: ANN401
+    callback: Any = None,  # noqa: ANN401
     *args: Any,  # noqa: ANN401
 ) -> None:
     called_with_table_args = False
@@ -97,7 +73,7 @@ def register_function(
     flags: Any | None = None
     description: bytes | None = None
     function_name: bytes | None = function_name_or_kwargs
-    if lua51.lua_type(function_name_or_kwargs) == "table":
+    if lua_type(function_name_or_kwargs) == "table":
         called_with_table_args = True
         table_args = dict(function_name_or_kwargs)
         function_name = table_args.pop(b"function_name", None)
@@ -130,21 +106,21 @@ def register_function(
     if called_with_table_args:
         if callback is None:
             raise LuaServerError(b"ERR server.register_function must get a callback argument")
-        if lua51.lua_type(callback) != "function":
+        if lua_type(callback) != "function":
             raise LuaServerError(b"ERR callback argument given to server.register_function must be a function")
     else:
         if callback is None:
             raise LuaServerError(
                 b"ERR calling server.register_function with a single argument is only applicable to Lua table"
             )
-        if lua51.lua_type(callback) != "function":
+        if lua_type(callback) != "function":
             raise LuaServerError(b"ERR second argument to server.register_function must be a function")
 
     if description is not None and not isinstance(description, bytes):
         raise LuaServerError(b"ERR description argument given to server.register_function must be a string")
 
     if flags is not None:
-        if lua51.lua_type(flags) != "table":
+        if lua_type(flags) != "table":
             raise LuaServerError(
                 b"ERR flags argument to server.register_function must be a table representing function flags"
             )
@@ -152,25 +128,16 @@ def register_function(
             if flag not in {b"no-writes", b"allow-oom", b"no-cluster", b"allow-stale"}:
                 raise LuaServerError(b"ERR unknown flag given")
 
-    if function_name.lower() not in library.functions:
-        library.functions[function_name.lower()] = RegisteredFunction(
-            function_name,
-            library.name,
-            [v for _, v in flags.items()] if flags is not None else [],
-            description or b"",
-            CompiledFunction(
-                callback if writeable else None,
-                callback if not writeable else None,
-            ),
-        )
-        return
-
-    registered_function = library.functions[function_name.lower()]
-
-    compiled_function = registered_function.compiled_function.get(writeable)
-    if compiled_function is not None:
+    if function_name.lower() in library.functions:
         raise LuaServerError(b"ERR Function already exists in the library")
-    registered_function.compiled_function.set(writeable, callback)
+
+    library.functions[function_name.lower()] = RegisteredFunction(
+        function_name,
+        library.name,
+        [v for _, v in flags.items()] if flags is not None else [],
+        description or b"",
+        callback,
+    )
 
 
 def _call(
@@ -178,21 +145,15 @@ def _call(
     *args: bytes | int,
 ) -> Any:  # noqa: ANN401
     if not args:
-        return call_context.lua_runtime.table(err=b"ERR Please specify at least one argument for this call script")
+        raise LuaServerError(b"ERR Please specify at least one argument for this call script")
 
     command = [str(p).encode() if isinstance(p, int) else p for p in args]
-
-    print(
-        "redis.call",
-        call_context.client_context.current_client.client_id,
-        [i[:300] for i in command],
-    )
 
     try:
         routed_command_cls, parameters = call_context.commands_router.route(command)
     except RouterKeyError:
-        return call_context.lua_runtime.table(
-            err=f"ERR unknown command '{command[0].decode()}', "
+        raise LuaServerError(
+            f"ERR Unknown command '{command[0].decode()}', "
             f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
         )
 
@@ -216,25 +177,26 @@ def _call(
     if b"no-script" in routed_command.flags:
         raise LuaServerError(b"ERR This Valkey command is not allowed from scripts")
     if b"write" in routed_command.flags and call_context.readonly is True:
-        return call_context.lua_runtime.table(err=b"ERR Write commands are not allowed from read-only scripts")
+        raise LuaServerError(b"ERR Write commands are not allowed from read-only scripts")
+
+    if type(routed_command).before is not Command.before:
+        asyncio.run(routed_command.before(in_multi=True))
 
     try:
         result: ValueType = routed_command.execute()
     except ServerWrongTypeError:
         raise LuaServerError(b"WRONGTYPE Operation against a key holding the wrong kind of value")
     except ServerError as e:
-        return call_context.lua_runtime.table(err=e.message)
-
-    print("redis.call", client_context.current_client.client_id, "result", result, type(result))
+        raise LuaServerError(e.message)
 
     if result is DoNotReply:
         return None
     if result == RESP_OK:
-        return call_context.lua_runtime.table(ok="OK")
+        return call_context.lua_runtime.table_from({b"ok": b"OK"})
     if result is None:
         return False
     if isinstance(result, RespError):
-        return call_context.lua_runtime.table(err=result)
+        raise LuaServerError(result if isinstance(result, bytes) else bytes(result))
     if isinstance(result, list):
         return call_context.lua_runtime.table(*result)
 
@@ -245,7 +207,6 @@ def call(
     call_context: CallContext,
     *args: bytes | int,
 ) -> Any:  # noqa: ANN401
-    print(args)
     return _call(call_context, *args)
 
 
@@ -271,40 +232,49 @@ def set_resp(client_context: ClientContext, value: int) -> None:
 
 
 def acl_check_cmd(*args: Any, **kwargs: Any) -> bool:  # noqa: ANN401
-    print("acl_check_cmd", args, kwargs)
     return False
 
 
 def set_repl(*args: Any, **kwargs: Any) -> None:  # noqa: ANN401
-    print("set_repl", args, kwargs)
+    pass
 
 
 def lua_server_error_raiser(message: bytes) -> None:
     raise LuaServerError(message)
 
 
+def _make_call_wrapper(call_fn: Callable, ctx: CallContext) -> Callable:
+    def wrapped(*args: Any) -> Any:  # noqa: ANN401
+        return call_fn(ctx, *args)
+    return wrapped
+
+
+def _make_sha1hex_wrapper(sha1hex_fn: Callable) -> Callable:
+    @unpacks_lua_table
+    def wrapped(value: Any = None) -> Any:  # noqa: ANN401
+        if value is None:
+            raise LuaServerError(b"ERR wrong number of arguments")
+        return sha1hex_fn(value)
+    return wrapped
+
+
+def _make_prohibit(message: bytes) -> Callable:
+    def wrapped(*args: Any) -> None:  # noqa: ANN401
+        raise LuaServerError(message)
+    return wrapped
+
+
 def fill_load_server_globals(call_context: CallContext) -> Any:  # noqa: ANN401
     lua_runtime = call_context.lua_runtime
     lua_globals = lua_runtime.globals()
 
-    prohibit_calling = lua_runtime.compile(b"""
-    return function(lua_server_error_raiser, message)
-       return function(...)
-          lua_server_error_raiser(message)
-       end
-    end
-    """)()
-
     redis_server = lua_runtime.table()
 
-    lua_imitate_lua_function = lua_runtime.eval(LUA_IMITATE_LUA_FUNCTION)
-    redis_server.sha1hex = lua_imitate_lua_function(sha1hex)
+    redis_server.sha1hex = _make_sha1hex_wrapper(sha1hex)
+    redis_server.pcall = _make_call_wrapper(pcall, call_context)
 
-    call_wrapper = lua_runtime.eval(LUA_CALL_WRAPPER)
-    redis_server.pcall = call_wrapper(pcall, call_context)
-
-    lua_globals.math.random = prohibit_calling(
-        lua_server_error_raiser, b"ERR attempted to access nonexistent global variable 'math'"
+    lua_globals.math.random = _make_prohibit(
+        b"ERR attempted to access nonexistent global variable 'math'"
     )
 
     server_version = call_context.client_context.server_context.information.server_version
@@ -316,6 +286,7 @@ def fill_load_server_globals(call_context: CallContext) -> Any:  # noqa: ANN401
 
     make_readonly = lua_runtime.eval(LUA_MAKE_READONLY_SERVER_TABLE)
     readonly_server = make_readonly(redis_server)
+    readonly_server.set_readonly(True)
     lua_globals.server = readonly_server
     lua_globals.redis = readonly_server
 
@@ -327,16 +298,14 @@ def fill_server_globals(call_context: CallContext) -> None:
 
     redis_server = call_context.lua_runtime.table()
 
-    lua_imitate_lua_function = call_context.lua_runtime.eval(LUA_IMITATE_LUA_FUNCTION)
-    redis_server.sha1hex = lua_imitate_lua_function(sha1hex)
+    redis_server.sha1hex = _make_sha1hex_wrapper(sha1hex)
 
     redis_server.set_repl = set_repl
     redis_server.setresp = unpacks_lua_table(partial(set_resp, call_context.client_context))
     redis_server.acl_check_cmd = acl_check_cmd
 
-    call_wrapper = call_context.lua_runtime.eval(LUA_CALL_WRAPPER)
-    redis_server.call = call_wrapper(call, call_context)
-    redis_server.pcall = call_wrapper(pcall, call_context)
+    redis_server.call = _make_call_wrapper(call, call_context)
+    redis_server.pcall = _make_call_wrapper(pcall, call_context)
 
     redis_server.REPL_NONE = 0
     redis_server.REPL_AOF = 1

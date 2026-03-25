@@ -304,7 +304,7 @@ class FunctionKill(Command):
     functions_engine: FunctionsEngine = dependency()
 
     def execute(self) -> ValueType:
-        if not self.functions_engine.currently_running is not None:
+        if self.functions_engine.currently_running is None:
             raise ServerError(b"ERR No scripts in execution right now")
         self.functions_engine.kill.set()
         return RESP_OK
