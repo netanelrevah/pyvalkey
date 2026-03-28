@@ -47,11 +47,15 @@ class CommandExecutor:
             if self.client_context.server_context.functions_engine.is_busy.is_set() and not isinstance(
                 self.command, FunctionKill | FunctionStats
             ):
-                return "BUSY"
+                return RespError(
+                    b"BUSY Valkey is busy running a script. You can only call FUNCTION KILL or SHUTDOWN NOSAVE."
+                )
             if self.client_context.server_context.scripts_engine.is_busy.is_set() and not isinstance(
                 self.command, ScriptKill
             ):
-                return "BUSY"
+                return RespError(
+                    b"BUSY Valkey is busy running a script. You can only call SCRIPT KILL or SHUTDOWN NOSAVE."
+                )
 
             if self.client_context.server_context.configurations.maxmemory > 0:
                 if b"denyoom" in self.command.flags:

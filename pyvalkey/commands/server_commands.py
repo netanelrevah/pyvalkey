@@ -149,7 +149,7 @@ class AclSetUser(Command):
                 callbacks.append(ACLUser.no_password)
                 continue
             if rule.startswith(b">"):
-                callbacks.append(lambda _acl_user, password=rule[1]: _acl_user.add_password(password))  # type: ignore[misc]
+                callbacks.append(lambda _acl_user, password=rule[1:]: _acl_user.add_password(password))  # type: ignore[misc]
                 continue
             if rule.startswith(b"("):
                 full_rule = rule

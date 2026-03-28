@@ -479,6 +479,11 @@ cdef class LuaRuntime:
         mode_b = _asciiOrNone(mode)
         return run_lua(self, self._source_encode(lua_code), name_b, mode_b, args)
 
+    def clear_hook(self):
+        """Clear any active debug hook at the C level, bypassing Lua bytecode execution."""
+        assert self._state is not NULL
+        lua.lua_sethook(self._state, NULL, 0, 0)
+
     def compile(self, lua_code, name=None, mode=None):
         """Compile a Lua program into a callable Lua function.
 

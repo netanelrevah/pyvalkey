@@ -95,8 +95,15 @@ Valkey binary. A feature is complete only when its official TCL tests pass.
 - Log markers: `[ok]` passed, `[fail]` failed, `[err]` exception, `[ignore]` skipped
 - `tests/test_valkey_docker/test_valkey.py` is the source of truth for what is currently covered
 - When touching Lua/scripting code, always validate with **both** `--tag=functions` and `--tag=scripting`. The
-  scripting suite exercises FUNCTION LOAD + FCALL in rapid succession (via `run_script` with `is_eval=0`), which 
+  scripting suite exercises FUNCTION LOAD + FCALL in rapid succession (via `run_script` with `is_eval=0`), which
   exposes Lupa upvalue corruption that the functions suite alone doesn't catch.
+
+### Log analysis rules
+
+- **Never use `Read` on `*.server.log`** — these files can exceed 40k lines. Always use `Grep` or `--grep-server`.
+- Use the `/run_valkey_test` skill for all test runs — it auto-prints a smart summary (result counts, failures, tracebacks) without needing to read logs manually.
+- `*.docker.log` is small (~500 lines) and safe to `Read` when needed.
+- To search server.log for a specific error: `/run_valkey_test --no-summary --grep-server "pattern"` or use `Grep` directly.
 
 ## Build Artifacts
 

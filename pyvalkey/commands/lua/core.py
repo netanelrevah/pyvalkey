@@ -3,22 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from lua_runtime import LuaError, LuaRuntime
+from lua_runtime import LuaRuntime
 
 from pyvalkey.commands.lua.errors import LuaServerError
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.router import CommandsRouter
-
-
-def table_protection(*args: Any) -> NoReturn:  # noqa: ANN401
-    if len(args) != 2:  # noqa: PLR2004
-        raise LuaError("Wrong number of arguments to luaProtectedTableError")
-    if not isinstance(args[1], int | bytes):
-        raise LuaError("Second argument to luaProtectedTableError must be a string or number")
-    variable_name = str(args[1] if isinstance(args[1], int) else args[1].decode())
-    raise LuaError(f"Script attempted to access nonexistent global variable '{variable_name}'")
 
 
 def create_lua_runtime() -> LuaRuntime:
@@ -46,14 +37,24 @@ def create_lua_runtime() -> LuaRuntime:
     """)(_os_prohibit)
 
     lua_runtime.execute(b"loadfile = nil; dofile = nil; print = nil")
+    lua_runtime.execute(b"__pyv_state = {}")
 
-    lua_runtime.eval(b"""
-        function(protection)
-            setmetatable(_G, {
-                __index = function(t, k) return protection(t, k) end,
-            })
+    for mod in (b"cjson", b"cmsgpack", b"bit", b"struct"):
+        lua_globals[mod].set_readonly(True)
+
+    g_metatable = lua_runtime.eval(b"""
+        function()
+            local mt = {
+                __index = function(t, k)
+                    error(("Script attempted to access nonexistent global variable '%s'")
+                          :format(tostring(k)), 2)
+                end,
+            }
+            setmetatable(_G, mt)
+            return mt
         end
-    """)(table_protection)
+    """)()
+    g_metatable.set_readonly(True)
 
     return lua_runtime
 

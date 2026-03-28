@@ -1,9 +1,13 @@
 FUNCTION_CALL_EXECUTOR = b"""
 function(f, start_ms, check_busy_reply_threshold, check_killed, KEYS, ARGV)
-    local hooks = {check_busy = check_busy_reply_threshold, check_killed = check_killed, start_ms = start_ms}
+    local state = rawget(_G, '__pyv_state')
+    state.cb = check_busy_reply_threshold
+    state.ms = start_ms
+    state.ck = check_killed
     debug.sethook(function()
-        hooks.check_busy(hooks.start_ms)
-        if hooks.check_killed() then
+        rawget(_G, '__pyv_state').cb(rawget(_G, '__pyv_state').ms)
+        if rawget(_G, '__pyv_state').ck() then
+            debug.sethook(function() error("Timeout reached!") end, "", 1)
             error("Timeout reached!")
         end
     end, "", 1000)
@@ -11,6 +15,9 @@ function(f, start_ms, check_busy_reply_threshold, check_killed, KEYS, ARGV)
     local status, result = pcall(f, KEYS, ARGV)
 
     debug.sethook()
+    state.cb = nil
+    state.ms = nil
+    state.ck = nil
 
     return status, result
 end
@@ -19,9 +26,10 @@ end
 
 FUNCTION_LOAD_EXECUTOR = b"""
 function(start_ms, f, check_timeout)
-    local hooks = {check_timeout = check_timeout, start_ms = start_ms}
+    rawset(_G, '__pyv_ct', check_timeout)
+    rawset(_G, '__pyv_ms', start_ms)
     debug.sethook(function()
-        if hooks.check_timeout(hooks.start_ms) then
+        if rawget(_G, '__pyv_ct')(rawget(_G, '__pyv_ms')) then
             error("Timeout reached!")
         end
     end, "", 1000)
@@ -29,6 +37,8 @@ function(start_ms, f, check_timeout)
     local status, result = pcall(f)
 
     debug.sethook()
+    rawset(_G, '__pyv_ct', nil)
+    rawset(_G, '__pyv_ms', nil)
 
     if status == false then
         error(result)
@@ -56,10 +66,8 @@ LUA_SETUP_CALL_ENV = b"""
 function(f)
     local env = setmetatable({}, {
         __index = _G,
-        __newindex = function(_, k, v)
-            error('Attempt to modify a readonly table', 2)
-        end,
     })
     setfenv(f, env)
+    return env
 end
 """.strip()

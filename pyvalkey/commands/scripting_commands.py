@@ -340,6 +340,20 @@ class ScriptFlush(Command):
         return RESP_OK
 
 
+@command(b"show", {b"scripting", b"slow"}, parent_command=b"script")
+class ScriptShow(Command):
+    scripts_engine: ScriptsEngine = dependency()
+    sha1: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        if len(self.sha1) != 40 or not all(c in b"0123456789abcdefABCDEF" for c in self.sha1):
+            raise ServerError(b"NOSCRIPT No matching script. Please use EVAL.")
+        script_hash = self.sha1.lower()
+        if script_hash not in self.scripts_engine.registered_scripts:
+            raise ServerError(b"NOSCRIPT No matching script. Please use EVAL.")
+        return self.scripts_engine.registered_scripts[script_hash].script
+
+
 @command(b"load", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptLoad(Command):
     scripts_engine: ScriptsEngine = dependency()

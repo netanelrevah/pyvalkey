@@ -55,7 +55,7 @@ class CommandsRouter:
                 )
             raise RouterKeyError(
                 f"ERR unknown command '{command_name.decode()}',"
-                f" with args beginning with: {parameters[1].decode() if len(parameters) > 0 else ''}".encode()
+                f" with args beginning with: {parameters[0].decode() if len(parameters) > 0 else ''}".encode()
             )
 
         routed_command = routes[command_name]

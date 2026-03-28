@@ -15,6 +15,7 @@ from pyvalkey.commands.lua.scripts import (
     LUA_MAKE_READONLY_SERVER_TABLE,
 )
 from pyvalkey.database_objects.errors import (
+    NoPermissionError,
     RouterKeyError,
     ServerError,
     ServerWrongNumberOfArgumentsError,
@@ -140,6 +141,24 @@ def register_function(
     )
 
 
+def _convert_list_to_lua(lua_runtime: LuaRuntime, value: list) -> Any:  # noqa: ANN401
+    items = []
+    for item in value:
+        if isinstance(item, list):
+            items.append(_convert_list_to_lua(lua_runtime, item))
+        elif isinstance(item, dict):
+            flat = []
+            for k, v in item.items():
+                flat.append(k)
+                flat.append(v)
+            items.append(_convert_list_to_lua(lua_runtime, flat))
+        elif item is None:
+            items.append(False)
+        else:
+            items.append(item)
+    return lua_runtime.table(*items)
+
+
 def _call(
     call_context: CallContext,
     *args: bytes | int,
@@ -198,7 +217,7 @@ def _call(
     if isinstance(result, RespError):
         raise LuaServerError(result if isinstance(result, bytes) else bytes(result))
     if isinstance(result, list):
-        return call_context.lua_runtime.table(*result)
+        return _convert_list_to_lua(call_context.lua_runtime, result)
 
     return result
 
@@ -231,12 +250,38 @@ def set_resp(client_context: ClientContext, value: int) -> None:
     client_context.protocol = RespProtocolVersion(value)
 
 
-def acl_check_cmd(*args: Any, **kwargs: Any) -> bool:  # noqa: ANN401
-    return False
+def _make_acl_check_cmd(call_context: CallContext) -> Callable:
+    def wrapped(*args: Any) -> int | None:  # noqa: ANN401
+        if not args:
+            raise LuaServerError(b"ERR Invalid command passed to server.acl_check_cmd()")
+        command = [str(p).encode() if isinstance(p, int) else p for p in args]
+        try:
+            routed_command_cls, parameters = call_context.commands_router.route(command)
+        except RouterKeyError:
+            raise LuaServerError(b"ERR Invalid command passed to server.acl_check_cmd()")
+        client_context = call_context.client_context
+        try:
+            routed_command = routed_command_cls.create(parameters, client_context)
+        except ServerWrongNumberOfArgumentsError:
+            raise LuaServerError(b"ERR Wrong number of args calling command from script")
+        current_user = client_context.current_user
+        if current_user is None:
+            return 1
+        try:
+            current_user.check_permissions(routed_command)
+            return 1
+        except NoPermissionError:
+            return None
+    return wrapped
 
 
-def set_repl(*args: Any, **kwargs: Any) -> None:  # noqa: ANN401
-    pass
+def set_repl(value: Any = None, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
+    if value not in {0, 1, 2, 3}:
+        raise LuaServerError(b"ERR Invalid replication flags. Use REPL_NONE, REPL_AOF, REPL_REPLICA or REPL_ALL.")
+
+
+def replicate_commands() -> int:
+    return 1
 
 
 def lua_server_error_raiser(message: bytes) -> None:
@@ -302,10 +347,24 @@ def fill_server_globals(call_context: CallContext) -> None:
 
     redis_server.set_repl = set_repl
     redis_server.setresp = unpacks_lua_table(partial(set_resp, call_context.client_context))
-    redis_server.acl_check_cmd = acl_check_cmd
+    redis_server.acl_check_cmd = _make_acl_check_cmd(call_context)
 
     redis_server.call = _make_call_wrapper(call, call_context)
     redis_server.pcall = _make_call_wrapper(pcall, call_context)
+    redis_server.replicate_commands = replicate_commands
+
+    def error_reply(message: Any = None) -> Any:  # noqa: ANN401
+        return call_context.lua_runtime.table_from(
+            {b"err": message if isinstance(message, bytes) else str(message).encode()}
+        )
+
+    def status_reply(message: Any = None) -> Any:  # noqa: ANN401
+        return call_context.lua_runtime.table_from(
+            {b"ok": message if isinstance(message, bytes) else str(message).encode()}
+        )
+
+    redis_server.error_reply = error_reply
+    redis_server.status_reply = status_reply
 
     redis_server.REPL_NONE = 0
     redis_server.REPL_AOF = 1
@@ -319,5 +378,6 @@ def fill_server_globals(call_context: CallContext) -> None:
     redis_server.VALKEY_VERSION = server_version
     redis_server.VALKEY_VERSION_NUM = (major << 16) | (minor << 8) | patch
 
+    redis_server.set_readonly(True)
     lua_globals.server = redis_server
     lua_globals.redis = redis_server

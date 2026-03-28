@@ -146,16 +146,20 @@ class Information:
             f"RSS={self._human_readable_bytes(current_process.memory_full_info().rss)}"
         )
 
+        num_cached = len(self._server_context.scripts_engine.registered_scripts) if self._server_context else 0
+
         info = [
             b"# Memory",
             f"used_memory:{current_process.memory_full_info().vms}".encode(),
             f"used_memory_rss:{current_process.memory_full_info().rss}".encode(),
             b"lazyfree_pending_objects:0",
             f"lazyfreed_objects:{self.lazyfreed_objects}".encode(),
+            f"number_of_cached_scripts:{num_cached}".encode(),
         ]
         return b"\r\n".join(info)
 
     def sections(self, sections: list[bytes] | None) -> bytes:
+        sections = [s.lower() for s in sections] if sections else sections
         info = []
         if not sections or b"all" in sections or b"server" in sections:
             info.append(self.server())

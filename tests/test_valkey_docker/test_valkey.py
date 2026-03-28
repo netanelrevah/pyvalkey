@@ -5,7 +5,7 @@ import docker
 import pytest
 from valkey import Valkey
 
-IDLE_TIMEOUT_SECONDS = 10
+IDLE_TIMEOUT_SECONDS = 60
 
 
 def wait_with_idle_timeout(container, timeout: int = IDLE_TIMEOUT_SECONDS):
@@ -144,3 +144,9 @@ def test_lazyfree(s: Valkey):
 def test_tag(s: Valkey, request: pytest.FixtureRequest):
     requested_tag = request.config.getoption("--tag")
     run_tests(s, tags=requested_tag)
+
+
+def test_only(s: Valkey, request: pytest.FixtureRequest):
+    requested_tag = request.config.getoption("--tag")
+    requested_only = request.config.getoption("--only")
+    run_tests(s, tags=requested_tag, additional_args=f'--only "{requested_only}"')

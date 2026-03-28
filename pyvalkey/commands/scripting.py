@@ -92,9 +92,15 @@ class LuaEngineBase:
                 arguments.append(argument)
 
         lua_runtime = self._function_compiler.lua_runtime
+        keys_table = lua_runtime.table(*keys)
+        arguments_table = lua_runtime.table(*arguments)
         try:
             call_context = CallContext(not writeable, self.commands_router, lua_runtime, client_context)
             fill_server_globals(call_context)
+            lua_globals = lua_runtime.globals()
+            lua_globals.KEYS = keys_table
+            lua_globals.ARGV = arguments_table
+            lua_globals.set_readonly(True)
 
             status, return_value = await asyncio.to_thread(
                 self._function_call_executor,
@@ -102,8 +108,8 @@ class LuaEngineBase:
                 start_ms,
                 self.check_busy_reply_threshold,
                 self.check_killed,
-                lua_runtime.table(*keys),
-                lua_runtime.table(*arguments),
+                keys_table,
+                arguments_table,
             )
 
             if status is False:
@@ -132,6 +138,8 @@ class LuaEngineBase:
             raise ServerError(e.message)
         except LuaError as e:
             msg = str(e.args[0]).encode().split(b"\n")[0]
+            if b"Timeout reached!" in msg:
+                raise TimeoutError()
             if msg.startswith(b"["):
                 colon = msg.find(b": ")
                 if colon != -1:
@@ -143,10 +151,56 @@ class LuaEngineBase:
             print_exc()
             raise ServerError(str(e).encode())
         finally:
+            lua_runtime.clear_hook()
             self.is_busy.clear()
             self.kill.clear()
-            del lua_runtime.globals().server
-            del lua_runtime.globals().redis
+            lua_globals = lua_runtime.globals()
+            lua_globals.set_readonly(False)
+            del lua_globals.KEYS
+            del lua_globals.ARGV
+            del lua_globals.server
+            del lua_globals.redis
+
+
+VALID_SHEBANG_FLAGS = {b"no-writes", b"allow-oom", b"allow-stale", b"no-cluster", b"allow-cross-slot-keys"}
+
+
+def parse_eval_shebang(script: bytes) -> tuple[bytes, bool]:
+    """Parse optional #! shebang from an EVAL script.
+    Returns (code_without_shebang, no_writes_flag).
+    Raises ServerError on invalid shebang.
+    """
+    if not script.startswith(b"#!"):
+        return script, False
+
+    newline = script.find(b"\n")
+    if newline == -1:
+        raise ServerError(b"ERR Invalid script shebang")
+
+    shebang_line = script[:newline]
+    code = script[newline:]
+
+    parts = shebang_line[2:].split()
+    if not parts:
+        raise ServerError(b"ERR Invalid engine in script shebang")
+
+    engine = parts[0].lower()
+    if engine != b"lua":
+        raise ServerError(f"ERR Could not find scripting engine '{engine.decode()}'".encode())
+
+    no_writes = False
+    for option in parts[1:]:
+        if not option.startswith(b"flags="):
+            raise ServerError(f"ERR Unknown lua shebang option: {option.decode()}".encode())
+        for flag in option[6:].split(b","):
+            if not flag:
+                continue
+            if flag not in VALID_SHEBANG_FLAGS:
+                raise ServerError(f"ERR Unexpected flag in script shebang: {flag.decode()}".encode())
+            if flag == b"no-writes":
+                no_writes = True
+
+    return code, no_writes
 
 
 @dataclass
@@ -159,9 +213,10 @@ class ScriptsEngine(LuaEngineBase):
     def load(self, script: bytes) -> bytes:
         script_hash = hashlib.sha1(script).hexdigest().encode()
         if script_hash not in self.registered_scripts:
+            code, _ = parse_eval_shebang(script)
             self.registered_scripts[script_hash] = RegisteredScript(
                 script,
-                self._function_compiler.compile(script),
+                self._function_compiler.compile(code),
             )
         return script_hash
 
@@ -173,11 +228,15 @@ class ScriptsEngine(LuaEngineBase):
         argv: list[bytes],
         readonly: bool = False,
     ) -> ValueType:
+        code, no_writes = parse_eval_shebang(script)
+        if no_writes:
+            readonly = True
+
         script_hash = hashlib.sha1(script).hexdigest().encode()
         if script_hash not in self.registered_scripts:
             self.registered_scripts[script_hash] = RegisteredScript(
                 script,
-                self._function_compiler.compile(script),
+                self._function_compiler.compile(code),
             )
 
         registered_script = self.registered_scripts[script_hash]
@@ -222,15 +281,14 @@ class FunctionsEngine(LuaEngineBase):
             b"  local blocked_gm = make_blocked('getmetatable')\n"
             b"  local blocked_sm = make_blocked('setmetatable')\n"
             b"  return function(f)\n"
-            b"    setfenv(f, setmetatable({\n"
+            b"    local env = setmetatable({\n"
             b"      getmetatable = blocked_gm,\n"
             b"      setmetatable = blocked_sm,\n"
             b"    }, {\n"
             b"      __index = _G,\n"
-            b"      __newindex = function(_, k, v)\n"
-            b"        error('Attempt to modify a readonly table', 2)\n"
-            b"      end,\n"
-            b"    }))\n"
+            b"    })\n"
+            b"    setfenv(f, env)\n"
+            b"    return env\n"
             b"  end\n"
             b"end"
         )()
@@ -286,7 +344,8 @@ class FunctionsEngine(LuaEngineBase):
         except LuaSyntaxError:
             raise ServerError(b"ERR Error compiling function")
 
-        self._load_env_setup(compiled_code)
+        load_env = self._load_env_setup(compiled_code)
+        load_env.set_readonly(True)
 
         start_ms = now_ms()
         try:
@@ -302,7 +361,8 @@ class FunctionsEngine(LuaEngineBase):
             for registered_function in library.functions.values():
                 callback = registered_function.compiled_function
                 if callback is not None:
-                    setup_call_env(callback)
+                    env = setup_call_env(callback)
+                    env.set_readonly(True)
 
             prohibit = lua_runtime.eval(b"function(msg) return function(...) error(msg, 2) end end")(
                 b"server.register_function can only be called on FUNCTION LOAD command"
