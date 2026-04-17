@@ -360,7 +360,7 @@ class ExistenceMode(Enum):
     OnlyIfExist = b"XX"
 
 
-@command(b"set", {b"admin", b"dangerous", b"slow", b"string"}, flags={b"write"})
+@command(b"set", {b"admin", b"dangerous", b"slow", b"string"}, flags={b"write"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"})
 class Set(Command):
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()

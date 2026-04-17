@@ -527,6 +527,25 @@ wheels = [
 ]
 
 [[package]]
+name = "pytclsh"
+version = "0.0.1"
+source = { editable = "../pytcl" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "docker", specifier = ">=7.0.0" },
+    { name = "mypy", specifier = ">=1.15.0" },
+    { name = "pip-audit", specifier = ">=2.0.0" },
+    { name = "pre-commit", specifier = ">=4.0.0" },
+    { name = "pytest", specifier = ">=8.3.4" },
+    { name = "pytest-parametrization", specifier = ">=2022.2.1" },
+    { name = "ruff", specifier = ">=0.9.6" },
+    { name = "ty", specifier = ">=0.0.1a7" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -571,6 +590,7 @@ version = "0.0.5"
 source = { editable = "." }
 dependencies = [
     { name = "psutil" },
+    { name = "pytclsh" },
     { name = "sortedcontainers" },
     { name = "typer" },
 ]
@@ -601,6 +621,7 @@ dev = [
 requires-dist = [
     { name = "lua-runtime", marker = "extra == 'lua'", directory = "lua_runtime" },
     { name = "psutil", specifier = ">=7.1.3" },
+    { name = "pytclsh", editable = "../pytcl" },
     { name = "sortedcontainers", specifier = ">=2.4.0" },
     { name = "typer", specifier = ">=0.15.1" },
 ]

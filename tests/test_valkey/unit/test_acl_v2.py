@@ -1,169 +1,132 @@
-import valkey
-import valkey.exceptions
-from pytest import raises
+import pytest
 
-from tests.utils import key_value_list_to_dict
+from tests.utils import key_value_list_to_dict, assert_raises
+from tests.valkey_test_client import ValkeyTestClient, ValkeyError
 
-
-def test_basic_multiple_selectors(s: valkey.Valkey, c: valkey.Valkey):
-    s.acl_setuser("selector-1", reset=True, enabled=True, nopass=True, categories=["-@all"])
-
-    c.auth(password="password", username="selector-1")
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.ping()
-    assert e.value.args[0] == "User selector-1 has no permissions to run the 'ping' command"
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.set("write::foo", "var")
-    assert e.value.args[0] == "User selector-1 has no permissions to run the 'set' command"
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.get("read::foo")
-    assert e.value.args[0] == "User selector-1 has no permissions to run the 'get' command"
-
-    s.acl_setuser(username="selector-1", enabled=None, selectors=[("+@write", "~write::*"), ("+@read", "~read::*")])
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.ping()
-    assert e.value.args[0] == "User selector-1 has no permissions to run the 'ping' command"
-
-    c.set("write::foo", "var")
-
-    assert c.get("read::foo") is None
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.get("write::foo")
-    assert e.value.args[0] == "No permissions to access a key"
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.set("read::foo", "bar")
-    assert e.value.args[0] == "No permissions to access a key"
+pytestmark = pytest.mark.acl
 
 
-def test_acl_selectors_by_default_have_no_permissions(s: valkey.Valkey, c: valkey.Valkey):
-    s.execute_command("ACL SETUSER", "selector-default", "reset", "()")
-    user = s.acl_getuser("selector-default")
+def test_basic_multiple_selectors(r: ValkeyTestClient, rd: ValkeyTestClient):
+    r.run("acl", "setuser", "selector-1", "reset", "on", "nopass", "-@all")
 
-    assert 1 == len(user["selectors"])
-    selector = dict(zip(user["selectors"][0][0::2], user["selectors"][0][1::2]))
-    assert "" == selector["keys"]
-    assert "" == selector["channels"]
-    assert "-@all" == selector["commands"]
+    rd.run("auth", "selector-1", "password")
+    assert "User selector-1 has no permissions to run the 'ping' command" == rd.error("ping")
+    assert "User selector-1 has no permissions to run the 'set' command" == rd.error("set", "write::foo", "var")
+    assert "User selector-1 has no permissions to run the 'get' command" == rd.error("get", "read::foo")
 
+    r.run("acl", "setuser", "selector-1", "(+@write ~write::*)", "(+@read ~read::*)")
 
-def test_deleting_selectors(s: valkey.Valkey, c: valkey.Valkey):
-    s.execute_command("ACL SETUSER", "selector-del", "on", "clearselectors", "(~added-selector)")
-    user = s.acl_getuser("selector-del")
-    assert 1 == len(user["selectors"])
-    selector = dict(zip(user["selectors"][0][0::2], user["selectors"][0][1::2]))
-    assert "~added-selector" == selector["keys"]
+    assert "User selector-1 has no permissions to run the 'ping' command" == rd.error("ping")
 
-    s.execute_command("ACL SETUSER", "selector-del", "clearselectors")
-    user = s.acl_getuser("selector-del")
-    assert 0 == len(user["selectors"])
+    rd.run("set", "write::foo", "var")
+
+    assert rd.run("get", "read::foo") is None
+
+    assert "No permissions to access a key" == rd.error("get", "write::foo")
+    assert "No permissions to access a key" == rd.error("set", "read::foo", "bar")
 
 
-def test_select_syntax_error_reports_the_error_in_the_selector_context(s: valkey.Valkey, c: valkey.Valkey):
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "selector-syntax", "on", "(this-is-invalid)")
-    assert e.value.args == ("Error in ACL SETUSER modifier '(this-is-invalid)': Syntax error",)
+def test_acl_selectors_by_default_have_no_permissions(r: ValkeyTestClient):
+    r.run("acl", "setuser", "selector-default", "reset", "()")
+    user = r.run("acl", "getuser", "selector-default")
 
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "selector-syntax", "on", *"(&* &fail)".split())
-    assert e.value.args == (
-        "Error in ACL SETUSER modifier '(&* &fail)': Adding a pattern after the * pattern"
+    user_dict = dict(zip(user[0::2], user[1::2]))
+    assert 1 == len(user_dict[b"selectors"])
+    selector = dict(zip(user_dict[b"selectors"][0][0::2], user_dict[b"selectors"][0][1::2]))
+    assert b"" == selector[b"keys"]
+    assert b"" == selector[b"channels"]
+    assert b"-@all" == selector[b"commands"]
+
+
+def test_deleting_selectors(r: ValkeyTestClient):
+    r.run("acl", "setuser", "selector-del", "on", "clearselectors", "(~added-selector)")
+    user = r.run("acl", "getuser", "selector-del")
+    user_dict = dict(zip(user[0::2], user[1::2]))
+    assert 1 == len(user_dict[b"selectors"])
+    selector = dict(zip(user_dict[b"selectors"][0][0::2], user_dict[b"selectors"][0][1::2]))
+    assert b"~added-selector" == selector[b"keys"]
+
+    r.run("acl", "setuser", "selector-del", "clearselectors")
+    user = r.run("acl", "getuser", "selector-del")
+    user_dict = dict(zip(user[0::2], user[1::2]))
+    assert 0 == len(user_dict[b"selectors"])
+
+
+def test_select_syntax_error_reports_the_error_in_the_selector_context(r: ValkeyTestClient):
+
+
+    with assert_raises(ValkeyError, "ERR Error in ACL SETUSER modifier '(this-is-invalid)': Syntax error"):
+        r.run("acl", "setuser", "selector-syntax", "on", "(this-is-invalid)")
+
+    assert r.error("acl", "setuser", "selector-syntax", "on", "(&*", "&fail)") == (
+        "ERR Error in ACL SETUSER modifier '(&* &fail)': Adding a pattern after the * pattern"
         " (or the 'allchannels' flag) is not valid and does not have any effect."
-        " Try 'resetchannels' to start with an empty list of channels",
+        " Try 'resetchannels' to start with an empty list of channels"
     )
 
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "selector-syntax", *"on (+PING (+SELECT (+DEL".split())
-    assert e.value.args == ("Unmatched parenthesis in acl selector starting at '(+PING'.",)
+    assert "Unmatched parenthesis in acl selector starting at '(+PING'." == r.error("acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL")
 
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "selector-syntax", *"on (+PING (+SELECT (+DEL ) ) )".split())
-    assert e.value.args == ("Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error",)
+    assert "ERR Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error" == r.error("acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL", ")", ")", ")")
 
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "selector-syntax", *"on (+PING (+SELECT (+DEL )".split())
-    assert e.value.args == ("Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error",)
+    assert "ERR Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error" == r.error("acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL", ")")
 
-    assert s.acl_getuser("selector-syntax") is None
+    assert r.run("acl", "getuser", "selector-syntax") is None
 
 
-def test_flexible_selector_definition(s: valkey.Valkey, c: valkey.Valkey):
-    s.execute_command("ACL SETUSER", "selector-2", "(~key1 +get )", "( ~key2 +get )", "( ~key3 +get)", "(~key4 +get)")
-    s.execute_command("ACL SETUSER", "selector-2", *"(~key5 +get ) ( ~key6 +get ) ( ~key7 +get) (~key8 +get)".split())
+def test_flexible_selector_definition(r: ValkeyTestClient):
+    r.run("acl", "setuser", "selector-2", "(~key1 +get )", "( ~key2 +get )", "( ~key3 +get)", "(~key4 +get)")
+    r.run("acl", "setuser", "selector-2", "(~key5", "+get", ")", "(", "~key6", "+get", ")", "(", "~key7", "+get)", "(~key8", "+get)")
 
-    user = s.acl_getuser("selector-2")
+    user = r.run("acl", "getuser", "selector-2")
+    user_dict = dict(zip(user[0::2], user[1::2]))
 
-    assert "~key1" == key_value_list_to_dict(user["selectors"][0])["keys"]
-    assert "~key2" == key_value_list_to_dict(user["selectors"][1])["keys"]
-    assert "~key3" == key_value_list_to_dict(user["selectors"][2])["keys"]
-    assert "~key4" == key_value_list_to_dict(user["selectors"][3])["keys"]
-    assert "~key5" == key_value_list_to_dict(user["selectors"][4])["keys"]
-    assert "~key6" == key_value_list_to_dict(user["selectors"][5])["keys"]
-    assert "~key7" == key_value_list_to_dict(user["selectors"][6])["keys"]
-    assert "~key8" == key_value_list_to_dict(user["selectors"][7])["keys"]
+    assert b"~key1" == key_value_list_to_dict(user_dict[b"selectors"][0])[b"keys"]
+    assert b"~key2" == key_value_list_to_dict(user_dict[b"selectors"][1])[b"keys"]
+    assert b"~key3" == key_value_list_to_dict(user_dict[b"selectors"][2])[b"keys"]
+    assert b"~key4" == key_value_list_to_dict(user_dict[b"selectors"][3])[b"keys"]
+    assert b"~key5" == key_value_list_to_dict(user_dict[b"selectors"][4])[b"keys"]
+    assert b"~key6" == key_value_list_to_dict(user_dict[b"selectors"][5])[b"keys"]
+    assert b"~key7" == key_value_list_to_dict(user_dict[b"selectors"][6])[b"keys"]
+    assert b"~key8" == key_value_list_to_dict(user_dict[b"selectors"][7])[b"keys"]
 
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "invalid-selector", " () ")
-    assert e.value.args[0] == "Error in ACL SETUSER modifier ' () ': Syntax error"
-
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "invalid-selector", "(")
-    assert e.value.args[0] == "Unmatched parenthesis in acl selector starting at '('."
-
-    with raises(valkey.ValkeyError) as e:
-        s.execute_command("ACL SETUSER", "invalid-selector", ")")
-    assert e.value.args[0] == "Error in ACL SETUSER modifier ')': Syntax error"
+    assert "Error in ACL SETUSER modifier ' () ': Syntax error" == r.error("acl", "setuser", "invalid-selector", " () ")
+    assert "Unmatched parenthesis in acl selector starting at '('." == r.error("acl", "setuser", "invalid-selector", "(")
+    assert "Error in ACL SETUSER modifier ')': Syntax error" == r.error("acl", "setuser", "invalid-selector", ")")
 
 
-def test_separate_read_permission(s: valkey.Valkey, c: valkey.Valkey):
-    s.execute_command("ACL SETUSER", "key-permission-R", *"on nopass %R~read* +@all".split())
-    c.auth("password", "key-permission-R")
+def test_separate_read_permission(r: ValkeyTestClient, rd: ValkeyTestClient):
+    r.run("acl", "setuser", "key-permission-R", "on", "nopass", "%R~read*", "+@all")
+    rd.run("auth", "key-permission-R", "password")
 
-    assert c.ping() is True
+    assert rd.run("ping") == b"PONG"
 
-    s.set("readstr", "bar")
-    assert c.get("readstr") == b"bar"
+    r.run("set", "readstr", "bar")
+    assert rd.run("get", "readstr") == b"bar"
 
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.set("readstr", "bar")
-    assert e.value.args[0] == "No permissions to access a key"
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.get("notread")
-    assert e.value.args[0] == "No permissions to access a key"
+    assert "No permissions to access a key" == rd.error("set", "readstr", "bar")
+    assert "No permissions to access a key" == rd.error("get", "notread")
 
 
-def test_separate_write_permission(s: valkey.Valkey, c: valkey.Valkey):
-    s.execute_command("ACL SETUSER", "key-permission-W", *"on nopass %W~write* +@all".split())
-    c.auth("password", "key-permission-W")
+def test_separate_write_permission(r: ValkeyTestClient, rd: ValkeyTestClient):
+    r.run("acl", "setuser", "key-permission-W", "on", "nopass", "%W~write*", "+@all")
+    rd.run("auth", "key-permission-W", "password")
 
-    assert c.ping() is True
+    assert rd.run("ping") == b"PONG"
 
-    c.lpush("writelist", 10)
+    rd.run("lpush", "writelist", 10)
 
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.get("writestr")
-    assert e.value.args[0] == "No permissions to access a key"
-
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.lpush("notwrite", 10)
-    assert e.value.args[0] == "No permissions to access a key"
+    assert "No permissions to access a key" == rd.error("get", "writestr")
+    assert "No permissions to access a key" == rd.error("lpush", "notwrite", 10)
 
 
-def test_separate_read_and_write_permission(s: valkey.Valkey, c: valkey.Valkey):
-    s.execute_command("ACL SETUSER", "key-permission-RW", *"on nopass %R~read* %W~write +@all".split())
-    c.auth("password", "key-permission-RW")
+def test_separate_read_and_write_permission(r: ValkeyTestClient, rd: ValkeyTestClient):
+    r.run("acl", "setuser", "key-permission-RW", "on", "nopass", "%R~read*", "%W~write", "+@all")
+    rd.run("auth", "key-permission-RW", "password")
 
-    assert c.ping() is True
+    assert rd.run("ping") == b"PONG"
 
-    s.set("read", "bar")
+    r.run("set", "read", "bar")
 
-    c.copy("read", "write")
+    rd.run("copy", "read", "write")
 
-    with raises(valkey.exceptions.NoPermissionError) as e:
-        c.copy("write", "read")
-    assert e.value.args[0] == "No permissions to access a key"
+    assert "No permissions to access a key" == rd.error("copy", "write", "read")

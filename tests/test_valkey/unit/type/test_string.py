@@ -2,281 +2,281 @@ import time
 from random import randint
 
 import pytest
-import valkey
 
 from tests.utils import assert_raises, bits_to_bytes
+from tests.valkey_test_client import ValkeyError, ValkeyTestClient
 
 pytestmark = pytest.mark.string
 
 
-def test_set_and_get_an_item(s: valkey.Valkey):
-    s.set("x", "foobar")
-    assert s.get("x") == b"foobar"
+def test_set_and_get_an_item(r: ValkeyTestClient):
+    r.run("set", "x", "foobar")
+    assert r.run("get", "x") == b"foobar"
 
 
-def test_set_and_get_an_empty_item(s: valkey.Valkey):
-    s.set("x", "")
-    assert s.get("x") is None
+def test_set_and_get_an_empty_item(r: ValkeyTestClient):
+    r.run("set", "x", "")
+    assert r.run("get", "x") is None
 
 
-def test_very_big_payload_in_get_or_set(s: valkey.Valkey):
+def test_very_big_payload_in_get_or_set(r: ValkeyTestClient):
     buffer = "abcd" * 1000000
 
-    s.set("foo", buffer)
-    assert s.get("foo") == buffer.encode()
+    r.run("set", "foo", buffer)
+    assert r.run("get", "foo") == buffer.encode()
 
 
 @pytest.mark.slow
-def test_very_big_payload_random_access(s: valkey.Valkey):
+def test_very_big_payload_random_access(r: ValkeyTestClient):
     payload = []
     for index in range(100):
         size = 1 + randint(0, 100000)
         buffer = f"pl-{index}" * size
         payload.append(buffer)
-        s.set(f"bigpayload_{index}", buffer)
+        r.run("set", f"bigpayload_{index}", buffer)
 
     for _ in range(1000):
         index = randint(0, 99)
-        buffer = s.get(f"bigpayload_{index}").decode()
+        buffer = r.run("get", f"bigpayload_{index}").decode()
         assert buffer == payload[index]
 
 
 @pytest.mark.slow
-def test_set_10000_numeric_keys_and_access_all_them_in_reverse_order(s: valkey.Valkey):
+def test_set_10000_numeric_keys_and_access_all_them_in_reverse_order(r: ValkeyTestClient):
     for number in range(10000):
-        s.set(str(number), number)
+        r.run("set", str(number), number)
 
     for number in range(9999, -1):
-        value = s.get(str(number))
+        value = r.run("get", str(number))
         assert int(value) == number
 
-    assert s.dbsize() == 10000
+    assert r.run("dbsize") == 10000
 
 
-def test_setnx_target_key_missing(s: valkey.Valkey):
-    s.delete("novar")
-    assert s.setnx("novar", "foobared") is True
-    assert s.get("novar") == b"foobared"
+def test_setnx_target_key_missing(r: ValkeyTestClient):
+    r.run("del", "novar")
+    assert r.run("setnx", "novar", "foobared") == 1
+    assert r.run("get", "novar") == b"foobared"
 
 
-def test_setnx_target_key_exists(s: valkey.Valkey):
-    s.set("novar", "foobared")
-    assert s.setnx("novar", "blabla") is False
-    assert s.get("novar") == b"foobared"
+def test_setnx_target_key_exists(r: ValkeyTestClient):
+    r.run("set", "novar", "foobared")
+    assert r.run("setnx", "novar", "blabla") == 0
+    assert r.run("get", "novar") == b"foobared"
 
 
-def test_setnx_against_not_expired_volatile_key(s: valkey.Valkey):
-    s.set("x", 10)
-    s.expire("x", 10000)
-    assert s.setnx("x", 20) is False
-    assert s.get("x") == 10
+def test_setnx_against_not_expired_volatile_key(r: ValkeyTestClient):
+    r.run("set", "x", 10)
+    r.run("expire", "x", 10000)
+    assert r.run("setnx", "x", 20) == 0
+    assert r.run("get", "x") == b"10"
 
 
-def test_setnx_against_expired_volatile_key(s: valkey.Valkey):
+def test_setnx_against_expired_volatile_key(r: ValkeyTestClient):
     for index in range(9999):
-        s.setex(f"key-{index}", 3600, "value")
+        r.run("setex", f"key-{index}", 3600, "value")
 
-    s.set("x", 10)
-    s.expire("x", 1)
+    r.run("set", "x", 10)
+    r.run("expire", "x", 1)
 
     time.sleep(2)
 
-    assert s.setnx("x", 20) is True
-    assert s.get("x") == b"20"
+    assert r.run("setnx", "x", 20) == 1
+    assert r.run("get", "x") == b"20"
 
 
-def test_getex_ex_option(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar")
-    s.getex("foo", ex=10)
-    assert 5 <= s.ttl("foo") <= 10
+def test_getex_ex_option(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar")
+    r.run("getex", "foo", "ex", 10)
+    assert 5 <= r.run("ttl", "foo") <= 10
 
 
-def test_getex_px_option(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar")
-    s.getex("foo", px=10000)
-    assert 5000 <= s.pttl("foo") <= 10000
+def test_getex_px_option(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar")
+    r.run("getex", "foo", "px", 10000)
+    assert 5000 <= r.run("pttl", "foo") <= 10000
 
 
-def test_getex_exat_option(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar")
-    s.getex("foo", exat=int(time.time() + 10))
-    assert 5 <= s.ttl("foo") <= 10
+def test_getex_exat_option(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar")
+    r.run("getex", "foo", "exat", int(time.time() + 10))
+    assert 5 <= r.run("ttl", "foo") <= 10
 
 
-def test_getex_pxat_option(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar")
-    s.getex("foo", pxat=int(time.time() * 1000 + 10000))
-    assert 5000 <= s.pttl("foo") <= 10000
+def test_getex_pxat_option(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar")
+    r.run("getex", "foo", "pxat", int(time.time() * 1000 + 10000))
+    assert 5000 <= r.run("pttl", "foo") <= 10000
 
 
-def test_getex_persist_option(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar", ex=10)
-    s.getex("foo", persist=True)
-    assert s.ttl("foo") == -1
+def test_getex_persist_option(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar", "ex", 10)
+    r.run("getex", "foo", "persist")
+    assert r.run("ttl", "foo") == -1
 
 
-def test_getex_no_option(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar")
-    s.getex("foo")
-    assert s.getex("foo") == b"bar"
+def test_getex_no_option(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar")
+    r.run("getex", "foo")
+    assert r.run("getex", "foo") == b"bar"
 
 
-def test_getex_syntax_errors(s: valkey.Valkey):
-    with assert_raises(valkey.ValkeyError, "syntax error"):
-        s.execute_command("getex", "foo", "non-existent-option")
+def test_getex_syntax_errors(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "syntax error"):
+        r.run("getex", "foo", "non-existent-option")
 
 
-def test_getex_and_get_expired_key_or_not_exist(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar", px=1)
+def test_getex_and_get_expired_key_or_not_exist(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar", "px", 1)
     time.sleep(0.002)
-    assert s.getex("foo") is None
-    assert s.get("foo") is None
+    assert r.run("getex", "foo") is None
+    assert r.run("get", "foo") is None
 
 
-def test_getex_no_arguments(s: valkey.Valkey):
-    with assert_raises(valkey.ValkeyError, "wrong number of arguments for 'getex' command"):
-        s.execute_command("getex")
+def test_getex_no_arguments(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "wrong number of arguments for 'getex' command"):
+        r.run("getex")
 
 
-def test_getdel_command(s: valkey.Valkey):
-    s.delete("foo")
-    s.set("foo", "bar")
-    assert s.getdel("foo") == b"bar"
-    assert s.getdel("foo") is None
+def test_getdel_command(r: ValkeyTestClient):
+    r.run("del", "foo")
+    r.run("set", "foo", "bar")
+    assert r.run("getdel", "foo") == b"bar"
+    assert r.run("getdel", "foo") is None
 
 
-def test_mget(s: valkey.Valkey):
-    s.set("foo", "BAR")
-    s.set("bar", "FOO")
-    assert s.mget("foo", "bar") == [b"BAR", b"FOO"]
+def test_mget(r: ValkeyTestClient):
+    r.run("set", "foo", "BAR")
+    r.run("set", "bar", "FOO")
+    assert r.run("mget", "foo", "bar") == [b"BAR", b"FOO"]
 
 
-def test_mget_against_non_existing_key(s: valkey.Valkey):
-    s.set("foo", "BAR")
-    s.set("bar", "FOO")
-    assert s.mget("foo", "baazz", "bar") == [b"BAR", None, b"FOO"]
+def test_mget_against_non_existing_key(r: ValkeyTestClient):
+    r.run("set", "foo", "BAR")
+    r.run("set", "bar", "FOO")
+    assert r.run("mget", "foo", "baazz", "bar") == [b"BAR", None, b"FOO"]
 
 
-def test_mget_against_non_string_key(s: valkey.Valkey):
-    s.set("foo", "BAR")
-    s.set("bar", "FOO")
-    s.sadd("myset", "ciao")
-    s.sadd("myset", "bau")
-    assert s.mget("foo", "baazz", "bar", "myset") == [b"BAR", None, b"FOO", None]
+def test_mget_against_non_string_key(r: ValkeyTestClient):
+    r.run("set", "foo", "BAR")
+    r.run("set", "bar", "FOO")
+    r.run("sadd", "myset", "ciao")
+    r.run("sadd", "myset", "bau")
+    assert r.run("mget", "foo", "baazz", "bar", "myset") == [b"BAR", None, b"FOO", None]
 
 
-def test_getset_set_new_value(s: valkey.Valkey):
-    assert s.getset("foo", "xyz") == b""
-    assert s.get("foo") == b"xyz"
+def test_getset_set_new_value(r: ValkeyTestClient):
+    assert r.run("getset", "foo", "xyz") == b""
+    assert r.run("get", "foo") == b"xyz"
 
 
-def test_getset_replace_old_value(s: valkey.Valkey):
-    s.set("foo", "bar")
-    assert s.getset("foo", "xyz") == b"bar"
-    assert s.get("foo") == b"xyz"
+def test_getset_replace_old_value(r: ValkeyTestClient):
+    r.run("set", "foo", "bar")
+    assert r.run("getset", "foo", "xyz") == b"bar"
+    assert r.run("get", "foo") == b"xyz"
 
 
-def test_mset_base_case(s: valkey.Valkey):
-    s.mset({"x": 10, "y": "foo bar", "z": "x x x x x x x\n\n\r\n"})
-    assert s.mget("x", "y", "z") == [b"10", b"foo bar", b"x x x x x x x\n\n\r\n"]
+def test_mset_base_case(r: ValkeyTestClient):
+    r.run("mset", "x", 10, "y", "foo bar", "z", "x x x x x x x\n\n\r\n")
+    assert r.run("mget", "x", "y", "z") == [b"10", b"foo bar", b"x x x x x x x\n\n\r\n"]
 
 
-def test_mset_or_msetnx_wrong_number_of_args(s: valkey.Valkey):
-    with assert_raises(valkey.ValkeyError, "wrong number of arguments for 'mset' command"):
-        s.execute_command("mset", "x", 10, "y", "foo bar", "z")
-    with assert_raises(valkey.ValkeyError, "wrong number of arguments for 'msetnx' command"):
-        s.execute_command("msetnx", "x", 20, "y", "foo bar", "z")
+def test_mset_or_msetnx_wrong_number_of_args(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "wrong number of arguments for 'mset' command"):
+        r.run("mset", "x", 10, "y", "foo bar", "z")
+    with assert_raises(ValkeyError, "wrong number of arguments for 'msetnx' command"):
+        r.run("msetnx", "x", 20, "y", "foo bar", "z")
 
 
-def test_mset_with_already_existing_same_key_twice(s: valkey.Valkey):
-    s.set("x", "x")
-    s.execute_command("mset", "x", "xxx", "x", "yyy")
-    assert s.get("x") == b"yyy"
+def test_mset_with_already_existing_same_key_twice(r: ValkeyTestClient):
+    r.run("set", "x", "x")
+    r.run("mset", "x", "xxx", "x", "yyy")
+    assert r.run("get", "x") == b"yyy"
 
 
-def test_msetnx_with_already_existent_key(s: valkey.Valkey):
-    s.set("x", "x")
-    assert s.msetnx({"x1": "xxx", "y2": "yyy", "x": 20}) is False
-    assert s.exists("x1") == 0
-    assert s.exists("y2") == 0
+def test_msetnx_with_already_existent_key(r: ValkeyTestClient):
+    r.run("set", "x", "x")
+    assert r.run("msetnx", "x1", "xxx", "y2", "yyy", "x", 20) == 0
+    assert r.run("exists", "x1") == 0
+    assert r.run("exists", "y2") == 0
 
 
-def test_msetnx_with_not_existing_keys(s: valkey.Valkey):
-    assert s.msetnx({"x1": "xxx", "y2": "yyy"}) is True
-    assert s.get("x1") == b"xxx"
-    assert s.get("y2") == b"yyy"
+def test_msetnx_with_not_existing_keys(r: ValkeyTestClient):
+    assert r.run("msetnx", "x1", "xxx", "y2", "yyy") == 1
+    assert r.run("get", "x1") == b"xxx"
+    assert r.run("get", "y2") == b"yyy"
 
 
-def test_msetnx_with_not_existing_keys_same_key_twice(s: valkey.Valkey):
-    assert s.execute_command("msetnx", "x1", "xxx", "x1", "yyy") is True
-    assert s.get("x1") == b"yyy"
+def test_msetnx_with_not_existing_keys_same_key_twice(r: ValkeyTestClient):
+    assert r.run("msetnx", "x1", "xxx", "x1", "yyy") == 1
+    assert r.run("get", "x1") == b"yyy"
 
 
-def test_msetnx_with_already_existing_keys_same_key_twice(s: valkey.Valkey):
-    assert s.set("x1", b"yyy")
-    assert s.execute_command("msetnx", "x1", "xxx", "x1", "zzz") is False
-    assert s.get("x1") == b"yyy"
+def test_msetnx_with_already_existing_keys_same_key_twice(r: ValkeyTestClient):
+    assert r.run("set", "x1", b"yyy")
+    assert r.run("msetnx", "x1", "xxx", "x1", "zzz") == 0
+    assert r.run("get", "x1") == b"yyy"
 
 
-def test_strlen_against_non_existing_key(s: valkey.Valkey):
-    assert s.strlen("notakey") == 0
+def test_strlen_against_non_existing_key(r: ValkeyTestClient):
+    assert r.run("strlen", "notakey") == 0
 
 
-def test_strlen_against_integer_encoded_value(s: valkey.Valkey):
-    s.set("myinteger", -555)
-    assert s.strlen("myinteger") == 4
+def test_strlen_against_integer_encoded_value(r: ValkeyTestClient):
+    r.run("set", "myinteger", -555)
+    assert r.run("strlen", "myinteger") == 4
 
 
-def test_strlen_against_plain_string(s: valkey.Valkey):
-    s.set("mystring", "foozzz0123456789 baz")
-    assert s.strlen("mystring") == 20
+def test_strlen_against_plain_string(r: ValkeyTestClient):
+    r.run("set", "mystring", "foozzz0123456789 baz")
+    assert r.run("strlen", "mystring") == 20
 
 
-def test_setbit_against_non_existing_key(s: valkey.Valkey):
-    assert s.setbit("mykey", 1, 1) == 0
-    assert s.get("mykey") == bits_to_bytes("01000000")
+def test_setbit_against_non_existing_key(r: ValkeyTestClient):
+    assert r.run("setbit", "mykey", 1, 1) == 0
+    assert r.run("get", "mykey") == bits_to_bytes("01000000")
 
 
-def test_setbit_against_string_encoded_key(s: valkey.Valkey):
-    s.set("mykey", "@")
-    assert s.setbit("mykey", 2, 1) == 0
-    assert s.get("mykey") == bits_to_bytes("01100000")
-    assert s.setbit("mykey", 1, 0) == 1
-    assert s.get("mykey") == bits_to_bytes("00100000")
+def test_setbit_against_string_encoded_key(r: ValkeyTestClient):
+    r.run("set", "mykey", "@")
+    assert r.run("setbit", "mykey", 2, 1) == 0
+    assert r.run("get", "mykey") == bits_to_bytes("01100000")
+    assert r.run("setbit", "mykey", 1, 0) == 1
+    assert r.run("get", "mykey") == bits_to_bytes("00100000")
 
 
-def test_setbit_against_key_with_wrong_type(s: valkey.Valkey):
-    s.lpush("mykey", "foo")
-    with assert_raises(valkey.ValkeyError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
-        s.setbit("mykey", 0, 1)
+def test_setbit_against_key_with_wrong_type(r: ValkeyTestClient):
+    r.run("lpush", "mykey", "foo")
+    with assert_raises(ValkeyError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
+        r.run("setbit", "mykey", 0, 1)
 
 
-def test_setbit_with_out_of_range_bit_offset(s: valkey.Valkey):
-    with assert_raises(valkey.ValkeyError, "bit offset is not an integer or out of range"):
-        s.setbit("mykey", 4 * (1024**3), 1)
-    with assert_raises(valkey.ValkeyError, "bit offset is not an integer or out of range"):
-        s.setbit("mykey", -1, 1)
+def test_setbit_with_out_of_range_bit_offset(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "bit offset is not an integer or out of range"):
+        r.run("setbit", "mykey", 4 * (1024**3), 1)
+    with assert_raises(ValkeyError, "bit offset is not an integer or out of range"):
+        r.run("setbit", "mykey", -1, 1)
 
 
-def test_setbit_with_non_bit_argument(s: valkey.Valkey):
-    with assert_raises(valkey.ValkeyError, "bit is not an integer or out of range"):
-        s.execute_command("setbit", "mykey", 0, -1)
-    with assert_raises(valkey.ValkeyError, "bit is not an integer or out of range"):
-        s.execute_command("setbit", "mykey", 0, 2)
-    with assert_raises(valkey.ValkeyError, "bit is not an integer or out of range"):
-        s.execute_command("setbit", "mykey", 0, 10)
-    with assert_raises(valkey.ValkeyError, "bit is not an integer or out of range"):
-        s.execute_command("setbit", "mykey", 0, 20)
+def test_setbit_with_non_bit_argument(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "bit is not an integer or out of range"):
+        r.run("setbit", "mykey", 0, -1)
+    with assert_raises(ValkeyError, "bit is not an integer or out of range"):
+        r.run("setbit", "mykey", 0, 2)
+    with assert_raises(ValkeyError, "bit is not an integer or out of range"):
+        r.run("setbit", "mykey", 0, 10)
+    with assert_raises(ValkeyError, "bit is not an integer or out of range"):
+        r.run("setbit", "mykey", 0, 20)
 
 
-def test_setbit_fuzzing(s: valkey.Valkey):
+def test_setbit_fuzzing(r: ValkeyTestClient):
     length = 256 * 8
     expected = ""
 
@@ -289,73 +289,73 @@ def test_setbit_fuzzing(s: valkey.Valkey):
         tail = expected[bit_number + 1 :]
         expected = f"{head}{bit_value}{tail}"
 
-        s.setbit("mykey", bit_number, bit_value)
-        actual = s.get("mykey")
+        r.run("setbit", "mykey", bit_number, bit_value)
+        actual = r.run("get", "mykey")
         assert actual == bits_to_bytes(expected)
 
 
-def test_getbit_against_non_existing_key(s: valkey.Valkey):
-    assert s.getbit("mykey", 0) == 0
+def test_getbit_against_non_existing_key(r: ValkeyTestClient):
+    assert r.run("getbit", "mykey", 0) == 0
 
 
-def test_getbit_against_string_encoded_key(s: valkey.Valkey):
-    s.set("mykey", "`")
+def test_getbit_against_string_encoded_key(r: ValkeyTestClient):
+    r.run("set", "mykey", "`")
 
-    assert s.getbit("mykey", 0) == 0
-    assert s.getbit("mykey", 1) == 1
-    assert s.getbit("mykey", 2) == 1
-    assert s.getbit("mykey", 3) == 0
+    assert r.run("getbit", "mykey", 0) == 0
+    assert r.run("getbit", "mykey", 1) == 1
+    assert r.run("getbit", "mykey", 2) == 1
+    assert r.run("getbit", "mykey", 3) == 0
 
-    assert s.getbit("mykey", 8) == 0
-    assert s.getbit("mykey", 100) == 0
-    assert s.getbit("mykey", 10000) == 0
-
-
-def test_setrange_against_non_existing_key(s: valkey.Valkey):
-    s.delete("mykey")
-    assert s.setrange("mykey", 0, "foo") == 3
-    assert s.get("mykey") == b"foo"
-
-    s.delete("mykey")
-    assert s.setrange("mykey", 0, "") == 0
-    assert s.exists("mykey") == 0
-
-    s.delete("mykey")
-    assert s.setrange("mykey", 1, "foo") == 4
-    assert s.get("mykey") == b"\x00foo"
+    assert r.run("getbit", "mykey", 8) == 0
+    assert r.run("getbit", "mykey", 100) == 0
+    assert r.run("getbit", "mykey", 10000) == 0
 
 
-def test_setrange_against_string_encoded_key(s: valkey.Valkey):
-    s.set("mykey", "foo")
-    assert s.setrange("mykey", 0, "b") == 3
-    assert s.get("mykey") == b"boo"
+def test_setrange_against_non_existing_key(r: ValkeyTestClient):
+    r.run("del", "mykey")
+    assert r.run("setrange", "mykey", 0, "foo") == 3
+    assert r.run("get", "mykey") == b"foo"
 
-    s.set("mykey", "foo")
-    assert s.setrange("mykey", 0, "") == 3
-    assert s.get("mykey") == b"foo"
+    r.run("del", "mykey")
+    assert r.run("setrange", "mykey", 0, "") == 0
+    assert r.run("exists", "mykey") == 0
 
-    s.set("mykey", "foo")
-    assert s.setrange("mykey", 1, "b") == 3
-    assert s.get("mykey") == b"fbo"
-
-    s.set("mykey", "foo")
-    assert s.setrange("mykey", 4, "bar") == 7
-    assert s.get("mykey") == b"foo\x00bar"
+    r.run("del", "mykey")
+    assert r.run("setrange", "mykey", 1, "foo") == 4
+    assert r.run("get", "mykey") == b"\x00foo"
 
 
-def test_setrange_against_key_with_wrong_type(s: valkey.Valkey):
-    assert s.lpush("mykey", "foo")
-    with assert_raises(valkey.ValkeyError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
-        s.setrange("mykey", 0, "bar")
+def test_setrange_against_string_encoded_key(r: ValkeyTestClient):
+    r.run("set", "mykey", "foo")
+    assert r.run("setrange", "mykey", 0, "b") == 3
+    assert r.run("get", "mykey") == b"boo"
+
+    r.run("set", "mykey", "foo")
+    assert r.run("setrange", "mykey", 0, "") == 3
+    assert r.run("get", "mykey") == b"foo"
+
+    r.run("set", "mykey", "foo")
+    assert r.run("setrange", "mykey", 1, "b") == 3
+    assert r.run("get", "mykey") == b"fbo"
+
+    r.run("set", "mykey", "foo")
+    assert r.run("setrange", "mykey", 4, "bar") == 7
+    assert r.run("get", "mykey") == b"foo\x00bar"
 
 
-def test_setrange_with_out_of_range_offset(s: valkey.Valkey):
-    with assert_raises(valkey.ValkeyError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
-        s.setrange("mykey", 512 * 1024 * 1024 - 4, "world")
+def test_setrange_against_key_with_wrong_type(r: ValkeyTestClient):
+    assert r.run("lpush", "mykey", "foo")
+    with assert_raises(ValkeyError, "WRONGTYPE Operation against a key holding the wrong kind of value"):
+        r.run("setrange", "mykey", 0, "bar")
 
-    s.set("mykey", "hello")
-    with assert_raises(valkey.ValkeyError, "value is not an integer or out of range"):
-        s.setrange("mykey", -1, "world")
 
-    with assert_raises(valkey.ValkeyError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
-        s.setrange("mykey", 512 * 1024 * 1024 - 4, "world")
+def test_setrange_with_out_of_range_offset(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
+        r.run("setrange", "mykey", 512 * 1024 * 1024 - 4, "world")
+
+    r.run("set", "mykey", "hello")
+    with assert_raises(ValkeyError, "value is not an integer or out of range"):
+        r.run("setrange", "mykey", -1, "world")
+
+    with assert_raises(ValkeyError, "string exceeds maximum allowed size (proto-max-bulk-len)"):
+        r.run("setrange", "mykey", 512 * 1024 * 1024 - 4, "world")

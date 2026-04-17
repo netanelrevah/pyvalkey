@@ -1,10 +1,10 @@
 [project]
-name = "pyvalkey"
+name = "nrevah-pyvalkey"
 version = "0.0.5"
 description = "pyvalkey: Python implemented Valkey server"
 readme = "README.md"
 authors = [
-    { name = "Netanel Revah", email = "netanelrevah@outlook.com" },
+    { name = "Netanel Revah" },
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -17,6 +17,9 @@ dependencies = [
 lua = [
     "lua-runtime",
 ]
+valkey-tests = [
+    "nrevah-valkey-tests",
+]
 
 [tool.uv.build-backend]
 module-name = "pyvalkey"
@@ -28,7 +31,6 @@ valkey-server = "pyvalkey:main"
 [build-system]
 requires = ["uv_build>=0.8.5,<0.9.0"]
 build-backend = "uv_build"
-
 
 [dependency-groups]
 dev = [
@@ -54,11 +56,14 @@ addopts = [
     "--import-mode=importlib",
 ]
 
-testpaths = "tests valkey_tests"
+testpaths = "tests"
 
 markers = [
     "slow",
     "string",
+    "scripting",
+    "acl",
+    "protocol",
 ]
 
 [tool.ruff]
@@ -111,4 +116,5 @@ members = [
 
 [tool.uv.sources]
 lua-runtime = { workspace = true, editable = false }
+nrevah-valkey-tests = { path = "../valkey-tests", editable = true }
 

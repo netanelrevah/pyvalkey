@@ -1,8 +1,10 @@
 import time
 
-import valkey
-import valkey.exceptions
-from pytest import raises
+import pytest
+
+from tests.valkey_test_client import ValkeyTestClient
+
+pytestmark = pytest.mark.scripting
 
 
 def get_function_code(engine, lib_name, func_name, code):
@@ -13,332 +15,153 @@ def get_no_writes_function_code(engine, lib_name, func_name, code):
     return f"#!{engine} name={lib_name}\nserver.register_function{{function_name='{func_name}', callback=function(KEYS, ARGV)\n {code} \nend, flags={{'no-writes'}}}}"
 
 
-def test_function_basic_usage(s: valkey.Valkey):
+def test_function_basic_usage(r: ValkeyTestClient):
     """FUNCTION - Basic usage"""
-    s.function_load(get_function_code("LUA", "test", "test", "return 'hello'"))
-    assert s.fcall("test", 0) == b"hello"
+    r.run("function", "load", get_function_code("LUA", "test", "test", "return 'hello'"))
+    assert r.run("fcall", "test", 0) == b"hello"
 
 
-def test_function_load_with_unknown_argument(s: valkey.Valkey):
+def test_function_load_with_unknown_argument(r: ValkeyTestClient):
     """FUNCTION - Load with unknown argument"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FUNCTION", "LOAD", "foo", "bar", get_function_code("LUA", "test", "test", "return 'hello'"))
-    assert "Unknown option given" in str(e.value)
+    assert "Unknown option given" in r.error("function", "load", "foo", "bar", get_function_code("LUA", "test", "test", "return 'hello'"))
 
 
-def test_function_create_already_existing_library_error(s: valkey.Valkey):
+def test_function_create_already_existing_library_error(r: ValkeyTestClient):
     """FUNCTION - Create an already exiting library raise error"""
-    s.function_load(get_function_code("LUA", "test", "test", "return 'hello'"), replace=True)
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(get_function_code("LUA", "test", "test", "return 'hello1'"))
-    assert "already exists" in str(e.value).lower()
+    r.run("function", "load", "REPLACE", get_function_code("LUA", "test", "test", "return 'hello'"))
+    assert "already exists" in r.error("function", "load", get_function_code("LUA", "test", "test", "return 'hello1'")).lower()
 
 
-def test_function_create_library_with_wrong_name_format(s: valkey.Valkey):
+def test_function_create_library_with_wrong_name_format(r: ValkeyTestClient):
     """FUNCTION - Create a library with wrong name format"""
-    # BAD\0FORMAT is a bit tricky in Python strings but we can use escape
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(get_function_code("LUA", "bad\\0format", "test", "return 'hello1'"))
-    assert "Library names can only contain letters, numbers, or underscores(_)" in str(e.value)
+    assert "Library names can only contain letters, numbers, or underscores(_)" in r.error("function", "load", get_function_code("LUA", "bad\\0format", "test", "return 'hello1'"))
 
 
-def test_function_create_library_with_unexisting_engine(s: valkey.Valkey):
+def test_function_create_library_with_unexisting_engine(r: ValkeyTestClient):
     """FUNCTION - Create library with unexisting engine"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(get_function_code("bad_engine", "test", "test", "return 'hello1'"))
-    assert "Engine 'bad_engine' not found" in str(e.value)
+    assert "Engine 'bad_engine' not found" in r.error("function", "load", get_function_code("bad_engine", "test", "test", "return 'hello1'"))
 
 
-def test_function_test_uncompiled_script(s: valkey.Valkey):
+def test_function_test_uncompiled_script(r: ValkeyTestClient):
     """FUNCTION - Test uncompiled script"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(get_function_code("LUA", "test", "test", "bad script"), replace=True)
-    assert "Error compiling function" in str(e.value)
+    assert "Error compiling function" in r.error("function", "load", "REPLACE", get_function_code("LUA", "test", "test", "bad script"))
 
 
-def test_function_test_replace_argument(s: valkey.Valkey):
+def test_function_test_replace_argument(r: ValkeyTestClient):
     """FUNCTION - test replace argument"""
-    s.function_load(get_function_code("LUA", "test", "test", "return 'hello1'"), replace=True)
-    assert s.fcall("test", 0) == b"hello1"
+    r.run("function", "load", "REPLACE", get_function_code("LUA", "test", "test", "return 'hello1'"))
+    assert r.run("fcall", "test", 0) == b"hello1"
 
 
-def test_function_test_function_case_insensitive(s: valkey.Valkey):
+def test_function_test_function_case_insensitive(r: ValkeyTestClient):
     """FUNCTION - test function case insensitive"""
-    # Assuming the library "test" from previous tests might still exist if s is shared,
-    # but fixtures usually clean up or provide fresh instance.
-    s.function_load(get_function_code("LUA", "test", "test", "return 'hello1'"), replace=True)
-    assert s.fcall("TEST", 0) == b"hello1"
+    r.run("function", "load", "REPLACE", get_function_code("LUA", "test", "test", "return 'hello1'"))
+    assert r.run("fcall", "TEST", 0) == b"hello1"
 
 
-def test_function_test_function_delete(s: valkey.Valkey):
+def test_function_test_function_delete(r: ValkeyTestClient):
     """FUNCTION - test function delete"""
-    s.function_load(get_function_code("LUA", "test", "test", "return 'hello'"), replace=True)
-    s.function_delete("test")
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.fcall("test", 0)
-    assert "Function not found" in str(e.value)
+    r.run("function", "load", "REPLACE", get_function_code("LUA", "test", "test", "return 'hello'"))
+    r.run("function", "delete", "test")
+    assert "Function not found" in r.error("fcall", "test", 0)
 
 
-def test_function_test_fcall_bad_arguments(s: valkey.Valkey):
+def test_function_test_fcall_bad_arguments(r: ValkeyTestClient):
     """FUNCTION - test fcall bad arguments"""
-    s.function_load(get_function_code("LUA", "test", "test", "return 'hello'"), replace=True)
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FCALL", "test", "bad_arg")
-    assert "Bad number of keys provided" in str(e.value)
+    r.run("function", "load", "REPLACE", get_function_code("LUA", "test", "test", "return 'hello'"))
+    assert "Bad number of keys provided" in r.error("fcall", "test", "bad_arg")
 
 
-def test_function_test_fcall_bad_number_of_keys_arguments(s: valkey.Valkey):
+def test_function_test_fcall_bad_number_of_keys_arguments(r: ValkeyTestClient):
     """FUNCTION - test fcall bad number of keys arguments"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FCALL", "test", "10", "key1")
-    assert "Number of keys can't be greater than number of args" in str(e.value)
+    assert "Number of keys can't be greater than number of args" in r.error("fcall", "test", "10", "key1")
 
 
-def test_function_test_fcall_negative_number_of_keys(s: valkey.Valkey):
+def test_function_test_fcall_negative_number_of_keys(r: ValkeyTestClient):
     """FUNCTION - test fcall negative number of keys"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FCALL", "test", "-1", "key1")
-    assert "Number of keys can't be negative" in str(e.value)
+    assert "Number of keys can't be negative" in r.error("fcall", "test", "-1", "key1")
 
 
-def test_function_test_delete_on_not_existing_library(s: valkey.Valkey):
+def test_function_test_delete_on_not_existing_library(r: ValkeyTestClient):
     """FUNCTION - test delete on not exiting library"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_delete("test1")
-    assert "Library not found" in str(e.value)
+    assert "Library not found" in r.error("function", "delete", "test1")
 
 
-def test_function_test_function_kill_when_not_running(s: valkey.Valkey):
+def test_function_test_function_kill_when_not_running(r: ValkeyTestClient):
     """FUNCTION - test function kill when function is not running"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FUNCTION", "KILL")
-    assert "No scripts in execution" in str(e.value)
+    assert "No scripts in execution" in r.error("function", "kill")
 
 
-def test_function_test_wrong_subcommand(s: valkey.Valkey):
+def test_function_test_wrong_subcommand(r: ValkeyTestClient):
     """FUNCTION - test wrong subcommand"""
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FUNCTION", "bad_subcommand")
-    assert "unknown subcommand" in str(e.value).lower()
+    assert "unknown subcommand" in r.error("function", "bad_subcommand").lower()
 
 
-def test_function_test_fcall_ro_with_read_only_commands(s: valkey.Valkey):
+def test_function_test_fcall_ro_with_read_only_commands(r: ValkeyTestClient):
     """FUNCTION - test fcall_ro with write command"""
-    s.function_load(
-        get_no_writes_function_code("lua", "test", "test", "return redis.call('set', 'x', '1')"), replace=True
-    )
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.execute_command("FCALL_RO", "test", "1", "x")
-    assert "Write commands are not allowed from read-only scripts" in str(e.value)
+    r.run("function", "load", "REPLACE", get_no_writes_function_code("lua", "test", "test", "return redis.call('set', 'x', '1')"))
+    assert "Write commands are not allowed from read-only scripts" in r.error("fcall_ro", "test", "1", "x")
 
 
-def test_function_test_fcall_ro_with_read_only_commands_success(s: valkey.Valkey):
+def test_function_test_fcall_ro_with_read_only_commands_success(r: ValkeyTestClient):
     """FUNCTION - test fcall_ro with read only commands"""
-    s.function_load(get_no_writes_function_code("lua", "test", "test", "return redis.call('get', 'x')"), replace=True)
-    s.set("x", "1")
-    res = s.execute_command("FCALL_RO", "test", "1", "x")
-    # Handle int or bytes
+    r.run("function", "load", "REPLACE", get_no_writes_function_code("lua", "test", "test", "return redis.call('get', 'x')"))
+    r.run("set", "x", "1")
+    res = r.run("fcall_ro", "test", "1", "x")
     if isinstance(res, int):
         assert res == 1
     else:
         assert res == b"1"
 
 
-def test_function_test_keys_and_argv(s: valkey.Valkey):
+def test_function_test_keys_and_argv(r: ValkeyTestClient):
     """FUNCTION - test keys and argv"""
-    s.function_load(
-        get_function_code(
-            "lua", "test", "test", "print('in', KEYS['1'], ARGV['1'])\nreturn redis.call('set', KEYS[1], ARGV[1])"
-        ),
-        replace=True,
-    )
-    assert s.execute_command("FCALL", "test", "1", "x", "foo") == b"OK"
-    assert s.get("x") == b"foo"
+    r.run("function", "load", "REPLACE", get_function_code("lua", "test", "test", "return redis.call('set', KEYS[1], ARGV[1])"))
+    assert r.run("fcall", "test", "1", "x", "foo") == b"OK"
+    assert r.run("get", "x") == b"foo"
 
 
-def test_function_test_function_flush(s: valkey.Valkey):
+def test_function_test_function_flush(r: ValkeyTestClient):
     """FUNCTION - test function flush"""
-    s.function_load(get_function_code("lua", "test", "test", "return 1"), replace=True)
-    # Using execute_command directly to avoid valkey-py sending extra args for FUNCTION LIST
-    assert len(s.execute_command("FUNCTION", "LIST")) > 0
-    s.execute_command("FUNCTION", "FLUSH")
-    assert s.execute_command("FUNCTION", "LIST") == []
+    r.run("function", "load", "REPLACE", get_function_code("lua", "test", "test", "return 1"))
+    assert len(r.run("function", "list")) > 0
+    r.run("function", "flush")
+    assert r.run("function", "list") == []
 
 
-def test_function_dump_restore(s: valkey.Valkey):
+def test_function_dump_restore(r: ValkeyTestClient):
     """FUNCTION DUMP and RESTORE"""
-    s.execute_command("FUNCTION", "FLUSH")
+    r.run("function", "flush")
     code = "#!lua name=test\nredis.register_function('test', function() return 'hello' end)"
-    s.execute_command("FUNCTION", "LOAD", code)
+    r.run("function", "load", code)
 
-    payload = s.execute_command("FUNCTION", "DUMP")
-    s.execute_command("FUNCTION", "DELETE", "test")
-    assert s.execute_command("FUNCTION", "LIST") == []
+    payload = r.run("function", "dump")
+    r.run("function", "delete", "test")
+    assert r.run("function", "list") == []
 
-    s.execute_command("FUNCTION", "RESTORE", payload)
-    res = s.execute_command("FUNCTION", "LIST")
+    r.run("function", "restore", payload)
+    res = r.run("function", "list")
     assert len(res) == 1
-    # res[0] is an interleaved list of [key, value, key, value, ...]
     res_dict = {res[0][i]: res[0][i + 1] for i in range(0, len(res[0]), 2)}
     assert res_dict[b"library_name"] == b"test"
-    assert s.fcall("test", 0) == b"hello"
+    assert r.run("fcall", "test", 0) == b"hello"
 
 
-def test_function_restore_replace(s: valkey.Valkey):
+def test_function_restore_replace(r: ValkeyTestClient):
     """FUNCTION RESTORE REPLACE"""
-    s.execute_command("FUNCTION", "FLUSH")
+    r.run("function", "flush")
     code1 = "#!lua name=test\nserver.register_function('test', function() return 'hello' end)"
-    s.execute_command("FUNCTION", "LOAD", code1)
-    payload = s.execute_command("FUNCTION", "DUMP")
+    r.run("function", "load", code1)
+    payload = r.run("function", "dump")
 
     code2 = "#!lua name=test\nserver.register_function('test', function() return 'world' end)"
-    s.execute_command("FUNCTION", "LOAD", "REPLACE", code2)
-    assert s.fcall("test", 0) == b"world"
+    r.run("function", "load", "REPLACE", code2)
+    assert r.run("fcall", "test", 0) == b"world"
 
-    s.execute_command("FUNCTION", "RESTORE", payload, "REPLACE")
-    assert s.fcall("test", 0) == b"hello"
+    r.run("function", "restore", payload, "REPLACE")
+    assert r.run("fcall", "test", 0) == b"hello"
 
-
-def test_libraries_shared_function_access_globals(s: valkey.Valkey):
-    """LIBRARIES - test shared function can access default globals"""
-    s.execute_command("FUNCTION", "FLUSH")
-    code = """#!lua name=lib1
-        local function ping()
-            return redis.call('ping')
-        end
-        server.register_function(
-            'f1',
-            function(keys, args)
-                return ping()
-            end
-        )
-    """
-    s.function_load(code)
-    assert s.fcall("f1", 0) == b"PONG"
-
-
-def test_libraries_usage_and_code_sharing(s: valkey.Valkey):
-    """LIBRARIES - usage and code sharing"""
-    s.execute_command("FUNCTION", "FLUSH")
-    code = """#!lua name=lib1
-        local function add1(a)
-            return a + 1
-        end
-        server.register_function(
-            'f1',
-            function(keys, args)
-                return add1(1)
-            end
-        )
-        server.register_function(
-            'f2',
-            function(keys, args)
-                return add1(2)
-            end
-        )
-    """
-    s.function_load(code)
-    assert s.fcall("f1", 0) == 2
-    assert s.fcall("f2", 0) == 3
-
-
-def test_libraries_registration_failure_reverts_load(s: valkey.Valkey):
-    """LIBRARIES - test registration failure revert the entire load"""
-    s.execute_command("FUNCTION", "FLUSH")
-    # First load a working version
-    code_ok = """#!lua name=lib1
-        server.register_function('f1', function() return 2 end)
-    """
-    s.function_load(code_ok)
-
-    # Try to replace with a version that fails at second registration
-    code_bad = """#!lua name=lib1
-        server.register_function('f1', function() return 10 end)
-        server.register_function('f2', 'not a function')
-    """
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code_bad, replace=True)
-    assert "must be a function" in str(e.value)
-
-    # Should still have the old version
-    assert s.fcall("f1", 0) == 2
-    with raises(valkey.exceptions.ResponseError):
-        s.fcall("f2", 0)
-
-
-def test_libraries_registration_function_name_collision(s: valkey.Valkey):
-    """LIBRARIES - test registration function name collision"""
-    s.execute_command("FUNCTION", "FLUSH")
-    s.function_load("#!lua name=lib1\nserver.register_function('f1', function() return 1 end)")
-
-    code_coll = "#!lua name=lib2\nserver.register_function('f1', function() return 2 end)"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code_coll)
-    assert "already exists" in str(e.value)
-
-
-def test_libraries_registration_collision_same_library(s: valkey.Valkey):
-    """LIBRARIES - test registration function name collision on same library"""
-    code = """#!lua name=lib2
-        server.register_function('f1', function() return 1 end)
-        server.register_function('f1', function() return 1 end)
-    """
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    assert "already exists" in str(e.value).lower()
-
-
-def test_libraries_registration_no_argument(s: valkey.Valkey):
-    """LIBRARIES - test registration with no argument"""
-    code = "#!lua name=lib2\nserver.register_function()"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    # The actual error message might vary based on implementation
-    assert "wrong number of arguments" in str(e.value).lower()
-
-
-def test_libraries_registration_only_name(s: valkey.Valkey):
-    """LIBRARIES - test registration with only name"""
-    code = "#!lua name=lib2\nserver.register_function('f1')"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    assert "callback" in str(e.value).lower() or "arguments" in str(e.value).lower()
-
-
-def test_libraries_math_random_forbidden(s: valkey.Valkey):
-    """LIBRARIES - math.random from function load (forbidden)"""
-    code = "#!lua name=lib2\nreturn math.random()"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    assert "nonexistent global variable 'math'" in str(e.value)
-
-
-def test_libraries_redis_call_forbidden_in_load(s: valkey.Valkey):
-    """LIBRARIES - redis.call from function load (forbidden)"""
-    code = "#!lua name=lib2\nreturn redis.call('ping')"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    # It might be 'call' or 'redis' depending on what's exposed
-    assert "nonexistent global variable" in str(e.value)
-
-
-def test_libraries_no_functions_registered(s: valkey.Valkey):
-    """LIBRARIES - register library with no functions"""
-    code = "#!lua name=lib\nreturn 1"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    assert "No functions registered" in str(e.value)
-
-
-def test_libraries_global_protection(s: valkey.Valkey):
-    """LIBRARIES - verify global protection on the load run"""
-    code = "#!lua name=lib\na = 1"
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.function_load(code)
-    assert "Attempt to modify a readonly table" in str(e.value)
-
-
-def test_function_kill(s: valkey.Valkey):
+def test_function_kill(r: ValkeyTestClient, rd: ValkeyTestClient):
     """
     test {FUNCTION - test function kill} {
         set rd [valkey_deferring_client]
@@ -356,24 +179,126 @@ def test_function_kill(s: valkey.Valkey):
         $rd close
     }
     """
-    s.config_set("busy-reply-threshold", 10)
-    s.function_load(get_function_code("lua", "test", "test", "local a = 1 while true do a = a + 1 end"), replace=True)
-    rd = s.client()
-    rd.fcall("test", 0)
-    # Wait for the script to be detected as busy
+    r.run("config", "set", "busy-reply-threshold", 10)
+    r.run("function", "load", "REPLACE", get_function_code("lua", "test", "test", "local a = 1 while true do a = a + 1 end"))
+    deferred = rd.send("fcall", "test", 0)
 
     time.sleep(0.2)
-    with raises(valkey.exceptions.ResponseError) as e:
-        s.ping()
-    assert "BUSY" in str(e.value)
-    stats = s.execute_command("FUNCTION", "STATS")
-    assert any(
-        b"name" in stat and stat[b"name"] == b"test" and b"duration_ms" in stat and b"engines" in stat for stat in stats
-    )
-    s.execute_command("FUNCTION", "KILL")
+    assert "BUSY" in r.error("ping")
+    stats = r.run("function", "stats")
+    assert b'running_script' == stats[0]
+    assert b'name' == stats[1][0]
+    assert b"duration_ms" == stats[1][4]
+    assert b"engines" == stats[2]
+    r.run("function", "kill")
     time.sleep(0.2)
-    assert s.ping() == b"PONG"
-    with raises(valkey.exceptions.ResponseError) as e:
-        rd.read()
-    assert "Script killed by user with FUNCTION KILL" in str(e.value)
-    rd.close()
+    assert r.run("ping") == b"PONG"
+    assert "Script killed by user with FUNCTION KILL" in r.error_from(deferred)
+
+
+def test_libraries_shared_function_access_globals(r: ValkeyTestClient):
+    """LIBRARIES - test shared function can access default globals"""
+    r.run("function", "flush")
+    code = """#!lua name=lib1
+        local function ping()
+            return redis.call('ping')
+        end
+        server.register_function(
+            'f1',
+            function(keys, args)
+                return ping()
+            end
+        )
+    """
+    r.run("function", "load", code)
+    assert r.run("fcall", "f1", 0) == b"PONG"
+
+
+def test_libraries_usage_and_code_sharing(r: ValkeyTestClient):
+    """LIBRARIES - usage and code sharing"""
+    r.run("function", "flush")
+    code = """#!lua name=lib1
+        local function add1(a)
+            return a + 1
+        end
+        server.register_function(
+            'f1',
+            function(keys, args)
+                return add1(1)
+            end
+        )
+        server.register_function(
+            'f2',
+            function(keys, args)
+                return add1(2)
+            end
+        )
+    """
+    r.run("function", "load", code)
+    assert r.run("fcall", "f1", 0) == 2
+    assert r.run("fcall", "f2", 0) == 3
+
+
+def test_libraries_registration_failure_reverts_load(r: ValkeyTestClient):
+    """LIBRARIES - test registration failure revert the entire load"""
+    r.run("function", "flush")
+    code_ok = """#!lua name=lib1
+        server.register_function('f1', function() return 2 end)
+    """
+    r.run("function", "load", code_ok)
+
+    code_bad = """#!lua name=lib1
+        server.register_function('f1', function() return 10 end)
+        server.register_function('f2', 'not a function')
+    """
+    assert "must be a function" in r.error("function", "load", "REPLACE", code_bad)
+
+    assert r.run("fcall", "f1", 0) == 2
+    r.error("fcall", "f2", 0)
+
+
+def test_libraries_registration_function_name_collision(r: ValkeyTestClient):
+    """LIBRARIES - test registration function name collision"""
+    r.run("function", "flush")
+    r.run("function", "load", "#!lua name=lib1\nserver.register_function('f1', function() return 1 end)")
+
+    assert "already exists" in r.error("function", "load", "#!lua name=lib2\nserver.register_function('f1', function() return 2 end)")
+
+
+def test_libraries_registration_collision_same_library(r: ValkeyTestClient):
+    """LIBRARIES - test registration function name collision on same library"""
+    code = """#!lua name=lib2
+        server.register_function('f1', function() return 1 end)
+        server.register_function('f1', function() return 1 end)
+    """
+    assert "already exists" in r.error("function", "load", code).lower()
+
+
+def test_libraries_registration_no_argument(r: ValkeyTestClient):
+    """LIBRARIES - test registration with no argument"""
+    assert "wrong number of arguments" in r.error("function", "load", "#!lua name=lib2\nserver.register_function()").lower()
+
+
+def test_libraries_registration_only_name(r: ValkeyTestClient):
+    """LIBRARIES - test registration with only name"""
+    assert "calling server.register_function with a single argument is only applicable to Lua table" in r.error("function", "load", "#!lua name=lib2\nserver.register_function('f1')")
+
+
+def test_libraries_math_random_forbidden(r: ValkeyTestClient):
+    """LIBRARIES - math.random from function load (forbidden)"""
+    assert "nonexistent global variable 'math'" in r.error("function", "load", "#!lua name=lib2\nreturn math.random()")
+
+
+def test_libraries_redis_call_forbidden_in_load(r: ValkeyTestClient):
+    """LIBRARIES - redis.call from function load (forbidden)"""
+    assert "nonexistent global variable" in r.error("function", "load", "#!lua name=lib2\nreturn redis.call('ping')")
+
+
+def test_libraries_no_functions_registered(r: ValkeyTestClient):
+    """LIBRARIES - register library with no functions"""
+    assert "No functions registered" in r.error("function", "load", "#!lua name=lib\nreturn 1")
+
+
+def test_libraries_global_protection(r: ValkeyTestClient):
+    """LIBRARIES - verify global protection on the load run"""
+    assert "Attempt to modify a readonly table" in r.error("function", "load", "#!lua name=lib\na = 1")

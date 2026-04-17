@@ -1,7 +1,8 @@
 from contextlib import contextmanager
 
 import pytest
-import valkey
+
+from tests.valkey_test_client import ValkeyError
 
 BITS_IN_BYTE = 8
 
@@ -11,7 +12,7 @@ def key_value_list_to_dict(key_value_list: list):
 
 
 @contextmanager
-def assert_raises(expected_exception: type[valkey.ValkeyError], message):
+def assert_raises(expected_exception: type[ValkeyError], message):
     with pytest.raises(expected_exception) as e:
         yield
     assert e.value.args[0] == message

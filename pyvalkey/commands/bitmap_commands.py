@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.commands.utils import (
     convert_bytes_value_to_int,
     convert_int_value_to_bytes,
@@ -28,7 +29,7 @@ class BitOperationMode(Enum):
 
 @command(b"bitcount", {b"bitmap", b"read", b"slow"})
 class BitCount(Command):
-    database: Database
+    database: Database = dependency()
 
     key: bytes = positional_parameter()
     count_range: tuple[int, int] | None = positional_parameter(default=None)
@@ -78,7 +79,7 @@ class BitCount(Command):
 
 @command(b"bitfield", {b"bitmap", b"slow"}, flags={b"write"})
 class BitField(Command):
-    database: Database
+    database: Database = dependency()
 
     def execute(self) -> ValueType:
         return None
@@ -86,7 +87,7 @@ class BitField(Command):
 
 @command(b"bitfield_ro", {b"bitmap", b"fast", b"read"})
 class BitFieldReadOnly(Command):
-    database: Database
+    database: Database = dependency()
 
     def execute(self) -> ValueType:
         return None
@@ -94,7 +95,7 @@ class BitFieldReadOnly(Command):
 
 @command(b"bitop", {b"bitmap", b"slow"}, flags={b"write"})
 class BitOperation(Command):
-    database: Database
+    database: Database = dependency()
 
     OPERATION_TO_OPERATOR: ClassVar[dict[BitOperationMode, Any]] = {
         BitOperationMode.AND: operator.and_,
@@ -130,7 +131,7 @@ class BitOperation(Command):
 
 @command(b"bitpos", {b"bitmap", b"read", b"slow"})
 class BitPosition(Command):
-    database: Database
+    database: Database = dependency()
 
     def execute(self) -> ValueType:
         return None
@@ -138,7 +139,7 @@ class BitPosition(Command):
 
 @command(b"getbit", {b"bitmap", b"fast", b"read"})
 class GetBit(Command):
-    database: Database
+    database: Database = dependency()
 
     key: bytes = positional_parameter()
     offset: int = positional_parameter()
@@ -149,7 +150,7 @@ class GetBit(Command):
 
 @command(b"setbit", {b"bitmap", b"slow"}, flags={b"write"})
 class SetBit(Command):
-    database: Database
+    database: Database = dependency()
 
     key: bytes = positional_parameter()
     offset: int = positional_parameter()

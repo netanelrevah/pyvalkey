@@ -109,13 +109,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
         if server is not None:
             server.connections.pop(id(self), None)
         if self._client_context is not None:
-            print(f"{self.current_client.client_id} connection lost")
+            logger.debug("%s connection lost", self.current_client.client_id)
             self.client_context.subscriptions.unsubscribe_all()
             if self.client_context.current_client.blocking_context is not None:
                 self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
             del self.clients[self.current_client.client_id]
         else:
-            print("connection lost before context initialization")
+            logger.debug("connection lost before context initialization")
 
         if self.parser_task is not None:
             self.parser_task.cancel()
@@ -135,7 +135,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         dumped = BytesIO()
         dump(value, dumped, self.client_context.protocol)
 
-        print(f"{self.current_client.client_id} reply:{self.current_client.reply_mode} {dumped.getvalue()[:103]!r}")
+        logger.debug("%s reply:%s %r", self.current_client.client_id, self.current_client.reply_mode, dumped.getvalue()[:103])
 
         if not push_message:
             if self.current_client.reply_mode == ReplyMode.SKIP:
@@ -189,7 +189,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         if not command:
             return
         if command[0].upper() == b"QUIT":
-            print(f"{self.current_client.client_id} got quit command with params {command[1:]}")
+            logger.debug("%s got quit command with params %s", self.current_client.client_id, command[1:])
             self.dump(RESP_OK)
             self.transport.close()
             return
@@ -197,7 +197,7 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self.server_context.information.total_commands_processed += 1
         self.current_client.command_time_snapshot = time.time_ns() // 1_000_000
 
-        print(self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command])
+        logger.debug("%s %s", self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command])
 
         try:
             routed_command_cls, parameters = self.router.route(command)

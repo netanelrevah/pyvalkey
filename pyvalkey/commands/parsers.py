@@ -374,7 +374,7 @@ class OptionalKeywordParametersGroup(ParameterParser):
             if keyword_parameter.has_token:
                 parameters.pop(0)
                 if not parameters:
-                    raise ServerError(keyword_parameter.parse_error or b"ERR syntax error")
+                    raise ServerError(b"ERR syntax error")
 
             if keyword_parameter.is_multi:
                 parsed = keyword_parameter.parameter.parse(parameters, context)
