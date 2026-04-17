@@ -1,0 +1,1 @@
+- prefer using dataclass instead of regular class with __init__
