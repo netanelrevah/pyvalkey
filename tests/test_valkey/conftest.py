@@ -1,11 +1,12 @@
 import socket
+import time
 from multiprocessing import Process
 from random import randrange
 
 from pytest import fixture
 
 from pyvalkey.server import ValkeyServer
-from tests.valkey_test_client import ValkeyTestClient, _encode_command, _SocketReader, _read_response
+from tests.valkey_test_client import ValkeyTestClient, _encode_command, _read_response, _SocketReader
 
 
 def _next_free_port(min_port=57343, max_port=65535):
@@ -27,7 +28,6 @@ def _run_server(host, port):
 
 
 def _wait_for_server(host, port, timeout=5.0):
-    import time
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:

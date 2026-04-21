@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from traceback import print_exc
 from typing import TYPE_CHECKING, Any, Self
 
-from lua_runtime import LuaError, LuaSyntaxError
+from lua_runtime import LuaError, LuaSyntaxError  # ty: ignore[unresolved-import]
 
 from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.lua.core import (
@@ -123,7 +123,7 @@ class LuaEngineBase:
                 if msg.startswith(b"["):
                     colon = msg.find(b": ")
                     if colon != -1:
-                        msg = msg[colon + 2:]
+                        msg = msg[colon + 2 :]
                 if not msg.startswith(b"ERR ") and not msg.startswith(b"WRONGTYPE "):
                     msg = b"ERR " + msg
                 raise ServerError(msg)
@@ -143,7 +143,7 @@ class LuaEngineBase:
             if msg.startswith(b"["):
                 colon = msg.find(b": ")
                 if colon != -1:
-                    msg = msg[colon + 2:]
+                    msg = msg[colon + 2 :]
             if not msg.startswith(b"ERR ") and not msg.startswith(b"WRONGTYPE "):
                 msg = b"ERR " + msg
             raise ServerError(msg)
@@ -275,7 +275,7 @@ class FunctionsEngine(LuaEngineBase):
             b"function()\n"
             b"  local function make_blocked(name)\n"
             b"    return setmetatable({}, { __call = function(...)\n"
-            b"      error(\"Script attempted to access nonexistent global variable '\" .. name .. \"'\", 2)\n"
+            b'      error("Script attempted to access nonexistent global variable \'" .. name .. "\'", 2)\n'
             b"    end })\n"
             b"  end\n"
             b"  local blocked_gm = make_blocked('getmetatable')\n"
@@ -325,9 +325,7 @@ class FunctionsEngine(LuaEngineBase):
 
         return engine, library_name, code
 
-    def load_function_to_runtime(
-        self, library: RegisteredLibrary, client_context: ClientContext, code: bytes
-    ) -> None:
+    def load_function_to_runtime(self, library: RegisteredLibrary, client_context: ClientContext, code: bytes) -> None:
         lua_runtime = self._function_compiler.lua_runtime
 
         call_context = CallContext(False, self.commands_router, lua_runtime, client_context)

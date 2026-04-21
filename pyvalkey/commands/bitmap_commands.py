@@ -6,7 +6,6 @@ from typing import Any, ClassVar
 from pyvalkey.commands.core import Command
 from pyvalkey.commands.parameters import positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.utils.dependencies import dependency
 from pyvalkey.commands.utils import (
     convert_bytes_value_to_int,
     convert_int_value_to_bytes,
@@ -18,6 +17,7 @@ from pyvalkey.commands.utils import (
 from pyvalkey.database_objects.databases import Database, KeyValue
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 class BitOperationMode(Enum):

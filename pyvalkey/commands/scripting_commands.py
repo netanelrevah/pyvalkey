@@ -13,6 +13,8 @@ from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.resp import RESP_OK, ValueType
 from pyvalkey.utils.dependencies import dependency
 
+SHA1_HEX_LENGTH = 40
+
 
 @command(b"eval", {b"scripting", b"slow"})
 class Eval(Command):
@@ -346,7 +348,7 @@ class ScriptShow(Command):
     sha1: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
-        if len(self.sha1) != 40 or not all(c in b"0123456789abcdefABCDEF" for c in self.sha1):
+        if len(self.sha1) != SHA1_HEX_LENGTH or not all(c in b"0123456789abcdefABCDEF" for c in self.sha1):
             raise ServerError(b"NOSCRIPT No matching script. Please use EVAL.")
         script_hash = self.sha1.lower()
         if script_hash not in self.scripts_engine.registered_scripts:

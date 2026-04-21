@@ -2,6 +2,7 @@ import os
 import time
 
 import docker
+import docker.errors
 import pytest
 from valkey import Valkey
 

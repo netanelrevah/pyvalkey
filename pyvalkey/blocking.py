@@ -434,8 +434,8 @@ class StreamBlockingManager:
 
 @dataclass
 class BlockingManager:
-    list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)
-    sorted_set_blocking_manager: SortedSetBlockingManager = field(default_factory=SortedSetBlockingManager)
+    list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)  # ty: ignore[invalid-assignment]
+    sorted_set_blocking_manager: SortedSetBlockingManager = field(default_factory=SortedSetBlockingManager)  # ty: ignore[invalid-assignment]
     stream_blocking_manager: StreamBlockingManager = field(default_factory=StreamBlockingManager)
 
     async def notify_safely(

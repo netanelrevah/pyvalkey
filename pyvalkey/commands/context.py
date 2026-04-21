@@ -55,7 +55,7 @@ class ServerContext:
         return sum(
             1
             for client in self.clients.values()
-            if client.blocking_context is not None and client.blocking_context.command in {b"xreadgroup"}
+            if client.blocking_context is not None and client.blocking_context.command == b"xreadgroup"
         )
 
     def get_or_create_database(self, index: int) -> Database:

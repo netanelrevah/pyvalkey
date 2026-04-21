@@ -38,7 +38,7 @@ class KeyValue(Generic[KeyValueTypeVar]):
     key: bytes
     value: KeyValueTypeVar
     expiration: int | None = field(default=None)
-    last_accessed: int = field(default_factory=lambda: now_ms())
+    last_accessed: int = field(default_factory=now_ms)
     lfu_counter: int = LFU_INITIAL_VALUE
 
     def increase_frequency(self, lfu_log_factor: int) -> None:

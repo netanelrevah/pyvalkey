@@ -135,7 +135,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
         dumped = BytesIO()
         dump(value, dumped, self.client_context.protocol)
 
-        logger.debug("%s reply:%s %r", self.current_client.client_id, self.current_client.reply_mode, dumped.getvalue()[:103])
+        logger.debug(
+            "%s reply:%s %r", self.current_client.client_id, self.current_client.reply_mode, dumped.getvalue()[:103]
+        )
 
         if not push_message:
             if self.current_client.reply_mode == ReplyMode.SKIP:
@@ -197,7 +199,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self.server_context.information.total_commands_processed += 1
         self.current_client.command_time_snapshot = time.time_ns() // 1_000_000
 
-        logger.debug("%s %s", self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command])
+        logger.debug(
+            "%s %s", self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command]
+        )
 
         try:
             routed_command_cls, parameters = self.router.route(command)

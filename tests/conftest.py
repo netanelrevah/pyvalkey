@@ -124,11 +124,3 @@ def c(s: valkey.Valkey):
     c = valkey.Valkey(port=port, db=9)
     yield c
     c.close()
-
-
-from tests.valkey_test_client import ValkeyTestClient
-
-
-@fixture()
-def r(s: valkey.Valkey):
-    return ValkeyTestClient(s)

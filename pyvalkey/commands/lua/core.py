@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from lua_runtime import LuaRuntime
+from lua_runtime import LuaRuntime  # ty: ignore[unresolved-import]
 
 from pyvalkey.commands.lua.errors import LuaServerError
 
@@ -17,7 +17,7 @@ def create_lua_runtime() -> LuaRuntime:
         register_eval=False,
         register_builtins=False,
         unpack_returned_tuples=True,
-        overflow_handler=lambda value: str(value),
+        overflow_handler=str,
     )
 
     lua_globals = lua_runtime.globals()
@@ -26,7 +26,7 @@ def create_lua_runtime() -> LuaRuntime:
     lua_runtime.execute(b"os = {}")
     lua_globals.os.clock = os_clock
 
-    def _os_prohibit(_, key: bytes, *__: Any) -> NoReturn:  # noqa: ANN401
+    def _os_prohibit(_: Any, key: bytes, *__: Any) -> NoReturn:  # noqa: ANN401
         name = key.decode() if isinstance(key, bytes) else str(key)
         raise LuaServerError(f"ERR attempt to call field '{name}'".encode())
 

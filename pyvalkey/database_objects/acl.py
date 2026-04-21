@@ -112,7 +112,7 @@ class ACLUser:
     is_active: bool = False
     is_no_password_user: bool = False
     passwords: set[bytes] = field(default_factory=set)
-    root_permissions: Permission = field(default_factory=lambda: Permission())
+    root_permissions: Permission = field(default_factory=Permission)
     selectors: list[Permission] = field(default_factory=list)
 
     def add_password(self, password: bytes) -> None:

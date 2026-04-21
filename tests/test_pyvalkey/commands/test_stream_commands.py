@@ -38,24 +38,24 @@ class BaseStreamTest:
         information = Information()
         server_context = ServerContext(
             configurations=self.configurations,
-            functions_engine=None,  # type: ignore[invalid-argument-type]
-            scripts_engine=None,  # type: ignore[invalid-argument-type]
-            databases=None,  # type: ignore[invalid-argument-type]
-            acl=None,  # type: ignore[invalid-argument-type]
-            client_ids=None,  # type: ignore[invalid-argument-type]
-            clients=None,  # type: ignore[invalid-argument-type]
+            functions_engine=None,  # ty: ignore[invalid-argument-type]
+            scripts_engine=None,  # ty: ignore[invalid-argument-type]
+            databases=None,  # ty: ignore[invalid-argument-type]
+            acl=None,  # ty: ignore[invalid-argument-type]
+            client_ids=None,  # ty: ignore[invalid-argument-type]
+            clients=None,  # ty: ignore[invalid-argument-type]
             information=information,
-            blocking_manager=self.blocking_manager,  # type: ignore[invalid-argument-type]
-            subscriptions_manager=None,  # type: ignore[invalid-argument-type]
+            blocking_manager=self.blocking_manager,  # ty: ignore[invalid-argument-type]
+            subscriptions_manager=None,  # ty: ignore[invalid-argument-type]
         )
         self.client_context = ClientContext(
             server_context=server_context,
             current_client=Client(0, b"localhost", 1234),
-            subscriptions=None,  # type: ignore[invalid-argument-type]
+            subscriptions=None,  # ty: ignore[invalid-argument-type]
             current_database=0,
             current_user=None,
             transaction_context=None,
-            client_watchlist=None,  # type: ignore[invalid-argument-type]
+            client_watchlist=None,  # ty: ignore[invalid-argument-type]
         )
 
         self.content = server_context.databases[0].content

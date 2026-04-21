@@ -45,7 +45,7 @@ class TestBytesEnum:
 
     def test_two_arguments_encoding(self):
         assert Protocol.UTF16_DATA.value == "data".encode("utf-16")
-        assert Protocol.UTF16_DATA.value.decode("utf-16") == "data"
+        assert bytes(Protocol.UTF16_DATA.value).decode("utf-16") == "data"  # ty: ignore[invalid-argument-type]
 
     def test_bytes_functionality(self):
         result = Protocol.START + Protocol.STOP

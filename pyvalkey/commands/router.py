@@ -93,7 +93,7 @@ class CommandsRouter:
                 _flags.add(b"write")
 
             for flag in _flags:
-                if flag in [b"write"]:
+                if flag == b"write":
                     acl_categories.add(b"write")
 
             setattr(command_cls, "flags", set(_flags or []))

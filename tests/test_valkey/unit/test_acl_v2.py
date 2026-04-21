@@ -1,7 +1,7 @@
 import pytest
 
-from tests.utils import key_value_list_to_dict, assert_raises
-from tests.valkey_test_client import ValkeyTestClient, ValkeyError
+from tests.utils import assert_raises, key_value_list_to_dict
+from tests.valkey_test_client import ValkeyError, ValkeyTestClient
 
 pytestmark = pytest.mark.acl
 
@@ -53,8 +53,6 @@ def test_deleting_selectors(r: ValkeyTestClient):
 
 
 def test_select_syntax_error_reports_the_error_in_the_selector_context(r: ValkeyTestClient):
-
-
     with assert_raises(ValkeyError, "ERR Error in ACL SETUSER modifier '(this-is-invalid)': Syntax error"):
         r.run("acl", "setuser", "selector-syntax", "on", "(this-is-invalid)")
 
@@ -64,18 +62,40 @@ def test_select_syntax_error_reports_the_error_in_the_selector_context(r: Valkey
         " Try 'resetchannels' to start with an empty list of channels"
     )
 
-    assert "Unmatched parenthesis in acl selector starting at '(+PING'." == r.error("acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL")
+    assert "Unmatched parenthesis in acl selector starting at '(+PING'." == r.error(
+        "acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL"
+    )
 
-    assert "ERR Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error" == r.error("acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL", ")", ")", ")")
+    assert "ERR Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error" == r.error(
+        "acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL", ")", ")", ")"
+    )
 
-    assert "ERR Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error" == r.error("acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL", ")")
+    assert "ERR Error in ACL SETUSER modifier '(+PING (+SELECT (+DEL )': Syntax error" == r.error(
+        "acl", "setuser", "selector-syntax", "on", "(+PING", "(+SELECT", "(+DEL", ")"
+    )
 
     assert r.run("acl", "getuser", "selector-syntax") is None
 
 
 def test_flexible_selector_definition(r: ValkeyTestClient):
     r.run("acl", "setuser", "selector-2", "(~key1 +get )", "( ~key2 +get )", "( ~key3 +get)", "(~key4 +get)")
-    r.run("acl", "setuser", "selector-2", "(~key5", "+get", ")", "(", "~key6", "+get", ")", "(", "~key7", "+get)", "(~key8", "+get)")
+    r.run(
+        "acl",
+        "setuser",
+        "selector-2",
+        "(~key5",
+        "+get",
+        ")",
+        "(",
+        "~key6",
+        "+get",
+        ")",
+        "(",
+        "~key7",
+        "+get)",
+        "(~key8",
+        "+get)",
+    )
 
     user = r.run("acl", "getuser", "selector-2")
     user_dict = dict(zip(user[0::2], user[1::2]))
@@ -90,7 +110,9 @@ def test_flexible_selector_definition(r: ValkeyTestClient):
     assert b"~key8" == key_value_list_to_dict(user_dict[b"selectors"][7])[b"keys"]
 
     assert "Error in ACL SETUSER modifier ' () ': Syntax error" == r.error("acl", "setuser", "invalid-selector", " () ")
-    assert "Unmatched parenthesis in acl selector starting at '('." == r.error("acl", "setuser", "invalid-selector", "(")
+    assert "Unmatched parenthesis in acl selector starting at '('." == r.error(
+        "acl", "setuser", "invalid-selector", "("
+    )
     assert "Error in ACL SETUSER modifier ')': Syntax error" == r.error("acl", "setuser", "invalid-selector", ")")
 
 

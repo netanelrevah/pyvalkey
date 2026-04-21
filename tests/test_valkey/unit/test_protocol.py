@@ -5,7 +5,7 @@ import pytest
 from parametrization import Parametrization
 
 from tests.utils import assert_raises
-from tests.valkey_test_client import ValkeyTestClient, ValkeyError
+from tests.valkey_test_client import ValkeyError, ValkeyTestClient
 
 pytestmark = pytest.mark.protocol
 

@@ -1,4 +1,4 @@
-from lua_runtime import LuaError
+from lua_runtime import LuaError  # ty: ignore[unresolved-import]
 
 
 class LuaServerError(LuaError):

@@ -5,10 +5,10 @@ from functools import partial
 from hashlib import sha1
 from typing import TYPE_CHECKING, Any
 
-from lua_runtime import LuaRuntime, lua_type, unpacks_lua_table
+from lua_runtime import LuaRuntime, lua_type, unpacks_lua_table  # ty: ignore[unresolved-import]
 
-from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.core import Command
+from pyvalkey.commands.lua.consts import LIBRARY_NAME_PATTERN
 from pyvalkey.commands.lua.core import CallContext, RegisteredFunction, RegisteredLibrary
 from pyvalkey.commands.lua.errors import LuaServerError
 from pyvalkey.commands.lua.scripts import (
@@ -38,7 +38,7 @@ def convert_lua_value_to_valkey_value(lua_value: Any, depth: int = 1) -> ValueTy
     if isinstance(lua_value, float):
         return int(lua_value)
     if isinstance(lua_value, bool):
-        return lua_value if lua_value else None
+        return lua_value or None
     if isinstance(lua_value, bytes):
         return lua_value
     if lua_type(lua_value) == "table":
@@ -272,6 +272,7 @@ def _make_acl_check_cmd(call_context: CallContext) -> Callable:
             return 1
         except NoPermissionError:
             return None
+
     return wrapped
 
 
@@ -291,6 +292,7 @@ def lua_server_error_raiser(message: bytes) -> None:
 def _make_call_wrapper(call_fn: Callable, ctx: CallContext) -> Callable:
     def wrapped(*args: Any) -> Any:  # noqa: ANN401
         return call_fn(ctx, *args)
+
     return wrapped
 
 
@@ -300,12 +302,14 @@ def _make_sha1hex_wrapper(sha1hex_fn: Callable) -> Callable:
         if value is None:
             raise LuaServerError(b"ERR wrong number of arguments")
         return sha1hex_fn(value)
+
     return wrapped
 
 
 def _make_prohibit(message: bytes) -> Callable:
     def wrapped(*args: Any) -> None:  # noqa: ANN401
         raise LuaServerError(message)
+
     return wrapped
 
 
@@ -318,9 +322,7 @@ def fill_load_server_globals(call_context: CallContext) -> Any:  # noqa: ANN401
     redis_server.sha1hex = _make_sha1hex_wrapper(sha1hex)
     redis_server.pcall = _make_call_wrapper(pcall, call_context)
 
-    lua_globals.math.random = _make_prohibit(
-        b"ERR attempted to access nonexistent global variable 'math'"
-    )
+    lua_globals.math.random = _make_prohibit(b"ERR attempted to access nonexistent global variable 'math'")
 
     server_version = call_context.client_context.server_context.information.server_version
     major, minor, patch = (int(p) for p in server_version.split(b"."))

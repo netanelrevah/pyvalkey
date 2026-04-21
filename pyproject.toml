@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 lua = [
-    "lua-runtime",
+    "nrevah-pyvalkey-lua-runtime",
 ]
 valkey-tests = [
     "nrevah-valkey-tests",
@@ -41,12 +41,13 @@ dev = [
     "ruff>=0.9.6",
     "sortedcontainers-stubs>=2.4.2",
     "valkey>=6.1.0",
-    "lua-runtime",
+    "nrevah-pyvalkey-lua-runtime",
     "pytest-asyncio>=1.2.0",
     "ty>=0.0.1a23",
     "types-docker>=7.1.0.20251129",
     "types-psutil>=7.1.3.20251211",
     "cython>=3.2.4",
+    "pre-commit>=4.0.0",
 ]
 
 
@@ -100,6 +101,7 @@ lint.ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/{tests}/*" = ["ANN", "PLR2004", "PLR0913", "E501"]
+"lua_runtime/**/*.pyi" = ["ANN401"]
 
 
 [[tool.mypy.overrides]]
@@ -109,12 +111,4 @@ module = [
 ]
 ignore_missing_imports = true
 
-[tool.uv.workspace]
-members = [
-    "lua_runtime",
-]
-
-[tool.uv.sources]
-lua-runtime = { workspace = true, editable = false }
-nrevah-valkey-tests = { path = "../valkey-tests", editable = true }
 
