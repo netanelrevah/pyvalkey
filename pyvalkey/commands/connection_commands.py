@@ -291,3 +291,66 @@ class SelectDatabase(Command):
     def execute(self) -> ValueType:
         self.client_context.current_database = self.index
         return RESP_OK
+
+
+@command(b"quit", {b"connection", b"fast", b"loading", b"stale", b"no-auth"})
+class Quit(Command):
+    client_context: ClientContext = dependency()
+
+    def execute(self) -> ValueType:
+        self.client_context.current_client.is_killed = True
+        return RESP_OK
+
+
+@command(b"info", {b"admin", b"connection", b"slow"}, b"client")
+class ClientInformation(Command):
+    client_context: ClientContext = dependency()
+
+    def execute(self) -> ValueType:
+        return self.client_context.current_client.info
+
+
+@command(b"caching", {b"connection", b"slow"}, b"client")
+class ClientCaching(Command):
+    mode: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"capa", {b"connection", b"slow"}, b"client")
+class ClientCapabilities(Command):
+    capabilities: list[bytes] = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"getredir", {b"connection", b"slow"}, b"client")
+class ClientGetRedirect(Command):
+    def execute(self) -> ValueType:
+        return -1
+
+
+@command(b"import-source", {b"admin", b"connection", b"slow", b"dangerous"}, b"client")
+class ClientImportSource(Command):
+    mode: bytes = positional_parameter(default=b"OFF")
+
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"no-evict", {b"admin", b"connection", b"slow"}, b"client")
+class ClientNoEvict(Command):
+    mode: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"no-touch", {b"connection", b"slow"}, b"client")
+class ClientNoTouch(Command):
+    mode: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return RESP_OK

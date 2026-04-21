@@ -365,6 +365,14 @@ class ScriptLoad(Command):
         return self.scripts_engine.load(self.script)
 
 
+@command(b"debug", {b"scripting", b"slow"}, parent_command=b"script")
+class ScriptDebug(Command):
+    mode: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
 @command(b"help", {b"scripting", b"slow"}, parent_command=b"script")
 class ScriptHelp(Command):
     def execute(self) -> ValueType:

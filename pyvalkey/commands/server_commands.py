@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import time
 from dataclasses import field, fields
 from os import urandom
 from typing import TYPE_CHECKING
@@ -401,3 +403,230 @@ class SwapDb(Command):
 class Sync(Command):
     def execute(self) -> ValueType:
         return RESP_OK
+
+
+@command(b"time", {b"fast"})
+class Time(Command):
+    def execute(self) -> ValueType:
+        now = time.time_ns()
+        return [str(now // 1_000_000_000).encode(), str((now // 1_000) % 1_000_000).encode()]
+
+
+@command(b"role", {b"admin", b"fast", b"dangerous"})
+class Role(Command):
+    def execute(self) -> ValueType:
+        return [b"master", 0, []]
+
+
+@command(b"lolwut", {b"fast"})
+class Lolwut(Command):
+    version: bytes | None = keyword_parameter(flag=b"VERSION", default=None)
+
+    def execute(self) -> ValueType:
+        return b"Valkey ver. 255.255.255\n"
+
+
+@command(b"lastsave", {b"admin", b"fast", b"dangerous"})
+class LastSave(Command):
+    information: Information = dependency()
+
+    def execute(self) -> ValueType:
+        return int(self.information.start_time // 1000)
+
+
+@command(b"save", {b"admin", b"slow", b"dangerous"})
+class Save(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"bgsave", {b"admin", b"slow", b"dangerous"})
+class BackgroundSave(Command):
+    schedule: bool = flag_parameter(token=b"SCHEDULE")
+
+    def execute(self) -> ValueType:
+        return b"Background saving started"
+
+
+@command(b"bgrewriteaof", {b"admin", b"slow", b"dangerous"})
+class BackgroundRewriteAof(Command):
+    def execute(self) -> ValueType:
+        return b"Background append only file rewriting started"
+
+
+@command(b"shutdown", {b"admin", b"slow", b"dangerous"}, flags={b"no-script"})
+class Shutdown(Command):
+    nosave: bool = flag_parameter(token=b"NOSAVE")
+    save: bool = flag_parameter(token=b"SAVE")
+    now: bool = flag_parameter(token=b"NOW")
+    force: bool = flag_parameter(token=b"FORCE")
+    abort: bool = flag_parameter(token=b"ABORT")
+
+    def execute(self) -> ValueType:
+        if self.abort:
+            return RESP_OK
+        sys.exit(0)
+
+
+@command(b"help", {b"admin", b"dangerous", b"slow"}, parent_command=b"config")
+class ConfigHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"CONFIG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"GET <pattern>",
+            b"    Return parameters matching the glob-like <pattern> and their values.",
+            b"SET <directive> <value>",
+            b"    Set the configuration <directive> to <value>.",
+            b"RESETSTAT",
+            b"    Reset statistics reported by the INFO command.",
+            b"REWRITE",
+            b"    Rewrite the configuration file.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
+@command(b"rewrite", {b"admin", b"dangerous", b"slow"}, parent_command=b"config")
+class ConfigRewrite(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"doctor", {b"slow"}, parent_command=b"memory")
+class MemoryDoctor(Command):
+    def execute(self) -> ValueType:
+        return b"Sam, I detected a few issues in this Valkey instance memory implants:\n"
+
+
+@command(b"stats", {b"slow"}, parent_command=b"memory")
+class MemoryStats(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"peak.allocated",
+            0,
+            b"total.allocated",
+            0,
+            b"startup.allocated",
+            0,
+            b"clients.slaves",
+            0,
+            b"clients.normal",
+            0,
+            b"cluster.links",
+            0,
+            b"aof.buffer",
+            0,
+            b"lua.caches",
+            0,
+            b"functions.caches",
+            0,
+            b"overhead.total",
+            0,
+            b"keys.count",
+            0,
+            b"keys.bytes-per-key",
+            0,
+            b"dataset.bytes",
+            0,
+            b"dataset.percentage",
+            b"0",
+            b"peak.percentage",
+            b"0",
+            b"allocator.allocated",
+            0,
+            b"allocator.active",
+            0,
+            b"allocator.resident",
+            0,
+            b"allocator-fragmentation.ratio",
+            b"0",
+            b"allocator-fragmentation.bytes",
+            0,
+            b"allocator-rss.ratio",
+            b"0",
+            b"allocator-rss.bytes",
+            0,
+            b"rss-overhead.ratio",
+            b"0",
+            b"rss-overhead.bytes",
+            0,
+            b"fragmentation",
+            b"0",
+            b"fragmentation.bytes",
+            0,
+        ]
+
+
+@command(b"malloc-stats", {b"slow"}, parent_command=b"memory")
+class MemoryMallocStats(Command):
+    def execute(self) -> ValueType:
+        return b"malloc stats unavailable\n"
+
+
+@command(b"purge", {b"slow"}, parent_command=b"memory")
+class MemoryPurge(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"list", {b"admin", b"dangerous", b"slow"}, b"acl")
+class AclList(Command):
+    acl: ACL = dependency()
+
+    def execute(self) -> ValueType:
+        lines: list[ValueType] = []
+        for user in self.acl.values():
+            info = user.info
+            flags_raw = info[b"flags"]
+            flags = b" ".join(flags_raw) if isinstance(flags_raw, list) else flags_raw
+            parts: list[bytes] = [b"user", user.name, flags]
+            passwords_raw = info[b"passwords"]
+            if isinstance(passwords_raw, list):
+                parts.extend(b"#" + password for password in passwords_raw)
+            for key_name, default in [(b"keys", b"~*"), (b"channels", b"&*"), (b"commands", b"+@all")]:
+                value = info[key_name]
+                if isinstance(value, bytes):
+                    parts.append(value or default)
+                else:
+                    parts.append(default)
+            lines.append(b" ".join(parts))
+        return lines
+
+
+@command(b"users", {b"admin", b"dangerous", b"slow"}, b"acl")
+class AclUsers(Command):
+    acl: ACL = dependency()
+
+    def execute(self) -> ValueType:
+        return list(self.acl.keys())
+
+
+@command(b"whoami", {b"slow"}, b"acl")
+class AclWhoAmI(Command):
+    client_context: ClientContext = dependency()
+
+    def execute(self) -> ValueType:
+        user = self.client_context.current_user
+        return user.name if user is not None else b"default"
+
+
+@command(b"save", {b"admin", b"dangerous", b"slow"}, b"acl")
+class AclSave(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"load", {b"admin", b"dangerous", b"slow"}, b"acl")
+class AclLoad(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"log", {b"admin", b"dangerous", b"slow"}, b"acl")
+class AclLog(Command):
+    operation: bytes | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        if self.operation is not None and self.operation.upper() == b"RESET":
+            return RESP_OK
+        return []
