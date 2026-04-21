@@ -20,8 +20,7 @@ TCP connection → ValkeyClientProtocol (asyncio)
 ### Key directories
 
 - `pyvalkey/commands/` — one file per command group (e.g. `string_commands.py`, `list_commands.py`). Each command is a `@dataclass` class extending `Command` with `parse()` and `execute()`, registered via `@CommandsRouter.command(...)`.
-- `pyvalkey/commands/lua/` — Lua scripting via the vendored `lua_runtime` package (Valkey's patched Lua 5.1 + Lupa Cython wrapper). `scripts.py` contains Lua template strings; `helpers.py` provides bridge utilities.
-- `lua_runtime/` — workspace package: vendored Lua 5.1 with Valkey's readonly table patch and C extension modules (cjson, cmsgpack, bit, struct). Built with setuptools.
+- `pyvalkey/commands/lua/` — Lua scripting via the `nrevah-pyvalkey-lua-runtime` package. `scripts.py` contains Lua template strings; `helpers.py` provides bridge utilities.
 - `pyvalkey/database_objects/` — in-memory data structures (databases, sorted sets, streams, etc.)
 - `tests/test_valkey_docker/` — Docker-based black-box tests using the official Valkey TCL test suite.
 
@@ -42,13 +41,11 @@ TCP connection → ValkeyClientProtocol (asyncio)
 
 ## Lua ↔ Python Boundary Rules
 
-The `lua_runtime` workspace package vendors Valkey's patched Lua 5.1 with a Cython wrapper (forked from Lupa).
+The `nrevah-pyvalkey-lua-runtime` package provides the Lua runtime. See its [CONTRIBUTING.md](https://github.com/netanelrevah/pyvalkey-lua-runtime/blob/main/CONTRIBUTING.md) for implementation details.
 
-- **Auto arg truncation.** The Cython layer caches each Python callable's parameter count and truncates extra Lua stack args before calling Python. No `@lua_safe` decorator needed — all Python functions exposed to Lua are automatically safe from `debug.sethook` stack leaks.
-- **`set_readonly()` for table protection.** Valkey's Lua 5.1 patch adds a `readonly` flag to Lua tables, checked at the C level in `rawset` / `settable` / `setmetatable`. Use `table.set_readonly(True)` instead of metamethod proxies (`__newindex = error`). This eliminates the upvalue corruption caused by metamethod resolution during `debug.sethook`.
+- **`set_readonly()` for table protection.** Use `table.set_readonly(True)` instead of metamethod proxies (`__newindex = error`).
 - **Single Lua runtime.** `FunctionsCompiler` has one `lua_runtime`. `CallContext.readonly` is flipped before each call — the `_call()` function checks it dynamically.
-- **C extension modules.** cjson, cmsgpack, bit, and struct are loaded from Valkey's C implementations in `lua_runtime.__cinit__`. No Python reimplementations needed.
-- **Python closures for Lua-exposed callbacks.** Never bind Python objects as Lua closure upvalues — `debug.sethook` corrupts them. Use Python closures (e.g. `_make_call_wrapper` in `helpers.py`) that capture Python objects in Python scope, then pass the closure to Lua as an opaque callable. Lua tables as upvalues are also unsafe.
+- **Python closures for Lua-exposed callbacks.** Never bind Python objects as Lua closure upvalues — `debug.sethook` corrupts them. Use Python closures (e.g. `_make_call_wrapper` in `helpers.py`) that capture Python objects in Python scope, then pass the closure to Lua as an opaque callable.
 - **`table()` vs `table_from()` key types.** With `encoding=None`, `lua_runtime.table(ok=b'OK')` stores the key as str `"ok"`; `lua_runtime.table_from({b'ok': b'OK'})` stores it as bytes. Use `table_from()` when keys must match bytes-based lookups.
 - **Bare `\n` in Lua error messages.** Always use `.split(b"\n")[0]` to extract just the error message before raising `ServerError`.
 
@@ -98,16 +95,6 @@ Test results are saved in Docker log files at `tests/test_valkey_docker/<tag>.do
 1. **Docker container exit status**: the pytest assertion `assert status["StatusCode"] == 0` may fail even when individual tests pass. Verify by reading the actual test output in `<tag>.docker.log`.
 2. **Test result markers**: check for `[ok]`, `[fail]`, `[err]`, `[ignore]` in the log.
 3. **WATCH/EXEC tests**: for transaction-related tests, verify expired keys are marked as touched, EXEC returns empty array when watched keys were modified, and check `multi.docker.log` for WATCH test results.
-
-### Rebuilding the Lua runtime
-
-```bash
-# Regenerate _lua_runtime.c from the Cython .pyx source
-uv run cython --include-dir lua_runtime/lua_runtime lua_runtime/lua_runtime/_lua_runtime.pyx --output-file lua_runtime/lua_runtime/_lua_runtime.c
-
-# Rebuild the C extension after changing .pyx or .c (or luaconf.h)
-uv sync --reinstall-package lua-runtime
-```
 
 ## Build Artifacts
 
