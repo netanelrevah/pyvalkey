@@ -124,8 +124,6 @@ class GetExpire(Command):
     persist: bool = flag_parameter(token=b"PERSIST")
 
     def execute(self) -> ValueType:
-        print(self.ex, self.px, self.exat, self.pxat, self.persist)
-
         key_value = self.database.string_database.get_or_none(self.key)
         if key_value is None:
             return None
@@ -330,6 +328,11 @@ class MultipleGet(Command):
         return result
 
 
+class ExistenceMode(Enum):
+    OnlyIfNotExist = b"NX"
+    OnlyIfExist = b"XX"
+
+
 @command(b"mset", {b"slow", b"string"}, flags={b"write"})
 class SetMultiple(Command):
     database: Database = dependency()
@@ -339,6 +342,61 @@ class SetMultiple(Command):
         for key, value in self.key_value:
             self.database.upsert(key, value)
         return RESP_OK
+
+
+@command(
+    b"msetex",
+    {b"slow", b"string"},
+    flags={b"write", b"denyoom"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
+)
+class SetMultipleExpire(Command):
+    database: Database = dependency()
+    numkeys: int = positional_parameter()
+    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW", length_field_name="numkeys")
+    existence_mode: ExistenceMode | None = keyword_parameter(
+        flag={b"NX": ExistenceMode.OnlyIfNotExist, b"XX": ExistenceMode.OnlyIfExist}, default=None
+    )
+    ex: int | None = keyword_parameter(flag=b"EX", default=None)
+    px: int | None = keyword_parameter(flag=b"PX", default=None)
+    exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
+    pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
+    keepttl: bool = flag_parameter(token=b"KEEPTTL")
+
+    def execute(self) -> ValueType:
+        ttl_flags = [self.ex, self.px, self.exat, self.pxat, self.keepttl]
+        if sum(1 for f in ttl_flags if f) > 1:
+            raise ServerError(b"ERR syntax error")
+
+        expiration: int | None = None
+        if self.ex is not None:
+            expiration = now_ms() + self.ex * 1000
+        elif self.px is not None:
+            expiration = now_ms() + self.px
+        elif self.exat is not None:
+            expiration = self.exat * 1000
+        elif self.pxat is not None:
+            expiration = self.pxat
+
+        if self.existence_mode == ExistenceMode.OnlyIfNotExist:
+            for key, _ in self.key_value:
+                if self.database.string_database.has_key(key):
+                    return 0
+        elif self.existence_mode == ExistenceMode.OnlyIfExist:
+            for key, _ in self.key_value:
+                if not self.database.string_database.has_key(key):
+                    return 0
+
+        for key, value in self.key_value:
+            if self.keepttl:
+                existing = self.database.string_database.get_or_none(key)
+                current_expiration = existing.expiration if existing is not None else None
+                self.database.string_database.set_key_value(
+                    KeyValue.of_string(key, value, expiration=current_expiration)
+                )
+            else:
+                self.database.string_database.set_key_value(KeyValue.of_string(key, value, expiration=expiration))
+        return 1
 
 
 @command(b"msetnx", {b"slow", b"string"}, flags={b"write"})
@@ -353,11 +411,6 @@ class SetIfNotExistsMultiple(Command):
         for key, value in self.key_value:
             self.database.upsert(key, value)
         return True
-
-
-class ExistenceMode(Enum):
-    OnlyIfNotExist = b"NX"
-    OnlyIfExist = b"XX"
 
 
 @command(

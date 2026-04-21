@@ -630,3 +630,202 @@ class AclLog(Command):
         if self.operation is not None and self.operation.upper() == b"RESET":
             return RESP_OK
         return []
+
+
+@command(b"list", {b"admin", b"slow", b"dangerous"}, parent_command=b"module")
+class ModuleList(Command):
+    def execute(self) -> ValueType:
+        return []
+
+
+@command(b"load", {b"admin", b"slow", b"dangerous"}, parent_command=b"module")
+class ModuleLoad(Command):
+    path: bytes = positional_parameter()
+    args: list[bytes] = positional_parameter()
+
+    def execute(self) -> ValueType:
+        raise ServerError(b"ERR module system not supported")
+
+
+@command(b"loadex", {b"admin", b"slow", b"dangerous"}, parent_command=b"module")
+class ModuleLoadEx(Command):
+    path: bytes = positional_parameter()
+    config_args: list[bytes] = positional_parameter()
+
+    def execute(self) -> ValueType:
+        raise ServerError(b"ERR module system not supported")
+
+
+@command(b"unload", {b"admin", b"slow", b"dangerous"}, parent_command=b"module")
+class ModuleUnload(Command):
+    name: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        raise ServerError(b"ERR module system not supported")
+
+
+@command(b"help", {b"admin", b"slow", b"dangerous"}, parent_command=b"module")
+class ModuleHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"MODULE <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"LIST",
+            b"    Return a list of loaded modules.",
+            b"LOAD <path> [<arg> ...]",
+            b"    Load a module library from <path>, passing the remaining arguments to its onload function.",
+            b"LOADEX <path> [CONFIG <name> <value> ...] [ARGS <arg> ...]",
+            b"    Load a module with extended options.",
+            b"UNLOAD <name>",
+            b"    Unload a module.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
+@command(b"get", {b"admin", b"slow"}, parent_command=b"slowlog")
+class SlowLogGet(Command):
+    count: int | None = positional_parameter(default=None)
+
+    def execute(self) -> ValueType:
+        return []
+
+
+@command(b"len", {b"admin", b"slow"}, parent_command=b"slowlog")
+class SlowLogLen(Command):
+    def execute(self) -> ValueType:
+        return 0
+
+
+@command(b"reset", {b"admin", b"slow"}, parent_command=b"slowlog")
+class SlowLogReset(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"help", {b"admin", b"slow"}, parent_command=b"slowlog")
+class SlowLogHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"SLOWLOG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"GET [<count>]",
+            b"    Return top <count> entries from the slowlog (default: 10).",
+            b"LEN",
+            b"    Return the length of the slowlog.",
+            b"RESET",
+            b"    Reset the slowlog.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
+@command(b"get", {b"admin", b"slow"}, parent_command=b"commandlog")
+class CommandLogGet(Command):
+    count: int = positional_parameter()
+    log_type: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return []
+
+
+@command(b"len", {b"admin", b"slow"}, parent_command=b"commandlog")
+class CommandLogLen(Command):
+    log_type: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return 0
+
+
+@command(b"reset", {b"admin", b"slow"}, parent_command=b"commandlog")
+class CommandLogReset(Command):
+    log_type: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return RESP_OK
+
+
+@command(b"help", {b"admin", b"slow"}, parent_command=b"commandlog")
+class CommandLogHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"COMMANDLOG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"GET <count> <type>",
+            b"    Return top <count> entries of the given log type (slow|large-request|large-reply).",
+            b"LEN <type>",
+            b"    Return the length of the given log type.",
+            b"RESET <type>",
+            b"    Reset the given log type.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
+@command(b"doctor", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyDoctor(Command):
+    def execute(self) -> ValueType:
+        return b"Dave, no latency events have been observed yet.\n"
+
+
+@command(b"graph", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyGraph(Command):
+    event: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return b""
+
+
+@command(b"history", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyHistory(Command):
+    event: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return []
+
+
+@command(b"latest", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyLatest(Command):
+    def execute(self) -> ValueType:
+        return []
+
+
+@command(b"reset", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyReset(Command):
+    events: list[bytes] = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return 0
+
+
+@command(b"histogram", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyHistogram(Command):
+    commands: list[bytes] = positional_parameter()
+
+    def execute(self) -> ValueType:
+        return []
+
+
+@command(b"help", {b"admin", b"slow"}, parent_command=b"latency")
+class LatencyHelp(Command):
+    def execute(self) -> ValueType:
+        return [
+            b"LATENCY <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+            b"DOCTOR",
+            b"    Return a human readable latency analysis report.",
+            b"GRAPH <event>",
+            b"    Return a latency graph for the <event> class.",
+            b"HISTORY <event>",
+            b"    Return time-latency samples for the <event> class.",
+            b"LATEST",
+            b"    Return the latest latency samples for all events.",
+            b"RESET [<event> ...]",
+            b"    Reset latency data of one or more <event> (or all if not specified).",
+            b"HISTOGRAM [<command> ...]",
+            b"    Return a cumulative distribution of latencies for the given commands.",
+            b"HELP",
+            b"    Prints this help.",
+        ]
+
+
+@command(b"monitor", {b"admin", b"slow", b"dangerous"}, flags={b"no-script"})
+class Monitor(Command):
+    def execute(self) -> ValueType:
+        return RESP_OK
