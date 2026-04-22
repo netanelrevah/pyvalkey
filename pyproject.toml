@@ -65,6 +65,8 @@ markers = [
     "scripting",
     "acl",
     "protocol",
+    "geo",
+    "hashexpire",
 ]
 
 [tool.ruff]

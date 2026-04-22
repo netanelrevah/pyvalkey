@@ -86,11 +86,13 @@ class DatabaseContent:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
     watchlist: dict[bytes, set[ClientWatchlist]] = field(default_factory=dict)
+    hash_field_expirations: dict[bytes, dict[bytes, int]] = field(default_factory=dict)
 
     def clear_key(self, key_value: KeyValue) -> None:
         if key_value.expiration is not None:
             self.key_with_expiration.discard(key_value)
         self.data.pop(key_value.key)
+        self.hash_field_expirations.pop(key_value.key, None)
 
     def size(self) -> int:
         return len(self.data)
@@ -206,6 +208,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         key_value = self.content.data.pop(key)
         if key_value.expiration is not None:
             self.content.key_with_expiration.discard(key_value)
+        self.content.hash_field_expirations.pop(key, None)
         self.touch_watched_key(key)
         return key_value
 
@@ -373,6 +376,128 @@ class TypedDatabase(Generic[KeyValueTypeVar], DatabaseBase[KeyValueTypeVar]):
         return self.empty_factory()
 
 
+HFE_NO_FIELD = -2
+HFE_NO_TTL = -1
+HFE_COND_FAILED = 0
+HFE_SET = 1
+HFE_DELETED_PAST = 2
+
+
+@dataclass
+class HashDatabase(TypedDatabase[dict[bytes, int | bytes]]):
+    def _field_expirations_or_create(self, key: bytes) -> dict[bytes, int]:
+        return self.content.hash_field_expirations.setdefault(key, {})
+
+    def is_field_expired(self, key: bytes, field_name: bytes) -> bool:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return False
+        expire_at = table.get(field_name)
+        if expire_at is None:
+            return False
+        return now_ms() >= expire_at
+
+    def evict_expired_fields(self, key: bytes) -> int:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return 0
+        now = now_ms()
+        expired = [f for f, t in table.items() if now >= t]
+        if not expired:
+            return 0
+        key_value = self.content.data.get(key)
+        if key_value is None:
+            self.content.hash_field_expirations.pop(key, None)
+            return 0
+        value = key_value.value
+        if not isinstance(value, dict):
+            return 0
+        for f in expired:
+            value.pop(f, None)
+            table.pop(f, None)
+        if not table:
+            self.content.hash_field_expirations.pop(key, None)
+        self.notify(NotificationType.HASH, b"hexpired", key)
+        if not value:
+            self.pop_unsafely(key)
+        return len(expired)
+
+    def get_field_expiration(self, key: bytes, field_name: bytes) -> int | None:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return None
+        return table.get(field_name)
+
+    def set_field_expiration(self, key: bytes, field_name: bytes, ms_at: int) -> None:
+        self._field_expirations_or_create(key)[field_name] = ms_at
+
+    def remove_field_expiration(self, key: bytes, field_name: bytes) -> bool:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return False
+        had = table.pop(field_name, None) is not None
+        if not table:
+            self.content.hash_field_expirations.pop(key, None)
+        return had
+
+    @staticmethod
+    def _check_condition(cond: bytes | None, current: int | None, new_at_ms: int) -> bool:
+        if cond is None:
+            return True
+        if cond == b"NX":
+            return current is None
+        if cond == b"XX":
+            return current is not None
+        if cond == b"GT":
+            return current is not None and new_at_ms > current
+        if cond == b"LT":
+            return current is None or new_at_ms < current
+        return True
+
+    def apply_field_expirations(self, key: bytes, new_at_ms: int, cond: bytes | None, fields: list[bytes]) -> list[int]:
+        self.evict_expired_fields(key)
+        if not self.has_key(key):
+            return [HFE_NO_FIELD for _ in fields]
+        hash_map = self.get_value(key)
+        results: list[int] = []
+        now = now_ms()
+        for f in fields:
+            if f not in hash_map:
+                results.append(HFE_NO_FIELD)
+                continue
+            current = self.get_field_expiration(key, f)
+            if not self._check_condition(cond, current, new_at_ms):
+                results.append(HFE_COND_FAILED)
+                continue
+            if new_at_ms <= now:
+                hash_map.pop(f, None)
+                self.remove_field_expiration(key, f)
+                results.append(HFE_DELETED_PAST)
+                continue
+            self.set_field_expiration(key, f, new_at_ms)
+            results.append(HFE_SET)
+        if not hash_map:
+            self.pop_unsafely(key)
+        return results
+
+    def query_field_expirations(self, key: bytes, fields: list[bytes], mapper: Callable[[int], int]) -> list[int]:
+        self.evict_expired_fields(key)
+        if not self.has_key(key):
+            return [HFE_NO_FIELD for _ in fields]
+        hash_map = self.get_value(key)
+        out: list[int] = []
+        for f in fields:
+            if f not in hash_map:
+                out.append(HFE_NO_FIELD)
+                continue
+            exp = self.get_field_expiration(key, f)
+            if exp is None:
+                out.append(HFE_NO_TTL)
+                continue
+            out.append(mapper(exp))
+        return out
+
+
 @dataclass
 class ListDatabase(DatabaseBase[list]):
     index: int
@@ -483,7 +608,7 @@ class Database(DatabaseBase[KeyValueType]):
     int_database: IntDatabase = field(init=False)
     sorted_set_database: TypedDatabase[ScoredSortedSet] = field(init=False)
     set_database: TypedDatabase[set] = field(init=False)
-    hash_database: TypedDatabase[dict[bytes, int | bytes]] = field(init=False)
+    hash_database: HashDatabase = field(init=False)
     list_database: ListDatabase = field(init=False)
     stream_database: TypedDatabase[Stream] = field(init=False)
 
@@ -509,7 +634,7 @@ class Database(DatabaseBase[KeyValueType]):
         self.set_database = TypedDatabase(
             self.index, self.content, self.configurations, self.notifications_manager, set, set, lambda value: not value
         )
-        self.hash_database = TypedDatabase(
+        self.hash_database = HashDatabase(
             self.index,
             self.content,
             self.configurations,
