@@ -25,8 +25,17 @@ def unwatch(databases: dict[int, Database], client_watchlist: ClientWatchlist) -
     client_watchlist.watchlist = {}
 
 
-@command(b"multi", {b"fast", b"transaction"}, flags={b"nomulti"})
+@command(b"multi", {b"transaction"}, flags={b"allow_busy", b"fast", b"loading", b"noscript", b"no_multi", b"stale"})
 class TransactionStart(Command):
+    """
+    summary: Starts a transaction.
+    complexity: O(1)
+    since: 1.2.0
+    function: multiCommand
+    reply_schema:
+      const: OK
+    """
+
     client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
@@ -35,8 +44,17 @@ class TransactionStart(Command):
         return RESP_OK
 
 
-@command(b"discard", {b"fast", b"transaction"})
+@command(b"discard", {b"transaction"}, flags={b"allow_busy", b"fast", b"loading", b"noscript", b"stale"})
 class TransactionDiscard(Command):
+    """
+    summary: Discards a transaction.
+    complexity: O(N), when N is the number of queued commands
+    since: 2.0.0
+    function: discardCommand
+    reply_schema:
+      const: OK
+    """
+
     client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:
@@ -49,8 +67,21 @@ class TransactionDiscard(Command):
         return RESP_OK
 
 
-@command(b"exec", {b"slow", b"transaction"})
+@command(b"exec", {b"slow", b"transaction"}, flags={b"loading", b"noscript", b"skip_commandlog", b"stale"})
 class TransactionExecute(Command):
+    """
+    summary: Executes all commands in a transaction.
+    complexity: Depends on commands in the transaction
+    since: 1.2.0
+    function: execCommand
+    reply_schema:
+      oneOf:
+      - description: Each element being the reply to each of the commands in the atomic transaction.
+        type: array
+      - description: The transaction was aborted because a `WATCH`ed key was touched
+        type: 'null'
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
     list_blocking_manager: ListBlockingManager = dependency()
@@ -99,8 +130,17 @@ class TransactionExecute(Command):
         await self.stream_blocking_manager.notify_lazy(self.database)
 
 
-@command(b"watch", {b"fast", b"transaction"}, flags={b"nomulti"})
+@command(b"watch", {b"transaction"}, flags={b"allow_busy", b"fast", b"loading", b"noscript", b"no_multi", b"stale"})
 class TransactionWatch(Command):
+    """
+    summary: Monitors changes to keys to determine the execution of a transaction.
+    complexity: O(1) for every key.
+    since: 2.2.0
+    function: watchCommand
+    reply_schema:
+      const: OK
+    """
+
     client_context: ClientContext = dependency()
 
     keys: list[bytes] = positional_parameter()
@@ -117,8 +157,17 @@ class TransactionWatch(Command):
         return RESP_OK
 
 
-@command(b"unwatch", {b"fast", b"transaction"}, flags={b"nomulti"})
+@command(b"unwatch", {b"transaction"}, flags={b"allow_busy", b"fast", b"loading", b"noscript", b"stale"})
 class TransactionUnwatch(Command):
+    """
+    summary: Forgets about watched keys of a transaction.
+    complexity: O(1)
+    since: 2.2.0
+    function: unwatchCommand
+    reply_schema:
+      const: OK
+    """
+
     client_context: ClientContext = dependency()
 
     def execute(self) -> ValueType:

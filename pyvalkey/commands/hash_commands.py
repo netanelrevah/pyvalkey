@@ -61,10 +61,21 @@ def apply_hash_map_increase_by(database: Database, key: bytes, field: bytes, inc
         raise ValueError()
 
 
-@command(b"hdel", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hdel", {b"hash"}, flags={b"fast", b"write"})
 class HashMapDelete(Command):
+    """
+    summary: >-
+      Deletes one or more fields and their values from a hash. Deletes the hash if no fields remain.
+    complexity: O(N) where N is the number of fields to be removed.
+    since: 2.0.0
+    function: hdelCommand
+    reply_schema:
+      type: integer
+      description: The number of fields that were removed from the hash.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -78,10 +89,23 @@ class HashMapDelete(Command):
         return result
 
 
-@command(b"hexists", {b"fast", b"hash", b"read"})
+@command(b"hexists", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashMapExists(Command):
+    """
+    summary: Determines whether a field exists in a hash.
+    complexity: O(1)
+    since: 2.0.0
+    function: hexistsCommand
+    reply_schema:
+      oneOf:
+      - description: The hash does not contain the field, or key does not exist.
+        const: 0
+      - description: The hash contains the field.
+        const: 1
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -89,10 +113,23 @@ class HashMapExists(Command):
         return self.field in self.database.hash_database.get_value_or_empty(self.key)
 
 
-@command(b"hget", {b"fast", b"hash", b"read"})
+@command(b"hget", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashMapGet(Command):
+    """
+    summary: Returns the value of a field in a hash.
+    complexity: O(1)
+    since: 2.0.0
+    function: hgetCommand
+    reply_schema:
+      oneOf:
+      - description: The value associated with the field.
+        type: string
+      - description: If the field is not present in the hash or key does not exist.
+        type: 'null'
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -100,10 +137,24 @@ class HashMapGet(Command):
         return self.database.hash_database.get_value_or_empty(self.key).get(self.field)
 
 
-@command(b"hgetall", {b"hash", b"read", b"slow"})
+@command(b"hgetall", {b"hash", b"read", b"slow"}, flags={b"readonly"})
 class HashMapGetAll(Command):
+    """
+    summary: Returns all fields and values in a hash.
+    complexity: O(N) where N is the size of the hash.
+    since: 2.0.0
+    function: hgetallCommand
+    reply_schema:
+      type: object
+      description: >-
+        Map of fields and their values stored in the hash, or an empty list when key does not exist. In RESP2 this
+        is returned as a flat array.
+      additionalProperties:
+        type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         self.database.hash_database.evict_expired_fields(self.key)
@@ -115,12 +166,24 @@ class HashMapGetAll(Command):
         return response
 
 
-@command(b"hincrby", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hincrby", {b"hash"}, flags={b"denyoom", b"fast", b"write"})
 class HashMapIncreaseBy(Command):
+    """
+    summary: >-
+      Increments the integer value of a field in a hash by a number. Uses 0 as initial value if the field doesn't
+      exist.
+    complexity: O(1)
+    since: 2.0.0
+    function: hincrbyCommand
+    reply_schema:
+      type: integer
+      description: The value of the field after the increment operation.
+    """
+
     database: Database = dependency()
     notifications: NotificationsManager = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     field: bytes = positional_parameter()
     value: int = positional_parameter()
 
@@ -131,12 +194,23 @@ class HashMapIncreaseBy(Command):
         return result
 
 
-@command(b"hincrbyfloat", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hincrbyfloat", {b"hash"}, flags={b"denyoom", b"fast", b"write"})
 class HashMapIncreaseByFloat(Command):
+    """
+    summary: >-
+      Increments the floating point value of a field by a number. Uses 0 as initial value if the field doesn't exist.
+    complexity: O(1)
+    since: 2.6.0
+    function: hincrbyfloatCommand
+    reply_schema:
+      type: string
+      description: The value of the field after the increment operation.
+    """
+
     database: Database = dependency()
     notifications: NotificationsManager = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     field: bytes = positional_parameter()
     value: float = positional_parameter()
 
@@ -150,30 +224,69 @@ class HashMapIncreaseByFloat(Command):
         return result
 
 
-@command(b"hkeys", {b"hash", b"read", b"slow"})
+@command(b"hkeys", {b"hash", b"read", b"slow"}, flags={b"readonly"})
 class HashMapKeys(Command):
+    """
+    summary: Returns all fields in a hash.
+    complexity: O(N) where N is the size of the hash.
+    since: 2.0.0
+    function: hkeysCommand
+    reply_schema:
+      type: array
+      description: List of fields in the hash, or an empty list when the key does not exist.
+      uniqueItems: true
+      items:
+        type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         self.database.hash_database.evict_expired_fields(self.key)
         return list(self.database.hash_database.get_value_or_empty(self.key).keys())
 
 
-@command(b"hlen", {b"fast", b"hash", b"read"})
+@command(b"hlen", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashMapLength(Command):
+    """
+    summary: Returns the number of fields in a hash.
+    complexity: O(1)
+    since: 2.0.0
+    function: hlenCommand
+    reply_schema:
+      type: integer
+      description: Number of the fields in the hash, or 0 when the key does not exist.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         self.database.hash_database.evict_expired_fields(self.key)
         return len(self.database.hash_database.get_value_or_empty(self.key))
 
 
-@command(b"hmget", {b"fast", b"hash", b"read"})
+@command(b"hmget", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashMapGetMultiple(Command):
+    """
+    summary: Returns the values of all fields in a hash.
+    complexity: O(N) where N is the number of fields being requested.
+    since: 2.0.0
+    function: hmgetCommand
+    reply_schema:
+      description: >-
+        List of values associated with the given fields, in the same order as they are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - type: string
+        - type: 'null'
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     fields: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -182,10 +295,19 @@ class HashMapGetMultiple(Command):
         return [hash_map.get(f, None) for f in self.fields]
 
 
-@command(b"hmset", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hmset", {b"hash"}, flags={b"denyoom", b"fast", b"write"})
 class HashMapSetMultiple(Command):
+    """
+    summary: Sets the values of multiple fields.
+    complexity: O(N) where N is the number of fields being set.
+    since: 2.0.0
+    function: hsetCommand
+    reply_schema:
+      const: OK
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -200,12 +322,42 @@ class HashMapSetMultiple(Command):
         return RESP_OK
 
 
-@command(b"hrandfield", {b"hash", b"read", b"slow"}, flags={b"write"})
+@command(b"hrandfield", {b"hash", b"read", b"slow"}, flags={b"readonly"})
 class HashRandomField(Command):
+    """
+    summary: Returns one or more random fields from a hash.
+    complexity: O(N) where N is the number of fields returned
+    since: 6.2.0
+    function: hrandfieldCommand
+    reply_schema:
+      anyOf:
+      - description: Key doesn't exist
+        type: 'null'
+      - description: A single random field. Returned in case `COUNT` was not used.
+        type: string
+      - description: A list of fields. Returned in case `COUNT` was used.
+        type: array
+        items:
+          type: string
+      - description: >-
+          Fields and their values. Returned in case `COUNT` and `WITHVALUES` were used. In RESP2 this is returned
+          as a flat array.
+        type: array
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Field
+            type: string
+          - description: Value
+            type: string
+    """
+
     database: Database = dependency()
     protocol: RespProtocolVersion = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     count: int | None = positional_parameter(default=None)
     with_values: bool = flag_parameter(token=b"WITHVALUES")
 
@@ -239,10 +391,33 @@ class HashRandomField(Command):
         return list(flatten([[key, hash_map[key]] for key in keys]))
 
 
-@command(b"hscan", {b"hash", b"read", b"slow"})
+@command(b"hscan", {b"hash", b"read", b"slow"}, flags={b"readonly"})
 class HashMapScan(Command):
+    """
+    summary: Iterates over fields and values of a hash.
+    complexity: >-
+      O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return
+      back to 0. N is the number of elements inside the collection.
+    since: 2.8.0
+    function: hscanCommand
+    reply_schema:
+      description: Cursor and scan response in array form.
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+      - description: Cursor.
+        type: string
+      - description: >-
+          List of key/value pairs from the hash where each even element is the key, and each odd element is the
+          value, or when novalues option is on, a list of keys from the hash.
+        type: array
+        items:
+          type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
     count: int | None = keyword_parameter(token=b"COUNT", default=None)
@@ -267,10 +442,22 @@ class HashMapScan(Command):
         return [b"0", dict(scan())]
 
 
-@command(b"hset", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hset", {b"hash"}, flags={b"denyoom", b"fast", b"write"})
 class HashMapSet(Command):
+    """
+    summary: Creates or modifies the value of a field in a hash.
+    complexity: >-
+      O(1) for each field/value pair added, so O(N) to add N field/value pairs when the command is called with multiple
+      field/value pairs.
+    since: 2.0.0
+    function: hsetCommand
+    reply_schema:
+      description: The number of fields that were added
+      type: integer
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     fields_values: list[tuple[bytes, bytes]] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -288,10 +475,23 @@ class HashMapSet(Command):
         return added_fields
 
 
-@command(b"hsetnx", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hsetnx", {b"hash"}, flags={b"denyoom", b"fast", b"write"})
 class HashMapSetIfNotExists(Command):
+    """
+    summary: Sets the value of a field in a hash only when the field doesn't exist.
+    complexity: O(1)
+    since: 2.0.0
+    function: hsetnxCommand
+    reply_schema:
+      oneOf:
+      - description: The field is a new field in the hash and value was set.
+        const: 0
+      - description: The field already exists in the hash and no operation was performed.
+        const: 1
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     field: bytes = positional_parameter()
     value: bytes = positional_parameter()
 
@@ -306,10 +506,23 @@ class HashMapSetIfNotExists(Command):
         return True
 
 
-@command(b"hstrlen", {b"fast", b"hash", b"read"})
+@command(b"hstrlen", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashMapStringLength(Command):
+    """
+    summary: Returns the length of the value of a field.
+    complexity: O(1)
+    since: 3.2.0
+    function: hstrlenCommand
+    reply_schema:
+      type: integer
+      description: >-
+        String length of the value associated with the field, or zero when the field is not present in the hash
+        or key does not exist at all.
+      minimum: 0
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     field: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -321,10 +534,22 @@ class HashMapStringLength(Command):
         return len(field_value)
 
 
-@command(b"hvals", {b"hash", b"read", b"slow"})
+@command(b"hvals", {b"hash", b"read", b"slow"}, flags={b"readonly"})
 class HashMapValues(Command):
+    """
+    summary: Returns all values in a hash.
+    complexity: O(N) where N is the size of the hash.
+    since: 2.0.0
+    function: hvalsCommand
+    reply_schema:
+      type: array
+      description: List of values in the hash, or an empty list when the key does not exist.
+      items:
+        type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         self.database.hash_database.evict_expired_fields(self.key)
@@ -361,10 +586,33 @@ def _parse_fields_tail(args: list[bytes]) -> tuple[bytes | None, list[bytes]]:
     return cond, fields
 
 
-@command(b"hexpire", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hexpire", {b"hash"}, flags={b"fast", b"write"})
 class HashExpire(Command):
+    """
+    summary: Sets expiry time on hash fields.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hexpireCommand
+    reply_schema:
+      description: >-
+        List of integer codes indicating the result of setting expiry on each specified field, in the same order
+        as the fields are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the HASH, or key does not exist.
+          const: -2
+        - description: The specified NX | XX | GT | LT condition has not been met.
+          const: 0
+        - description: The expiration time was applied.
+          const: 1
+        - description: When called with a 0 second
+          const: 2
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     seconds: int = positional_parameter()
     tail: list[bytes] = positional_parameter()
 
@@ -374,10 +622,33 @@ class HashExpire(Command):
         return self.database.hash_database.apply_field_expirations(self.key, at_ms, cond, fields)
 
 
-@command(b"hpexpire", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hpexpire", {b"hash"}, flags={b"fast", b"write"})
 class HashPExpire(Command):
+    """
+    summary: Sets expiry time on hash object.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hpexpireCommand
+    reply_schema:
+      description: >-
+        List of integer codes indicating the result of setting expiry on each specified field, in the same order
+        as the fields are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the HASH, or HASH is empty.
+          const: -2
+        - description: The specified NX | XX | GT | LT condition has not been met.
+          const: 0
+        - description: The expiration time was applied.
+          const: 1
+        - description: When called with a 0 millisecond
+          const: 2
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     milliseconds: int = positional_parameter()
     tail: list[bytes] = positional_parameter()
 
@@ -387,10 +658,33 @@ class HashPExpire(Command):
         return self.database.hash_database.apply_field_expirations(self.key, at_ms, cond, fields)
 
 
-@command(b"hexpireat", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hexpireat", {b"hash"}, flags={b"fast", b"write"})
 class HashExpireAt(Command):
+    """
+    summary: Sets expiry time on hash fields.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hexpireatCommand
+    reply_schema:
+      description: >-
+        List of integer codes indicating the result of setting expiry on each specified field, in the same order
+        as the fields are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the HASH, or HASH is empty.
+          const: -2
+        - description: The specified NX | XX | GT | LT condition has not been met.
+          const: 0
+        - description: The expiration time was applied.
+          const: 1
+        - description: When called with a 0 second or is called with a past Unix time in seconds.
+          const: 2
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     unix_seconds: int = positional_parameter()
     tail: list[bytes] = positional_parameter()
 
@@ -400,10 +694,33 @@ class HashExpireAt(Command):
         return self.database.hash_database.apply_field_expirations(self.key, at_ms, cond, fields)
 
 
-@command(b"hpexpireat", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hpexpireat", {b"hash"}, flags={b"fast", b"write"})
 class HashPExpireAt(Command):
+    """
+    summary: Sets expiration time on hash field.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hpexpireatCommand
+    reply_schema:
+      description: >-
+        List of integer codes indicating the result of setting expiry on each specified field, in the same order
+        as the fields are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the HASH, or HASH is empty.
+          const: -2
+        - description: The specified NX | XX | GT | LT condition has not been met.
+          const: 0
+        - description: The expiration time was applied.
+          const: 1
+        - description: When called with a 0 second or is called with a past Unix time in milliseconds.
+          const: 2
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     unix_milliseconds: int = positional_parameter()
     tail: list[bytes] = positional_parameter()
 
@@ -412,10 +729,33 @@ class HashPExpireAt(Command):
         return self.database.hash_database.apply_field_expirations(self.key, self.unix_milliseconds, cond, fields)
 
 
-@command(b"httl", {b"fast", b"hash", b"read"})
+@command(b"httl", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashTTL(Command):
+    """
+    summary: >-
+      Returns the remaining time to live (in seconds) of a hash key's field(s) that have an associated expiration.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: httlCommand
+    reply_schema:
+      description: >-
+        List of values associated with the result of getting the remaining time-to-live of the specific fields,
+        in the same order as they are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the provided hash key, or the hash key is empty
+          const: -2
+        - description: Field exists in the provided hash key, but has no expiration associated with it.
+          const: -1
+        - description: The expiration time associated with the hash key field, in seconds.
+          type: integer
+          minimum: 0
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     tail: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -426,10 +766,33 @@ class HashTTL(Command):
         )
 
 
-@command(b"hpttl", {b"fast", b"hash", b"read"})
+@command(b"hpttl", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashPTTL(Command):
+    """
+    summary: >-
+      Returns the remaining time to live in milliseconds of a hash key's field(s) that have an associated expiration.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hpttlCommand
+    reply_schema:
+      description: >-
+        List of values associated with the result of getting the remaining time-to-live of the specific fields,
+        in the same order as they are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the provided hash key, or the hash key is empty
+          const: -2
+        - description: Field exists in the provided hash key, but has no expiration associated with it.
+          const: -1
+        - description: The expiration time associated with the hash key field, in milliseconds.
+          type: integer
+          minimum: 0
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     tail: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -438,10 +801,33 @@ class HashPTTL(Command):
         return self.database.hash_database.query_field_expirations(self.key, fields, lambda e: max(0, e - now))
 
 
-@command(b"hexpiretime", {b"fast", b"hash", b"read"})
+@command(b"hexpiretime", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashExpireTime(Command):
+    """
+    summary: >-
+      Returns Unix timestamps in seconds since the epoch at which the given key's field(s) will expire.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hexpiretimeCommand
+    reply_schema:
+      description: >-
+        List of values associated with the result of getting the absolute expiry timestamp of the specific fields,
+        in the same order as they are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the provided hash key, or the hash key is empty.
+          const: -2
+        - description: Field exists in the provided hash key, but has no expiration associated with it.
+          const: -1
+        - description: The expiration time associated with the hash key field, in seconds.
+          type: integer
+          minimum: 0
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     tail: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -449,10 +835,33 @@ class HashExpireTime(Command):
         return self.database.hash_database.query_field_expirations(self.key, fields, lambda e: e // 1000)
 
 
-@command(b"hpexpiretime", {b"fast", b"hash", b"read"})
+@command(b"hpexpiretime", {b"hash", b"read"}, flags={b"fast", b"readonly"})
 class HashPExpireTime(Command):
+    """
+    summary: >-
+      Returns the Unix timestamp in milliseconds since Unix epoch at which the given key's field(s) will expire.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hpexpiretimeCommand
+    reply_schema:
+      description: >-
+        List of values associated with the result of getting the absolute expiry timestamp of the specific fields,
+        in the same order as they are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the provided hash key, or the hash key is empty.
+          const: -2
+        - description: Field exists in the provided hash key, but has no expiration associated with it.
+          const: -1
+        - description: The expiration time associated with the hash key field, in milliseconds.
+          type: integer
+          minimum: 0
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     tail: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -460,10 +869,31 @@ class HashPExpireTime(Command):
         return self.database.hash_database.query_field_expirations(self.key, fields, lambda e: e)
 
 
-@command(b"hpersist", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hpersist", {b"hash"}, flags={b"fast", b"write"})
 class HashPersist(Command):
+    """
+    summary: Remove the existing expiration on a hash key's field(s).
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hpersistCommand
+    reply_schema:
+      description: >-
+        List of integer codes indicating the result of setting expiry on each specified field, in the same order
+        as the fields are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - description: Field does not exist in the provided hash key, or the hash key does not exist.
+          const: -2
+        - description: Field exists in the provided hash key, but has no expiration associated with it.
+          const: -1
+        - description: The expiration time was removed from the hash key field.
+          const: 1
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     tail: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -509,10 +939,28 @@ def _parse_expire_option(args: list[bytes], idx: int) -> tuple[int | None, bool,
     return None, False, idx
 
 
-@command(b"hgetex", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hgetex", {b"hash"}, flags={b"fast", b"write"})
 class HashGetEx(Command):
+    """
+    summary: >-
+      Gets the value of one or more fields of a given hash key, and optionally sets their expiration time or
+      time-to-live (TTL).
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hgetexCommand
+    reply_schema:
+      description: >-
+        List of values associated with the given fields, in the same order as they are requested.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - type: string
+        - type: 'null'
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -544,10 +992,27 @@ class HashGetEx(Command):
         return results
 
 
-@command(b"hgetdel", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hgetdel", {b"hash"}, flags={b"fast", b"write"})
 class HashGetDel(Command):
+    """
+    summary: Returns the values of one or more fields and deletes them from a hash.
+    complexity: O(N) where N is the number of fields to be retrieved and deleted.
+    since: 9.1.0
+    function: hgetdelCommand
+    reply_schema:
+      description: >-
+        List of values associated with the given fields, in the same order as they are requested. Returns nil for
+        fields that do not exist.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - type: string
+        - type: 'null'
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -570,10 +1035,24 @@ class HashGetDel(Command):
         return results
 
 
-@command(b"hsetex", {b"fast", b"hash"}, flags={b"write"})
+@command(b"hsetex", {b"hash"}, flags={b"denyoom", b"fast", b"write"})
 class HashSetEx(Command):
+    """
+    summary: >-
+      Sets the value of one or more fields of a given hash key, and optionally sets their expiration time.
+    complexity: O(N) where N is the number of specified fields.
+    since: 9.0.0
+    function: hsetexCommand
+    reply_schema:
+      oneOf:
+      - description: None of the provided fields value and or expiration time was set.
+        const: 0
+      - description: All the fields value and or expiration time was set.
+        const: 1
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     args: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:

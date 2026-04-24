@@ -56,10 +56,24 @@ def _unit_to_meters(unit: bytes) -> float:
 @command(
     b"geoadd",
     {b"geo", b"slow"},
-    flags={b"write", b"denyoom"},
+    flags={b"denyoom", b"write"},
     metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
 class GeoAdd(Command):
+    """
+    summary: >-
+      Adds one or more members to a geospatial index. The key is created if it doesn't exist.
+    complexity: >-
+      O(log(N)) for each item added, where N is the number of elements in the sorted set.
+    since: 3.2.0
+    function: geoaddCommand
+    reply_schema:
+      description: >-
+        When used without optional arguments, the number of elements added to the sorted set (excluding score updates).
+        If the CH option is specified, the number of elements that were changed (added or updated).
+      type: integer
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"RW")
@@ -127,8 +141,32 @@ class GeoAdd(Command):
         return added
 
 
-@command(b"geopos", {b"geo", b"slow"}, flags={b"readonly"})
+@command(b"geopos", {b"geo", b"read", b"slow"}, flags={b"readonly"})
 class GeoPos(Command):
+    """
+    summary: Returns the longitude and latitude of members from a geospatial index.
+    complexity: O(1) for each member requested.
+    since: 3.2.0
+    function: geoposCommand
+    reply_schema:
+      description: >-
+        An array where each element is a two elements array representing longitude and latitude (x,y) of each member
+        name passed as argument to the command
+      type: array
+      items:
+        oneOf:
+        - description: Element does not exist
+          type: 'null'
+        - type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Latitude (x)
+            type: number
+          - description: Longitude (y)
+            type: number
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
@@ -147,8 +185,22 @@ class GeoPos(Command):
         return result
 
 
-@command(b"geodist", {b"geo", b"slow"}, flags={b"readonly"})
+@command(b"geodist", {b"geo", b"read", b"slow"}, flags={b"readonly"})
 class GeoDist(Command):
+    """
+    summary: Returns the distance between two members of a geospatial index.
+    complexity: O(1)
+    since: 3.2.0
+    function: geodistCommand
+    reply_schema:
+      oneOf:
+      - description: One or both of elements are missing.
+        type: 'null'
+      - description: Distance as a double (represented as a string) in the specified units.
+        type: string
+        pattern: ^[0-9]*(.[0-9]*)?$
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
@@ -171,8 +223,21 @@ class GeoDist(Command):
         return f"{d:.4f}".encode()
 
 
-@command(b"geohash", {b"geo", b"slow"}, flags={b"readonly"})
+@command(b"geohash", {b"geo", b"read", b"slow"}, flags={b"readonly"})
 class GeoHashCommand(Command):
+    """
+    summary: Returns members from a geospatial index as geohash strings.
+    complexity: O(1) for each member requested.
+    since: 3.2.0
+    function: geohashCommand
+    reply_schema:
+      description: >-
+        An array where each element is the Geohash corresponding to each member name passed as argument to the command.
+      type: array
+      items:
+        type: string
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
@@ -364,8 +429,52 @@ def _geosearch_execute(database: Database, source_key: bytes, opts: dict) -> lis
     return results
 
 
-@command(b"geosearch", {b"geo", b"slow"}, flags={b"readonly"})
+@command(b"geosearch", {b"geo", b"read", b"slow"}, flags={b"readonly"})
 class GeoSearch(Command):
+    """
+    summary: >-
+      Queries a geospatial index for members inside an area of a box, circle, or a polygon.
+    complexity: >-
+      O(N+log(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided
+      as the filter and M is the number of items inside the shape
+    since: 6.2.0
+    function: geosearchCommand
+    reply_schema:
+      description: Array of matched members information.
+      anyOf:
+      - description: If no WITH* option is specified, array of matched members names.
+        type: array
+        items:
+          description: Name.
+          type: string
+      - type: array
+        items:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+          - description: Matched member name.
+            type: string
+          additionalItems:
+            oneOf:
+            - description: >-
+                If WITHDIST option is specified, the distance from the center as a floating point number, in the
+                same unit specified in the radius.
+              type: string
+            - description: If WITHHASH option is specified, the geohash integer.
+              type: integer
+            - description: >-
+                If WITHCOORD option is specified, the coordinates as a two items x,y array (longitude,latitude).
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+              - description: Latitude (x).
+                type: number
+              - description: Longitude (y).
+                type: number
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
@@ -393,8 +502,22 @@ class GeoSearch(Command):
         return output
 
 
-@command(b"geosearchstore", {b"geo", b"slow"}, flags={b"write", b"denyoom"})
+@command(b"geosearchstore", {b"geo", b"slow"}, flags={b"denyoom", b"write"})
 class GeoSearchStore(Command):
+    """
+    summary: >-
+      Queries a geospatial index for members inside an area of a box, a circle, or a polygon, optionally stores
+      the result.
+    complexity: >-
+      O(N+log(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided
+      as the filter and M is the number of items inside the shape
+    since: 6.2.0
+    function: geosearchstoreCommand
+    reply_schema:
+      description: The number of elements in the resulting set.
+      type: integer
+    """
+
     database: Database = dependency()
 
     destination: bytes = positional_parameter(key_mode=b"OW")
@@ -541,8 +664,54 @@ def _run_georadius_common(
     return _format_geo_output(results, opts, unit_div)
 
 
-@command(b"georadius", {b"geo", b"slow"}, flags={b"write"})
+@command(b"georadius", {b"geo", b"slow"}, flags={b"denyoom", b"write"})
 class GeoRadius(Command):
+    """
+    summary: >-
+      Queries a geospatial index for members within a distance from a coordinate, optionally stores the result.
+    complexity: >-
+      O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center
+      and radius and M is the number of items inside the index.
+    since: 3.2.0
+    function: georadiusCommand
+    reply_schema:
+      description: Array of matched members information.
+      anyOf:
+      - description: If no WITH* option is specified, array of matched members names.
+        type: array
+        items:
+          description: Name.
+          type: string
+      - type: array
+        items:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+          - description: Matched member name.
+            type: string
+          additionalItems:
+            oneOf:
+            - description: >-
+                If WITHDIST option is specified, the distance from the center as a floating point number, in the
+                same unit specified in the radius.
+              type: string
+            - description: If WITHHASH option is specified, the geohash integer.
+              type: integer
+            - description: >-
+                If WITHCOORD option is specified, the coordinates as a two items x,y array (longitude,latitude).
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+              - description: Latitude (x).
+                type: number
+              - description: Longitude (y).
+                type: number
+      - description: Number of items stored in key.
+        type: integer
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"RW")
@@ -558,8 +727,52 @@ class GeoRadius(Command):
         )
 
 
-@command(b"georadius_ro", {b"geo", b"slow"}, flags={b"readonly"})
+@command(b"georadius_ro", {b"geo", b"read", b"slow"}, flags={b"readonly"})
 class GeoRadiusReadOnly(Command):
+    """
+    summary: >-
+      Returns members from a geospatial index that are within a distance from a coordinate.
+    complexity: >-
+      O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center
+      and radius and M is the number of items inside the index.
+    since: 3.2.10
+    function: georadiusroCommand
+    reply_schema:
+      description: Array of matched members information.
+      anyOf:
+      - description: If no WITH* option is specified, array of matched members names.
+        type: array
+        items:
+          description: Name.
+          type: string
+      - type: array
+        items:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+          - description: Matched member name.
+            type: string
+          additionalItems:
+            oneOf:
+            - description: >-
+                If WITHDIST option is specified, the distance from the center as a floating point number, in the
+                same unit specified in the radius.
+              type: string
+            - description: If WITHHASH option is specified, the geohash integer.
+              type: integer
+            - description: >-
+                If WITHCOORD option is specified, the coordinates as a two items x,y array (longitude,latitude).
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+              - description: Latitude (x).
+                type: number
+              - description: Longitude (y).
+                type: number
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")
@@ -575,8 +788,54 @@ class GeoRadiusReadOnly(Command):
         )
 
 
-@command(b"georadiusbymember", {b"geo", b"slow"}, flags={b"write"})
+@command(b"georadiusbymember", {b"geo", b"slow"}, flags={b"denyoom", b"write"})
 class GeoRadiusByMember(Command):
+    """
+    summary: >-
+      Queries a geospatial index for members within a distance from a member, optionally stores the result.
+    complexity: >-
+      O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center
+      and radius and M is the number of items inside the index.
+    since: 3.2.0
+    function: georadiusbymemberCommand
+    reply_schema:
+      description: Array of matched members information.
+      anyOf:
+      - description: If no WITH* option is specified, array of matched members names.
+        type: array
+        items:
+          description: Name
+          type: string
+      - type: array
+        items:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+          - description: Matched member name.
+            type: string
+          additionalItems:
+            oneOf:
+            - description: >-
+                If WITHDIST option is specified, the distance from the center as a floating point number, in the
+                same unit specified in the radius.
+              type: string
+            - description: If WITHHASH option is specified, the geohash integer.
+              type: integer
+            - description: >-
+                If WITHCOORD option is specified, the coordinates as a two items x,y array (longitude,latitude).
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+              - description: Latitude (x).
+                type: number
+              - description: Longitude (y).
+                type: number
+      - description: Number of items stored in key.
+        type: integer
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"RW")
@@ -595,8 +854,52 @@ class GeoRadiusByMember(Command):
         return _run_georadius_common(self.database, self.key, lon, lat, self.radius, self.unit, self.extra, True)
 
 
-@command(b"georadiusbymember_ro", {b"geo", b"slow"}, flags={b"readonly"})
+@command(b"georadiusbymember_ro", {b"geo", b"read", b"slow"}, flags={b"readonly"})
 class GeoRadiusByMemberReadOnly(Command):
+    """
+    summary: >-
+      Returns members from a geospatial index that are within a distance from a member.
+    complexity: >-
+      O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center
+      and radius and M is the number of items inside the index.
+    since: 3.2.10
+    function: georadiusbymemberroCommand
+    reply_schema:
+      description: Array of matched members information.
+      anyOf:
+      - description: If no WITH* option is specified, array of matched members names.
+        type: array
+        items:
+          description: Name.
+          type: string
+      - type: array
+        items:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+          - description: Matched member name.
+            type: string
+          additionalItems:
+            oneOf:
+            - description: >-
+                If WITHDIST option is specified, the distance from the center as a floating point number, in the
+                same unit specified in the radius.
+              type: string
+            - description: If WITHHASH option is specified, the geohash integer.
+              type: integer
+            - description: >-
+                If WITHCOORD option is specified, the coordinates as a two items x,y array (longitude,latitude).
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+              - description: Latitude (x).
+                type: number
+              - description: Longitude (y).
+                type: number
+    """
+
     database: Database = dependency()
 
     key: bytes = positional_parameter(key_mode=b"R")

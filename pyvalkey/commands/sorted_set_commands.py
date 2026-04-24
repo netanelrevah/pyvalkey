@@ -235,12 +235,44 @@ def sorted_set_multikey_pop(
     return None
 
 
-@command(b"zpopmax", {b"fast", b"sortedset"}, flags={b"write"})
+@command(b"zpopmax", {b"sortedset"}, flags={b"fast", b"write"})
 class SortedSetPopMaximum(Command):
+    """
+    summary: >-
+      Returns the highest-scoring members from a sorted set after removing them. Deletes the sorted set if the last
+      member was popped.
+    complexity: >-
+      O(log(N)*M) with N being the number of elements in the sorted set, and M being the number of elements popped.
+    since: 5.0.0
+    function: zpopmaxCommand
+    reply_schema:
+      anyOf:
+      - type: array
+        description: List of popped elements and scores when 'COUNT' isn't specified.
+        minItems: 2
+        maxItems: 2
+        items:
+        - type: string
+          description: Popped element.
+        - type: number
+          description: Score.
+      - type: array
+        description: List of popped elements and scores when 'COUNT' is specified.
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - type: string
+            description: Popped element.
+          - type: number
+            description: Score.
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     count: int | None = keyword_parameter(default=None)
 
     def execute(self) -> ValueType:
@@ -254,12 +286,44 @@ class SortedSetPopMaximum(Command):
         )
 
 
-@command(b"zpopmin", {b"fast", b"sortedset"}, flags={b"write"})
+@command(b"zpopmin", {b"sortedset"}, flags={b"fast", b"write"})
 class SortedSetPopMinimum(Command):
+    """
+    summary: >-
+      Returns the lowest-scoring members from a sorted set after removing them. Deletes the sorted set if the last
+      member was popped.
+    complexity: >-
+      O(log(N)*M) with N being the number of elements in the sorted set, and M being the number of elements popped.
+    since: 5.0.0
+    function: zpopminCommand
+    reply_schema:
+      anyOf:
+      - type: array
+        description: List of popped elements and scores when 'COUNT' isn't specified.
+        minItems: 2
+        maxItems: 2
+        items:
+        - type: string
+          description: Popped element.
+        - type: number
+          description: Score.
+      - type: array
+        description: List of popped elements and scores when 'COUNT' is specified.
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - type: string
+            description: Popped element.
+          - type: number
+            description: Score.
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     count: int | None = keyword_parameter(default=None)
 
     def execute(self) -> ValueType:
@@ -273,8 +337,32 @@ class SortedSetPopMinimum(Command):
         )
 
 
-@command(b"bzpopmax", {b"blocking", b"fast", b"sortedset"}, flags={b"write"})
+@command(b"bzpopmax", {b"blocking", b"sortedset"}, flags={b"blocking", b"fast", b"write"})
 class SortedSetBlockingPopMaximum(Command):
+    """
+    summary: >-
+      Removes and returns the member with the highest score from one or more sorted sets. Blocks until a member
+      is available otherwise. Deletes the sorted set if the last element was popped.
+    complexity: O(log(N)) with N being the number of elements in the sorted set.
+    since: 5.0.0
+    function: bzpopmaxCommand
+    reply_schema:
+      oneOf:
+      - description: Timeout reached and no elements were popped.
+        type: 'null'
+      - description: The keyname, popped member, and its score.
+        type: array
+        minItems: 3
+        maxItems: 3
+        items:
+        - description: Keyname
+          type: string
+        - description: Member
+          type: string
+        - description: Score
+          type: number
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
@@ -304,8 +392,32 @@ class SortedSetBlockingPopMaximum(Command):
         return result
 
 
-@command(b"bzpopmin", {b"blocking", b"fast", b"sortedset"}, flags={b"write"})
+@command(b"bzpopmin", {b"blocking", b"sortedset"}, flags={b"blocking", b"fast", b"write"})
 class SortedSetBlockingPopMinimum(Command):
+    """
+    summary: >-
+      Removes and returns the member with the lowest score from one or more sorted sets. Blocks until a member is
+      available otherwise. Deletes the sorted set if the last element was popped.
+    complexity: O(log(N)) with N being the number of elements in the sorted set.
+    since: 5.0.0
+    function: bzpopminCommand
+    reply_schema:
+      oneOf:
+      - description: Timeout reached and no elements were popped.
+        type: 'null'
+      - description: The keyname, popped member, and its score.
+        type: array
+        minItems: 3
+        maxItems: 3
+        items:
+        - description: Keyname
+          type: string
+        - description: Member
+          type: string
+        - description: Score
+          type: number
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
@@ -337,15 +449,34 @@ class SortedSetBlockingPopMinimum(Command):
 
 @command(
     b"zadd",
-    {b"fast", b"sortedset"},
-    flags={b"write"},
+    {b"sortedset"},
+    flags={b"denyoom", b"fast", b"write"},
     metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
 class SortedSetAdd(Command):
+    """
+    summary: >-
+      Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn't exist.
+    complexity: >-
+      O(log(N)) for each item added, where N is the number of elements in the sorted set.
+    since: 1.2.0
+    function: zaddCommand
+    reply_schema:
+      anyOf:
+      - description: Operation was aborted (conflict with one of the `XX`/`NX`/`LT`/`GT` options).
+        type: 'null'
+      - description: The number of new members (when the `CH` option is not used)
+        type: integer
+      - description: The number of new or updated members (when the `CH` option is used)
+        type: integer
+      - description: The updated score of the member (when the `INCR` option is used)
+        type: number
+    """
+
     database: Database = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     add_mode: AddMode = keyword_parameter(
         default=AddMode.ALL, flag={b"XX": AddMode.UPDATE_ONLY, b"NX": AddMode.INSERT_ONLY}
     )
@@ -421,6 +552,39 @@ POP_MODIFIER_TO_OPERATION: dict[PopModifier, Callable[[ScoredSortedSet], tuple[f
 
 @command(b"zmpop", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetMultiplePop(Command):
+    """
+    summary: >-
+      Returns the highest- or lowest-scoring members from one or more sorted sets after removing them. Deletes the
+      sorted set if the last member was popped.
+    complexity: >-
+      O(K) + O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set,
+      and M being the number of elements popped.
+    since: 7.0.0
+    function: zmpopCommand
+    reply_schema:
+      oneOf:
+      - description: No element could be popped.
+        type: 'null'
+      - type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - type: string
+          description: Name of the key that elements were popped.
+        - type: array
+          description: Popped elements.
+          items:
+            type: array
+            uniqueItems: true
+            minItems: 2
+            maxItems: 2
+            items:
+            - type: string
+              description: Name of the member.
+            - type: number
+              description: Score.
+    """
+
     database: Database = dependency()
 
     numkeys: int = positional_parameter(parse_error=b"ERR numkeys should be greater than 0")
@@ -440,8 +604,42 @@ class SortedSetMultiplePop(Command):
         return result if result is not None else ArrayNone
 
 
-@command(b"bzmpop", {b"blocking", b"slow", b"sortedset"}, flags={b"write"})
+@command(b"bzmpop", {b"blocking", b"slow", b"sortedset"}, flags={b"blocking", b"write"})
 class SortedSetBlockingMultiplePop(Command):
+    """
+    summary: >-
+      Removes and returns a member by score from one or more sorted sets. Blocks until a member is available otherwise.
+      Deletes the sorted set if the last element was popped.
+    complexity: >-
+      O(K) + O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set,
+      and M being the number of elements popped.
+    since: 7.0.0
+    function: bzmpopCommand
+    reply_schema:
+      oneOf:
+      - description: Timeout reached and no elements were popped.
+        type: 'null'
+      - description: The keyname and the popped members.
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: Keyname
+          type: string
+        - description: Popped members and their scores.
+          type: array
+          uniqueItems: true
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+            - description: Member
+              type: string
+            - description: Score
+              type: number
+    """
+
     client_context: ClientContext = dependency()
     blocking_manager: SortedSetBlockingManager = dependency()
     database: Database = dependency()
@@ -479,12 +677,41 @@ class SortedSetBlockingMultiplePop(Command):
         return [self._key, result]
 
 
-@command(b"zrange", {b"read", b"slow", b"sortedset"})
+@command(b"zrange", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetRange(Command):
+    """
+    summary: Returns members in a sorted set within a range of indexes.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements returned.
+    since: 1.2.0
+    function: zrangeCommand
+    reply_schema:
+      anyOf:
+      - description: A list of member elements
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+      - description: >-
+          Members and their scores. Returned in case `WITHSCORES` was used. In RESP2 this is returned as a flat
+          array
+        type: array
+        uniqueItems: true
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Member
+            type: string
+          - description: Score
+            type: number
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
     range_mode: RangeMode = keyword_parameter(
@@ -508,8 +735,20 @@ class SortedSetRange(Command):
         )
 
 
-@command(b"zrangestore", {b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zrangestore", {b"slow", b"sortedset"}, flags={b"denyoom", b"write"})
 class SortedSetRangeStore(Command):
+    """
+    summary: Stores a range of members from sorted set in a key.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements stored into
+      the destination key.
+    since: 6.2.0
+    function: zrangestoreCommand
+    reply_schema:
+      type: integer
+      description: Number of elements in the resulting sorted set.
+    """
+
     database: Database = dependency()
     destination: bytes = positional_parameter()
     key: bytes = positional_parameter()
@@ -535,10 +774,37 @@ class SortedSetRangeStore(Command):
         )
 
 
-@command(b"zrevrange", {b"read", b"slow", b"sortedset"})
+@command(b"zrevrange", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetReversedRange(Command):
+    """
+    summary: Returns members in a sorted set within a range of indexes in reverse order.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements returned.
+    since: 1.2.0
+    function: zrevrangeCommand
+    reply_schema:
+      anyOf:
+      - description: List of member elements.
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+      - description: List of the members and their scores. Returned in case `WITHSCORES` was used.
+        type: array
+        uniqueItems: true
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Member.
+            type: string
+          - description: Score.
+            type: number
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     start: bytes = positional_parameter()
     stop: bytes = positional_parameter()
     with_scores: bool = flag_parameter(token=b"WITHSCORES")
@@ -554,10 +820,41 @@ class SortedSetReversedRange(Command):
         )
 
 
-@command(b"zrangebyscore", {b"read", b"slow", b"sortedset"})
+@command(b"zrangebyscore", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetRangeByScore(Command):
+    """
+    summary: Returns members in a sorted set within a range of scores.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned.
+      If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).
+    since: 1.0.5
+    function: zrangebyscoreCommand
+    reply_schema:
+      anyOf:
+      - type: array
+        description: List of the elements in the specified score range, as not WITHSCORES.
+        uniqueItems: true
+        items:
+          type: string
+          description: Element.
+      - type: array
+        description: >-
+          List of the elements and their scores in the specified score range, as WITHSCORES used.
+        uniqueItems: true
+        items:
+          type: array
+          description: Tuple of element and its score.
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Element.
+            type: string
+          - description: Score.
+            type: number
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
     with_scores: bool = flag_parameter(token=b"WITHSCORES")
@@ -575,10 +872,41 @@ class SortedSetRangeByScore(Command):
         )
 
 
-@command(b"zrevrangebyscore", {b"read", b"slow", b"sortedset"})
+@command(b"zrevrangebyscore", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetReversedRangeByScore(Command):
+    """
+    summary: Returns members in a sorted set within a range of scores in reverse order.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned.
+      If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).
+    since: 2.2.0
+    function: zrevrangebyscoreCommand
+    reply_schema:
+      anyOf:
+      - type: array
+        description: List of the elements in the specified score range, as not WITHSCORES.
+        uniqueItems: true
+        items:
+          type: string
+          description: Element.
+      - type: array
+        description: >-
+          List of the elements and their scores in the specified score range, as WITHSCORES used.
+        uniqueItems: true
+        items:
+          type: array
+          description: Tuple of element and its score.
+          minItems: 2
+          maxItems: 2
+          items:
+          - type: string
+            description: Element.
+          - type: number
+            description: Score.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     max: bytes = positional_parameter()
     min: bytes = positional_parameter()
     with_scores: bool = flag_parameter(token=b"WITHSCORES")
@@ -597,10 +925,25 @@ class SortedSetReversedRangeByScore(Command):
         )
 
 
-@command(b"zrangebylex", {b"read", b"slow", b"sortedset"})
+@command(b"zrangebylex", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetRangeByLexical(Command):
+    """
+    summary: Returns members in a sorted set within a lexicographical range.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned.
+      If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).
+    since: 2.8.9
+    function: zrangebylexCommand
+    reply_schema:
+      type: array
+      description: List of elements in the specified score range.
+      uniqueItems: true
+      items:
+        type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
     limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
@@ -616,10 +959,25 @@ class SortedSetRangeByLexical(Command):
         )
 
 
-@command(b"zrevrangebylex", {b"read", b"slow", b"sortedset"})
+@command(b"zrevrangebylex", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetReversedRangeByLexical(Command):
+    """
+    summary: Returns members in a sorted set within a lexicographical range in reverse order.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements being returned.
+      If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).
+    since: 2.8.9
+    function: zrevrangebylexCommand
+    reply_schema:
+      type: array
+      description: List of the elements in the specified score range.
+      uniqueItems: true
+      items:
+        type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     max: bytes = positional_parameter()
     min: bytes = positional_parameter()
     limit: RangeLimit | None = keyword_parameter(default=None, flag=b"LIMIT")
@@ -636,10 +994,20 @@ class SortedSetReversedRangeByLexical(Command):
         )
 
 
-@command(b"zcount", {b"fast", b"read", b"sortedset"})
+@command(b"zcount", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetCount(Command):
+    """
+    summary: Returns the count of members in a sorted set that have scores within a range.
+    complexity: O(log(N)) with N being the number of elements in the sorted set.
+    since: 2.0.0
+    function: zcountCommand
+    reply_schema:
+      description: The number of elements in the specified score range
+      type: integer
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
 
@@ -656,19 +1024,44 @@ class SortedSetCount(Command):
         )
 
 
-@command(b"zcard", {b"fast", b"read", b"sortedset"})
+@command(b"zcard", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetCardinality(Command):
+    """
+    summary: Returns the number of members in a sorted set.
+    complexity: O(1)
+    since: 1.2.0
+    function: zcardCommand
+    reply_schema:
+      description: >-
+        The cardinality (number of elements) of the sorted set, or 0 if key does not exist
+      type: integer
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         return len(self.database.sorted_set_database.get_or_create(self.key).value.members)
 
 
-@command(b"zscore", {b"fast", b"read", b"sortedset"})
+@command(b"zscore", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetMemberScore(Command):
+    """
+    summary: Returns the score of a member in a sorted set.
+    complexity: O(1)
+    since: 1.2.0
+    function: zscoreCommand
+    reply_schema:
+      oneOf:
+      - type: number
+        description: >-
+          The score of the member (a double precision floating point number). In RESP2, this is returned as string.
+      - type: 'null'
+        description: Member does not exist in the sorted set, or key does not exist.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     member: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -677,10 +1070,27 @@ class SortedSetMemberScore(Command):
         return value.members_scores.get(self.member, None)
 
 
-@command(b"zmscore", {b"fast", b"read", b"sortedset"})
+@command(b"zmscore", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetMultipleMemberScore(Command):
+    """
+    summary: Returns the score of one or more members in a sorted set.
+    complexity: O(N) where N is the number of members being requested.
+    since: 6.2.0
+    function: zmscoreCommand
+    reply_schema:
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - type: number
+          description: >-
+            The score of the member (a double precision floating point number). In RESP2, this is returned as string.
+        - type: 'null'
+          description: Member does not exist in the sorted set.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     members: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -692,10 +1102,20 @@ class SortedSetMultipleMemberScore(Command):
         return [value.members_scores.get(member, None) for member in self.members]
 
 
-@command(b"zincrby", {b"fast", b"sortedset"}, flags={b"write"})
+@command(b"zincrby", {b"sortedset"}, flags={b"denyoom", b"fast", b"write"})
 class SortedSetIncrementBy(Command):
+    """
+    summary: Increments the score of a member in a sorted set.
+    complexity: O(log(N)) where N is the number of elements in the sorted set.
+    since: 1.2.0
+    function: zincrbyCommand
+    reply_schema:
+      description: The new score of `member`
+      type: number
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     increment: float = positional_parameter()
     member: bytes = positional_parameter()
 
@@ -715,12 +1135,26 @@ class SortedSetIncrementBy(Command):
         return new_score
 
 
-@command(b"zrem", {b"fast", b"sortedset"}, flags={b"write"})
+@command(b"zrem", {b"sortedset"}, flags={b"fast", b"write"})
 class SortedSetRemove(Command):
+    """
+    summary: >-
+      Removes one or more members from a sorted set. Deletes the sorted set if all members were removed.
+    complexity: >-
+      O(M*log(N)) with N being the number of elements in the sorted set and M the number of elements to be removed.
+    since: 1.2.0
+    function: zremCommand
+    reply_schema:
+      description: >-
+        The number of members removed from the sorted set, not including non existing members.
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     members: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -742,10 +1176,30 @@ class SortedSetRemove(Command):
         return removed_members
 
 
-@command(b"zrank", {b"fast", b"read", b"sortedset"})
+@command(b"zrank", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetRank(Command):
+    """
+    summary: Returns the index of a member in a sorted set ordered by ascending scores.
+    complexity: O(log(N))
+    since: 2.0.0
+    function: zrankCommand
+    reply_schema:
+      oneOf:
+      - type: 'null'
+        description: Key does not exist or the member does not exist in the sorted set.
+      - type: integer
+        description: The rank of the member when 'WITHSCORE' is not used.
+      - type: array
+        description: The rank and score of the member when 'WITHSCORE' is used.
+        minItems: 2
+        maxItems: 2
+        items:
+        - type: integer
+        - type: number
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     member: bytes = positional_parameter()
     with_score: bool = flag_parameter(token=b"WITHSCORE")
 
@@ -764,10 +1218,30 @@ class SortedSetRank(Command):
         return rank
 
 
-@command(b"zrevrank", {b"fast", b"read", b"sortedset"})
+@command(b"zrevrank", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetReversedRank(Command):
+    """
+    summary: Returns the index of a member in a sorted set ordered by descending scores.
+    complexity: O(log(N))
+    since: 2.0.0
+    function: zrevrankCommand
+    reply_schema:
+      oneOf:
+      - type: 'null'
+        description: Key does not exist or the member does not exist in the sorted set.
+      - type: integer
+        description: The rank of the member when 'WITHSCORE' is not used.
+      - type: array
+        description: The rank and score of the member when 'WITHSCORE' is used.
+        minItems: 2
+        maxItems: 2
+        items:
+        - type: integer
+        - type: number
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     member: bytes = positional_parameter()
     with_score: bool = flag_parameter(token=b"WITHSCORE")
 
@@ -786,10 +1260,21 @@ class SortedSetReversedRank(Command):
         return rank
 
 
-@command(b"zlexcount", {b"fast", b"read", b"sortedset"})
+@command(b"zlexcount", {b"read", b"sortedset"}, flags={b"fast", b"readonly"})
 class SortedSetLexicalCount(Command):
+    """
+    summary: Returns the number of members in a sorted set within a lexicographical range.
+    complexity: O(log(N)) with N being the number of elements in the sorted set.
+    since: 2.8.9
+    function: zlexcountCommand
+    reply_schema:
+      description: Number of elements in the specified score range.
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
 
@@ -808,8 +1293,21 @@ class SortedSetLexicalCount(Command):
 
 @command(b"zremrangebyscore", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRemoveRangeByScore(Command):
+    """
+    summary: >-
+      Removes members in a sorted set within a range of scores. Deletes the sorted set if all members were removed.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by
+      the operation.
+    since: 1.2.0
+    function: zremrangebyscoreCommand
+    reply_schema:
+      type: integer
+      description: Number of elements removed.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
 
@@ -840,8 +1338,21 @@ class SortedSetRemoveRangeByScore(Command):
 
 @command(b"zremrangebyrank", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRemoveRangeByRank(Command):
+    """
+    summary: >-
+      Removes members in a sorted set within a range of indexes. Deletes the sorted set if all members were removed.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by
+      the operation.
+    since: 2.0.0
+    function: zremrangebyrankCommand
+    reply_schema:
+      type: integer
+      description: Number of elements removed.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
 
@@ -872,8 +1383,22 @@ class SortedSetRemoveRangeByRank(Command):
 
 @command(b"zremrangebylex", {b"slow", b"sortedset"}, flags={b"write"})
 class SortedSetRemoveRangeByLexical(Command):
+    """
+    summary: >-
+      Removes members in a sorted set within a lexicographical range. Deletes the sorted set if all members were
+      removed.
+    complexity: >-
+      O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by
+      the operation.
+    since: 2.8.9
+    function: zremrangebylexCommand
+    reply_schema:
+      type: integer
+      description: Number of elements removed.
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     min: bytes = positional_parameter()
     max: bytes = positional_parameter()
 
@@ -968,10 +1493,22 @@ def apply_sorted_set_store_operation(
     return len(new_set)
 
 
-@command(b"zunionstore", {b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zunionstore", {b"slow", b"sortedset"}, flags={b"denyoom", b"write"})
 class SortedSetUnionStore(Command):
+    """
+    summary: Stores the union of multiple sorted sets in a key.
+    complexity: >-
+      O(N)+O(M log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements
+      in the resulting sorted set.
+    since: 2.0.0
+    function: zunionstoreCommand
+    reply_schema:
+      description: The number of elements in the resulting sorted set.
+      type: integer
+    """
+
     database: Database = dependency()
-    destination: bytes = positional_parameter()
+    destination: bytes = positional_parameter(key_mode=b"W")
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
         length_field_name="numkeys",
@@ -1016,8 +1553,34 @@ def apply_sorted_set_operation(
     return [member for score, member in new_set.members]
 
 
-@command(b"zunion", {b"read", b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zunion", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetUnion(Command):
+    """
+    summary: Returns the union of multiple sorted sets.
+    complexity: >-
+      O(N)+O(M*log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements
+      in the resulting sorted set.
+    since: 6.2.0
+    function: zunionCommand
+    reply_schema:
+      anyOf:
+      - description: The result of union when 'WITHSCORES' is not used.
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+      - description: The result of union when 'WITHSCORES' is used.
+        type: array
+        uniqueItems: true
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - type: string
+          - type: number
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
@@ -1044,8 +1607,37 @@ class SortedSetUnion(Command):
         )
 
 
-@command(b"zinter", {b"read", b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zinter", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetIntersection(Command):
+    """
+    summary: Returns the intersect of multiple sorted sets.
+    complexity: >-
+      O(N*K)+O(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted
+      sets and M being the number of elements in the resulting sorted set.
+    since: 6.2.0
+    function: zinterCommand
+    reply_schema:
+      anyOf:
+      - description: >-
+          Result of intersection, containing only the member names. Returned in case `WITHSCORES` was not used.
+        type: array
+        items:
+          type: string
+      - description: >-
+          Result of intersection, containing members and their scores. Returned in case `WITHSCORES` was used. In
+          RESP2 this is returned as a flat array
+        type: array
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Member
+            type: string
+          - description: Score
+            type: number
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
@@ -1072,10 +1664,23 @@ class SortedSetIntersection(Command):
         )
 
 
-@command(b"zinterstore", {b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zinterstore", {b"slow", b"sortedset"}, flags={b"denyoom", b"write"})
 class SortedSetIntersectionStore(Command):
+    """
+    summary: Stores the intersect of multiple sorted sets in a key.
+    complexity: >-
+      O(N*K)+O(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted
+      sets and M being the number of elements in the resulting sorted set.
+    since: 2.0.0
+    function: zinterstoreCommand
+    reply_schema:
+      description: Number of elements in the resulting sorted set.
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
-    destination: bytes = positional_parameter()
+    destination: bytes = positional_parameter(key_mode=b"W")
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
         length_field_name="numkeys",
@@ -1099,10 +1704,22 @@ class SortedSetIntersectionStore(Command):
         )
 
 
-@command(b"zdiffstore", {b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zdiffstore", {b"slow", b"sortedset"}, flags={b"denyoom", b"write"})
 class SortedSetDifferenceStore(Command):
+    """
+    summary: Stores the difference of multiple sorted sets in a key.
+    complexity: >-
+      O(L + (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the
+      first set, and K is the size of the result set.
+    since: 6.2.0
+    function: zdiffstoreCommand
+    reply_schema:
+      description: Number of elements in the resulting sorted set at `destination`
+      type: integer
+    """
+
     database: Database = dependency()
-    destination: bytes = positional_parameter()
+    destination: bytes = positional_parameter(key_mode=b"W")
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
         length_field_name="numkeys",
@@ -1126,8 +1743,20 @@ class SortedSetDifferenceStore(Command):
         )
 
 
-@command(b"zintercard", {b"read", b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zintercard", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetIntersectionCardinality(Command):
+    """
+    summary: Returns the number of members of the intersect of multiple sorted sets.
+    complexity: >-
+      O(N*K) worst case with N being the smallest input sorted set, K being the number of input sorted sets.
+    since: 7.0.0
+    function: zinterCardCommand
+    reply_schema:
+      description: Number of elements in the resulting intersection.
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
@@ -1154,8 +1783,36 @@ class SortedSetIntersectionCardinality(Command):
         return cardinality if self.limit == 0 else min(cardinality, self.limit)
 
 
-@command(b"zdiff", {b"read", b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zdiff", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetDifference(Command):
+    """
+    summary: Returns the difference between multiple sorted sets.
+    complexity: >-
+      O(L + (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the
+      first set, and K is the size of the result set.
+    since: 6.2.0
+    function: zdiffCommand
+    reply_schema:
+      anyOf:
+      - description: A list of members. Returned in case `WITHSCORES` was not used.
+        type: array
+        items:
+          type: string
+      - description: >-
+          Members and their scores. Returned in case `WITHSCORES` was used. In RESP2 this is returned as a flat
+          array
+        type: array
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Member
+            type: string
+          - description: Score
+            type: number
+    """
+
     database: Database = dependency()
     numkeys: int = positional_parameter()
     keys: list[bytes] = positional_parameter(
@@ -1174,12 +1831,40 @@ class SortedSetDifference(Command):
         )
 
 
-@command(b"zrandmember", {b"read", b"slow", b"sortedset"}, flags={b"write"})
+@command(b"zrandmember", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetRandomMember(Command):
+    """
+    summary: Returns one or more random members from a sorted set.
+    complexity: O(N) where N is the number of members returned
+    since: 6.2.0
+    function: zrandmemberCommand
+    reply_schema:
+      anyOf:
+      - type: 'null'
+        description: Key does not exist.
+      - type: string
+        description: Randomly selected element when 'COUNT' is not used.
+      - type: array
+        description: Randomly selected elements when 'COUNT' is used.
+        items:
+          type: string
+      - type: array
+        description: Randomly selected elements when 'COUNT' and 'WITHSCORES' modifiers are used.
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - type: string
+            description: Element.
+          - type: number
+            description: Score.
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     count: int | None = positional_parameter(default=None)
     with_scores: bool = flag_parameter(token=b"WITHSCORES")
 
@@ -1232,10 +1917,33 @@ class SortedSetRandomMember(Command):
         return result
 
 
-@command(b"zscan", {b"read", b"slow", b"sortedset"})
+@command(b"zscan", {b"read", b"slow", b"sortedset"}, flags={b"readonly"})
 class SortedSetScan(Command):
+    """
+    summary: Iterates over members and scores of a sorted set.
+    complexity: >-
+      O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return
+      back to 0. N is the number of elements inside the collection.
+    since: 2.8.0
+    function: zscanCommand
+    reply_schema:
+      description: Cursor and scan response in array form.
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+      - description: Cursor.
+        type: string
+      - description: >-
+          List of elements of the sorted set, where each even element is the member, and each odd value is its
+          associated score, or when noscores option is on, a list of members from the sorted set.
+        type: array
+        items:
+          type: string
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     cursor: int = positional_parameter()
     match: bytes | None = keyword_parameter(token=b"MATCH", default=None)
     count: int | None = keyword_parameter(token=b"COUNT", default=None)

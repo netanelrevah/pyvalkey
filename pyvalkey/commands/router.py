@@ -78,9 +78,11 @@ class CommandsRouter:
         parent_command: bytes | None = None,
         flags: set[bytes] | None = None,
         metadata: dict[CommandMetadata, Any] | None = None,
+        reply_schema: dict[str, Any] | None = None,
     ) -> Callable[[type[Command]], type[Command]]:
         def _command_wrapper(command_cls: type[Command]) -> type[Command]:
             command_cls = transform_command(command_cls, metadata)
+            setattr(command_cls, "__reply_schema__", reply_schema)
 
             if not acl_categories:
                 raise TypeError("command must have at least one acl_categories")
@@ -91,10 +93,15 @@ class CommandsRouter:
                     "Using 'write' in acl_categories is deprecated, use 'write' flag instead.", DeprecationWarning
                 )
                 _flags.add(b"write")
+            if b"fast" in acl_categories:
+                warnings.warn(
+                    "Using 'fast' in acl_categories is deprecated, use 'fast' flag instead.", DeprecationWarning
+                )
+                _flags.add(b"fast")
 
             for flag in _flags:
-                if flag == b"write":
-                    acl_categories.add(b"write")
+                if flag in [b"write", b"fast"]:
+                    acl_categories.add(flag)
 
             setattr(command_cls, "flags", set(_flags or []))
 
