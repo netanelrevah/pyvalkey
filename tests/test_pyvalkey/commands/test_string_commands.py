@@ -4,6 +4,7 @@ from pytest import raises
 
 from pyvalkey.commands.list_commands import ListBlockingLeftPop
 from pyvalkey.commands.string_commands import ExistenceMode, Get, GetExpire, LongestCommonSubsequence, Set
+from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.utils.times import now_ms
@@ -55,23 +56,25 @@ class TestSet:
 
         ###
 
-        database = Database(0)
+        database = Database(0, Configurations(), Mock())
 
         assert Set(database, blocking_manager_mock, b"0", b"0").execute() == b"OK"
 
-        assert database.content.data[b"0"] == KeyValue(b"0", 0)
+        assert database.content.data[b"0"] == KeyValue(b"0", 0, last_accessed=database.content.data[b"0"].last_accessed)
 
         ###
 
-        database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
+        database = Database(0, Configurations(), Mock(), DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
 
         assert Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value").execute() == b"OK"
 
-        assert database.content.data[b"foo"] == KeyValue(b"foo", b"new_value")
+        assert database.content.data[b"foo"] == KeyValue(
+            b"foo", b"new_value", last_accessed=database.content.data[b"foo"].last_accessed
+        )
 
         ###
 
-        database = Database(0)
+        database = Database(0, Configurations(), Mock())
 
         assert (
             Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value", get=True).execute()
@@ -82,7 +85,7 @@ class TestSet:
 
         ###
 
-        database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
+        database = Database(0, Configurations(), Mock(), DatabaseContent({b"foo": KeyValue(b"foo", b"initial_value")}))
 
         assert (
             Set(database, blocking_manager_mock, b"foo", b"new_value", condition=b"initial_value", get=True).execute()
@@ -95,25 +98,26 @@ class TestSet:
 
 class TestGet:
     def test_execute(self):
-        database = Database(0, DatabaseContent({b"0": KeyValue(b"0", 0)}))
+        database = Database(0, Configurations(), Mock(), DatabaseContent({b"0": KeyValue(b"0", 0)}))
 
         assert Get(database, b"0").execute() == 0
 
 
 class TestGetExpire:
     def test_execute(self):
-        database = Database(0, DatabaseContent({b"foo": KeyValue(b"foo", 1)}))
+        database = Database(0, Configurations(), Mock(), DatabaseContent({b"foo": KeyValue(b"foo", 1)}))
 
         now_milliseconds = now_ms()
 
         assert GetExpire(database, b"foo", pxat=now_milliseconds + 10000).execute() == 1
 
-        assert database.content.data.get(b"foo").expiration == now_milliseconds + 10000
+        foo_kv = database.content.data.get(b"foo")
+        assert foo_kv is not None and foo_kv.expiration == now_milliseconds + 10000
 
 
 class TestLongestCommonSubsequence:
     def test_execute(self):
-        database = Database(0)
+        database = Database(0, Configurations(), Mock())
 
         database.string_database.upsert(b"key1", b"ohmytext")
         database.string_database.upsert(b"key2", b"mynewtext")
@@ -156,7 +160,7 @@ class TestLongestCommonSubsequence:
         }
 
     def test_execute_rna(self):
-        database = Database(0)
+        database = Database(0, Configurations(), Mock())
 
         database.bytes_database.upsert(
             b"rna1",

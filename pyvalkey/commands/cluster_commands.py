@@ -12,8 +12,18 @@ class ResetMode(Enum):
     SOFT = b"SOFT"
 
 
-@command(b"reset", {b"slow", b"admin"}, b"cluster", flags={b"no-script"})
+@command(b"reset", {b"admin", b"dangerous", b"slow"}, b"cluster", flags={b"admin", b"noscript", b"stale"})
 class ClusterReset(Command):
+    """
+    summary: Resets a node.
+    complexity: >-
+      O(N) where N is the number of known nodes. The command may execute a FLUSHALL as a side effect.
+    since: 3.0.0
+    function: clusterCommand
+    reply_schema:
+      const: OK
+    """
+
     reset_mode: ResetMode = positional_parameter(default=ResetMode.SOFT)
 
     def execute(self) -> ValueType:

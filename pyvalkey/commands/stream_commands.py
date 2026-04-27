@@ -2,16 +2,17 @@ import math
 from dataclasses import field
 from typing import cast
 
+from pyvalkey.blocking import StreamBlockingManager, StreamWaitingContext
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata, parameters_object
 from pyvalkey.commands.router import command
-from pyvalkey.commands.utils import _format_entry_id, _parse_entry_id, _parse_strict_entry_id
+from pyvalkey.commands.stream_commands_data import XAUTOCLAIM_REPLY_SCHEMA, XINFO_STREAM_REPLY_SCHEMA
+from pyvalkey.commands.utils import _parse_entry_id, format_entry_id, parse_strict_entry_id
 from pyvalkey.consts import LONG_MAX, UINT64_MAX
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, StreamBlockingManager, StreamWaitingContext
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.stream import (
     Consumer,
@@ -21,33 +22,48 @@ from pyvalkey.database_objects.stream import (
     Stream,
     range_entries,
 )
+from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.utils.times import now_ms
 
 
 @parameters_object
 class MaxLength:
-    equal: bool = keyword_parameter(flag=b"=", default=False)
-    approximate: bool = keyword_parameter(flag=b"~", default=False)
+    equal: bool = flag_parameter(token=b"=")
+    approximate: bool = flag_parameter(token=b"~")
     threshold: int = positional_parameter()
     limit: int | None = keyword_parameter(flag=b"LIMIT", default=None)
 
 
 @parameters_object
 class MinimumId:
-    equal: bool = keyword_parameter(flag=b"=", default=False)
-    approximate: bool = keyword_parameter(flag=b"~", default=False)
+    equal: bool = flag_parameter(token=b"=")
+    approximate: bool = flag_parameter(token=b"~")
     threshold: bytes = positional_parameter()
     limit: int | None = keyword_parameter(flag=b"LIMIT", default=None)
 
 
-@command(b"xtrim", {b"stream", b"write", b"fast"})
+@command(b"xtrim", {b"slow", b"stream"}, flags={b"write"})
 class StreamTrim(Command):
+    """
+    summary: Deletes messages from the beginning of a stream.
+    complexity: >-
+      O(N), with N being the number of evicted entries. Constant times are very small however, since entries are
+      organized in macro nodes containing multiple entries that can be released with a single deallocation.
+    since: 5.0.0
+    function: xtrimCommand
+    reply_schema:
+      description: The number of entries deleted from the stream.
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
     configuration: Configurations = dependency()
 
-    key: bytes = positional_parameter()
-    no_make_stream: bool = keyword_parameter(flag=b"NOMKSTREAM", default=False)
+    key: bytes = positional_parameter(key_mode=b"RW")
+    no_make_stream: bool = flag_parameter(token=b"NOMKSTREAM")
     maximum_length: MaxLength | None = keyword_parameter(token=b"MAXLEN", default=None)
     minimum_id: MinimumId | None = keyword_parameter(token=b"MINID", default=None)
 
@@ -82,7 +98,7 @@ class StreamTrim(Command):
             raise ServerError(b"ERR syntax error, MAXLEN and MINID options at the same time are not compatible")
 
         if self.minimum_id is not None or self.maximum_length is not None:
-            limiter = cast(MaxLength | MinimumId, self.maximum_length or self.minimum_id)
+            limiter = cast("MaxLength | MinimumId", self.maximum_length or self.minimum_id)
 
             if limiter.equal and limiter.approximate:
                 raise ServerError(b"ERR value is not an integer or out of range")
@@ -115,14 +131,31 @@ class StreamTrim(Command):
         return self.trim(value, self.maximum_length, self.minimum_id, self.configuration.stream_node_max_entries)
 
 
-@command(b"xadd", {b"stream", b"write", b"fast"})
+@command(b"xadd", {b"stream"}, flags={b"denyoom", b"fast", b"write"})
 class StreamAdd(Command):
+    """
+    summary: Appends a new message to a stream. Creates the key if it doesn't exist.
+    complexity: >-
+      O(1) when adding a new entry, O(N) when trimming where N being the number of entries evicted.
+    since: 5.0.0
+    function: xaddCommand
+    reply_schema:
+      oneOf:
+      - description: >-
+          The ID of the added entry. The ID is the one auto-generated if * is passed as ID argument, otherwise the
+          command just returns the same ID specified by the user during insertion.
+        type: string
+        pattern: '[0-9]+-[0-9]+'
+      - description: The NOMKSTREAM option is given and the key doesn't exist.
+        type: 'null'
+    """
+
     database: Database = dependency()
     configuration: Configurations = dependency()
     blocking_manager: StreamBlockingManager = dependency()
 
-    key: bytes = positional_parameter()
-    no_make_stream: bool = keyword_parameter(flag=b"NOMKSTREAM", default=False)
+    key: bytes = positional_parameter(key_mode=b"RW")
+    no_make_stream: bool = flag_parameter(token=b"NOMKSTREAM")
     maximum_length: MaxLength | None = keyword_parameter(token=b"MAXLEN", default=None)
     minimum_id: MinimumId | None = keyword_parameter(token=b"MINID", default=None)
     stream_id: bytes = positional_parameter()
@@ -135,7 +168,7 @@ class StreamAdd(Command):
             raise ServerError(b"ERR syntax error, MAXLEN and MINID options at the same time are not compatible")
 
         if self.minimum_id is not None or self.maximum_length is not None:
-            limiter = cast(MaxLength | MinimumId, self.maximum_length or self.minimum_id)
+            limiter = cast("MaxLength | MinimumId", self.maximum_length or self.minimum_id)
 
             if limiter.equal and limiter.approximate:
                 raise ServerError(b"ERR value is not an integer or out of range")
@@ -181,15 +214,29 @@ class StreamAdd(Command):
 
         StreamTrim.trim(value, self.maximum_length, self.minimum_id, self.configuration.stream_node_max_entries)
 
-        return _format_entry_id(self._entry_id)
+        self.database.notify(NotificationType.STREAM, b"xadd", self.key)
+
+        return format_entry_id(self._entry_id)
 
     async def after(self, in_multi: bool = False) -> None:
         if self._entry_id is not None:
             await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"help", {b"stream", b"write", b"fast"}, parent_command=b"xgroup")
+@command(b"help", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"loading", b"stale"})
 class StreamGroupHelp(Command):
+    """
+    summary: Returns helpful text about the different subcommands.
+    complexity: O(1)
+    since: 5.0.0
+    function: xgroupCommand
+    reply_schema:
+      type: array
+      description: Helpful text about subcommands.
+      items:
+        type: string
+    """
+
     def execute(self) -> ValueType:
         return [
             b"CREATE <key> <groupname> <id|$> [option]",
@@ -209,8 +256,20 @@ class StreamGroupHelp(Command):
         ]
 
 
-@command(b"help", {b"stream", b"write", b"fast"}, parent_command=b"xinfo")
+@command(b"help", {b"slow", b"stream"}, parent_command=b"xinfo", flags={b"loading", b"stale"})
 class StreamInfoHelp(Command):
+    """
+    summary: Returns helpful text about the different subcommands.
+    complexity: O(1)
+    since: 5.0.0
+    function: xinfoCommand
+    reply_schema:
+      type: array
+      description: Helpful text about subcommands.
+      items:
+        type: string
+    """
+
     def execute(self) -> ValueType:
         return [
             b"STREAM",
@@ -226,22 +285,45 @@ class StreamInfoHelp(Command):
         ]
 
 
-@command(b"xlen", {b"stream", b"write", b"fast"})
+@command(b"xlen", {b"read", b"stream"}, flags={b"fast", b"readonly"})
 class StreamLength(Command):
+    """
+    summary: Returns the number of messages in a stream.
+    complexity: O(1)
+    since: 5.0.0
+    function: xlenCommand
+    reply_schema:
+      description: The number of entries of the stream at key
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         return len(self.database.stream_database.get_value_or_empty(self.key))
 
 
-@command(b"xdel", {b"stream", b"write", b"fast"})
+@command(b"xdel", {b"stream"}, flags={b"fast", b"write"})
 class StreamDelete(Command):
+    """
+    summary: Returns the number of messages after removing them from a stream.
+    complexity: >-
+      O(1) for each single item to delete in the stream, regardless of the stream size.
+    since: 5.0.0
+    function: xdelCommand
+    reply_schema:
+      description: The number of entries actually deleted
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     ids: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -250,7 +332,7 @@ class StreamDelete(Command):
         deleted_count = 0
         for stream_id in self.ids:
             try:
-                timestamp, sequence = _parse_strict_entry_id(stream_id)
+                timestamp, sequence = parse_strict_entry_id(stream_id)
 
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
@@ -310,11 +392,36 @@ def _parse_range(start: bytes, end: bytes) -> tuple[int | None, int | None, int 
     )
 
 
-@command(b"xrange", {b"stream", b"write", b"fast"})
+@command(b"xrange", {b"read", b"slow", b"stream"}, flags={b"readonly"})
 class StreamRange(Command):
+    """
+    summary: Returns the messages from a stream within a range of IDs.
+    complexity: >-
+      O(N) with N being the number of elements being returned. If N is constant (e.g. always asking for the first
+      10 elements with COUNT), you can consider it O(1).
+    since: 5.0.0
+    function: xrangeCommand
+    reply_schema:
+      description: Stream entries with IDs matching the specified range.
+      type: array
+      uniqueItems: true
+      items:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: Entry ID
+          type: string
+          pattern: '[0-9]+-[0-9]+'
+        - description: Data
+          type: array
+          items:
+            type: string
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     start: bytes = positional_parameter()
     end: bytes = positional_parameter()
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
@@ -333,17 +440,41 @@ class StreamRange(Command):
             count=count,
             is_reversed=is_reversed,
         )
-        return [[_format_entry_id(entry_id), entry_data] for entry_id, entry_data in entries]
+        return [[format_entry_id(entry_id), entry_data] for entry_id, entry_data in entries]
 
     def execute(self) -> ValueType:
         return self.range(self.database.stream_database.get_value_or_empty(self.key), self.start, self.end, self.count)
 
 
-@command(b"xrevrange", {b"stream", b"write", b"fast"})
+@command(b"xrevrange", {b"read", b"slow", b"stream"}, flags={b"readonly"})
 class StreamReversedRange(Command):
+    """
+    summary: Returns the messages from a stream within a range of IDs in reverse order.
+    complexity: >-
+      O(N) with N being the number of elements returned. If N is constant (e.g. always asking for the first 10 elements
+      with COUNT), you can consider it O(1).
+    since: 5.0.0
+    function: xrevrangeCommand
+    reply_schema:
+      description: An array of the entries with IDs matching the specified range
+      type: array
+      items:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: Stream id
+          type: string
+          pattern: '[0-9]+-[0-9]+'
+        - description: Array of field-value pairs
+          type: array
+          items:
+            type: string
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     end: bytes = positional_parameter()
     start: bytes = positional_parameter()
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
@@ -358,15 +489,24 @@ class StreamReversedRange(Command):
         )
 
 
-@command(b"create", {b"write", b"stream", b"slow"}, b"xgroup")
+@command(b"create", {b"slow", b"stream"}, b"xgroup", flags={b"denyoom", b"write"})
 class StreamGroupCreate(Command):
+    """
+    summary: Creates a consumer group.
+    complexity: O(1)
+    since: 5.0.0
+    function: xgroupCommand
+    reply_schema:
+      const: OK
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = positional_parameter()
 
     stream_id: bytes = positional_parameter()
-    make_stream: bool = keyword_parameter(flag=b"MKSTREAM", default=False)
+    make_stream: bool = flag_parameter(token=b"MKSTREAM")
     entries_read: int = keyword_parameter(token=b"ENTRIESREAD", default=-1)
 
     def execute(self) -> ValueType:
@@ -387,21 +527,32 @@ class StreamGroupCreate(Command):
         if self.stream_id == b"$":
             entry_id = value.last_id
         else:
-            entry_id = _parse_strict_entry_id(self.stream_id, sequence_fill=0)
+            entry_id = parse_strict_entry_id(self.stream_id, sequence_fill=0)
 
         if self.entries_read is not None and self.entries_read < -1:
             raise ServerError(b"ERR value for ENTRIESREAD must be positive or -1")
 
         value.consumer_groups[self.group] = ConsumerGroup(self.group, entry_id, self.entries_read)
 
+        self.database.notify(NotificationType.STREAM, b"xgroup-create", self.key)
+
         return RESP_OK
 
 
-@command(b"setid", {b"write", b"stream", b"slow"}, b"xgroup")
+@command(b"setid", {b"slow", b"stream"}, b"xgroup", flags={b"write"})
 class StreamGroupSetId(Command):
+    """
+    summary: Sets the last-delivered ID of a consumer group.
+    complexity: O(1)
+    since: 5.0.0
+    function: xgroupCommand
+    reply_schema:
+      const: OK
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = positional_parameter()
     stream_id: bytes = positional_parameter()
     entries_read: int = positional_parameter(default=-1)
@@ -428,29 +579,50 @@ class StreamGroupSetId(Command):
             entry_id = value.last_id
         else:
             try:
-                entry_id = _parse_strict_entry_id(self.stream_id, sequence_fill=0)
+                entry_id = parse_strict_entry_id(self.stream_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
         group.last_id = entry_id
         group.read_entries = self.entries_read
 
-        # for entry_id, pending_entry in range_entries(
-        #     group.pending_entries, minimum_timestamp=entry_id[0], minimum_sequence=entry_id[1]
-        # ):
-        #     for consumer in group.consumers.values():
-        #         if entry_id in consumer.pending_entries:
-        #             consumer.pending_entries.pop(entry_id, None)
-        #
-        #     group.pending_entries.pop(entry_id, None)
-
         return RESP_OK
 
 
-@command(b"groups", {b"stream", b"write", b"fast"}, b"xinfo")
+@command(b"groups", {b"read", b"slow", b"stream"}, b"xinfo", flags={b"readonly"})
 class StreamInfoGroups(Command):
+    """
+    summary: Returns a list of the consumer groups of a stream.
+    complexity: O(1)
+    since: 5.0.0
+    function: xinfoCommand
+    reply_schema:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+          consumers:
+            type: integer
+          pending:
+            type: integer
+          last-delivered-id:
+            type: string
+            pattern: '[0-9]+-[0-9]+'
+          entries-read:
+            oneOf:
+            - type: 'null'
+            - type: integer
+          lag:
+            oneOf:
+            - type: 'null'
+            - type: integer
+    """
+
     database: Database = dependency()
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         value = self.database.stream_database.get_value_or_none(self.key)
@@ -467,7 +639,7 @@ class StreamInfoGroups(Command):
                 b"pending",
                 len(group.pending_entries),
                 b"last-delivered-id",
-                _format_entry_id(group.last_id),
+                format_entry_id(group.last_id),
                 b"entries-read",
                 group.read_entries,
                 b"lag",
@@ -479,13 +651,23 @@ class StreamInfoGroups(Command):
 
 @command(
     b"xsetid",
-    {b"stream", b"write", b"fast"},
+    {b"stream"},
+    flags={b"denyoom", b"fast", b"write"},
     metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
 class StreamSetId(Command):
+    """
+    summary: An internal command for replicating stream values.
+    complexity: O(1)
+    since: 5.0.0
+    function: xsetidCommand
+    reply_schema:
+      const: OK
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     last_id: bytes = positional_parameter()
     entries_added: int | None = keyword_parameter(token=b"ENTRIESADDED", default=None)
     max_deleted_entry_id: bytes | None = keyword_parameter(token=b"MAXDELETEDID", default=None)
@@ -495,14 +677,14 @@ class StreamSetId(Command):
             raise ServerError(b"ERR entries_added must be positive")
 
         try:
-            last_id = _parse_strict_entry_id(self.last_id, sequence_fill=0)
+            last_id = parse_strict_entry_id(self.last_id, sequence_fill=0)
         except ValueError:
             raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
         max_deleted_entry_id = None
         if self.max_deleted_entry_id is not None:
             try:
-                max_deleted_entry_id = _parse_strict_entry_id(self.max_deleted_entry_id, sequence_fill=0)
+                max_deleted_entry_id = parse_strict_entry_id(self.max_deleted_entry_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -532,12 +714,35 @@ class StreamSetId(Command):
         return RESP_OK
 
 
-@command(b"consumers", {b"stream", b"write", b"fast"}, b"xinfo")
+@command(b"consumers", {b"read", b"slow", b"stream"}, b"xinfo", flags={b"readonly"})
 class StreamInfoConsumers(Command):
+    """
+    summary: Returns a list of the consumers in a consumer group.
+    complexity: O(1)
+    since: 5.0.0
+    function: xinfoCommand
+    reply_schema:
+      description: Array list of consumers
+      type: array
+      uniqueItems: true
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+          pending:
+            type: integer
+          idle:
+            type: integer
+          inactive:
+            type: integer
+    """
+
     database: Database = dependency()
     configuration: Configurations = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     group: bytes = keyword_parameter()
 
     def execute(self) -> ValueType:
@@ -568,13 +773,59 @@ class StreamInfoConsumers(Command):
         ]
 
 
-@command(b"stream", {b"stream", b"write", b"fast"}, b"xinfo")
+@command(b"consumer", {b"stream", b"fast"}, b"xinfo", flags={b"read"})
+class StreamInfoConsumer(Command):
+    database: Database = dependency()
+
+    key: bytes = positional_parameter()
+    group: bytes = positional_parameter()
+    consumer: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        value = self.database.stream_database.get_value_or_none(self.key)
+        if value is None:
+            raise ServerError(b"ERR no such key")
+
+        group = value.consumer_groups.get(self.group)
+        if group is None:
+            raise ServerError(b"ERR no such group")
+
+        consumer = group.consumers.get(self.consumer)
+        if consumer is None:
+            return None
+
+        return [
+            b"name",
+            consumer.name,
+            b"pending",
+            len(consumer.pending_entries),
+            b"idle",
+            max((now_ms() - consumer.last_seen_timestamp + 5), 0),
+            b"inactive",
+            (now_ms() - consumer.last_active_timestamp + 5) if consumer.last_active_timestamp is not None else -1,
+        ]
+
+
+@command(
+    b"stream",
+    {b"read", b"slow", b"stream"},
+    b"xinfo",
+    flags={b"readonly"},
+    reply_schema=XINFO_STREAM_REPLY_SCHEMA,
+)
 class StreamInfoStream(Command):
+    """
+    summary: Returns information about a stream.
+    complexity: O(1)
+    since: 5.0.0
+    function: xinfoCommand
+    """
+
     database: Database = dependency()
     configuration: Configurations = dependency()
 
-    key: bytes = positional_parameter()
-    full: bool = keyword_parameter(flag=b"FULL", default=False)
+    key: bytes = positional_parameter(key_mode=b"R")
+    full: bool = flag_parameter(token=b"FULL")
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
 
     def execute(self) -> ValueType:
@@ -591,13 +842,13 @@ class StreamInfoStream(Command):
             b"radix-tree-nodes",
             math.ceil(len(value) / self.configuration.stream_node_max_entries) if len(value) > 0 else 1,
             b"last-generated-id",
-            _format_entry_id(value.last_id),
+            format_entry_id(value.last_id),
             b"max-deleted-entry-id",
-            _format_entry_id(value.max_deleted_entry_id),
+            format_entry_id(value.max_deleted_entry_id),
             b"entries-added",
             value.added_entries,
             b"recorded-first-entry-id",
-            _format_entry_id(value.first_id),
+            format_entry_id(value.first_id),
         ]
         if not self.full:
             return info
@@ -605,21 +856,21 @@ class StreamInfoStream(Command):
         return [
             *info,
             b"entries",
-            [[_format_entry_id(entry_id), entry_data] for entry_id, entry_data in value.range(count=self.count)],
+            [[format_entry_id(entry_id), entry_data] for entry_id, entry_data in value.range(count=self.count)],
             b"groups",
             [
                 [
                     b"name",
                     group.name,
                     b"last-delivered-id",
-                    _format_entry_id(group.last_id),
+                    format_entry_id(group.last_id),
                     b"entries-read",
                     group.read_entries if group.read_entries != -1 else None,
                     b"lag",
                     value.calculate_consumer_group_lag(group),
                     b"pending",
                     [
-                        [_format_entry_id(entry_id), pending_entry.times_delivered]
+                        [format_entry_id(entry_id), pending_entry.times_delivered]
                         for entry_id, pending_entry in group.pending_entries.items()
                     ],
                     b"consumers",
@@ -635,7 +886,7 @@ class StreamInfoStream(Command):
                             len(consumer.pending_entries),
                             b"pending",
                             [
-                                [_format_entry_id(entry_id), pending_entry.times_delivered]
+                                [format_entry_id(entry_id), pending_entry.times_delivered]
                                 for entry_id, pending_entry in consumer.pending_entries.items()
                             ],
                         ]
@@ -647,8 +898,42 @@ class StreamInfoStream(Command):
         ]
 
 
-@command(b"xread", {b"stream"})
+@command(b"xread", {b"blocking", b"read", b"slow", b"stream"}, flags={b"blocking", b"readonly"})
 class StreamRead(Command):
+    """
+    summary: >-
+      Returns messages from multiple streams with IDs greater than the ones requested. Blocks until a message is
+      available otherwise.
+    since: 5.0.0
+    function: xreadCommand
+    reply_schema:
+      oneOf:
+      - description: >-
+          A map of key-value elements when each element composed of key name and the entries reported for that key.
+        type: object
+        patternProperties:
+          ^.*$:
+            description: The entries reported for that key.
+            type: array
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+              - description: Entry id.
+                type: string
+                pattern: '[0-9]+-[0-9]+'
+              - description: >-
+                  A map of key-value elements when each element composed of key name and the entries reported for
+                  that key.
+                type: array
+                items:
+                  type: string
+      - description: >-
+          If BLOCK option is given, and a timeout occurs, or there is no stream we can serve.
+        type: 'null'
+    """
+
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
     client_context: ClientContext = dependency()
@@ -684,7 +969,7 @@ class StreamRead(Command):
             value = self.database.stream_database.get_value_or_empty(key)
 
             entries = [
-                [_format_entry_id(entry_id), entry_data]
+                [format_entry_id(entry_id), entry_data]
                 for entry_id, entry_data in value.range(
                     minimum_timestamp=entry_id[0],
                     minimum_sequence=entry_id[1],
@@ -701,8 +986,44 @@ class StreamRead(Command):
         return result
 
 
-@command(b"xreadgroup", {b"write", b"stream", b"slow", b"blocking"})
+@command(b"xreadgroup", {b"blocking", b"slow", b"stream"}, flags={b"blocking", b"write"})
 class StreamGroupRead(Command):
+    """
+    summary: >-
+      Returns new or historical messages from a stream for a consumer in a group. Blocks until a message is
+      available otherwise.
+    complexity: >-
+      For each stream mentioned: O(M) with M being the number of elements returned. If M is constant (e.g. always
+      asking for the first 10 elements with COUNT), you can consider it O(1). On the other side when XREADGROUP blocks,
+      XADD will pay the O(N) time in order to serve the N clients blocked on the stream getting new data.
+    since: 5.0.0
+    function: xreadCommand
+    reply_schema:
+      oneOf:
+      - description: If BLOCK option is specified and the timeout expired
+        type: 'null'
+      - description: A map of key-value elements when each element composed of key name
+          and the entries reported for that key
+        type: object
+        additionalProperties:
+          description: The entries reported for that key
+          type: array
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+            - description: Stream id
+              type: string
+              pattern: '[0-9]+-[0-9]+'
+            - oneOf:
+              - description: Array of field-value pairs
+                type: array
+                items:
+                  type: string
+              - type: 'null'
+    """
+
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
     client_context: ClientContext = dependency()
@@ -712,7 +1033,7 @@ class StreamGroupRead(Command):
 
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
     block_milliseconds: int | None = keyword_parameter(flag=b"BLOCK", default=None)
-    no_ack: bool = keyword_parameter(flag=b"NOACK", default=False)
+    no_ack: bool = flag_parameter(token=b"NOACK")
     keys_and_ids: list[bytes] = keyword_parameter(token=b"STREAMS")
 
     _keys_to_minimum_id: dict[bytes, EntryID] | None = field(default_factory=dict, init=False)
@@ -788,22 +1109,22 @@ class StreamGroupRead(Command):
                                 group.name,
                                 consumer.name,
                                 0,
-                                [_format_entry_id(entry_id)],
+                                [format_entry_id(entry_id)],
                                 time_milliseconds=consumer.pending_entries[entry_id].last_delivery,
                                 retry_count=consumer.pending_entries[entry_id].times_delivered,
                                 force=True,
                                 just_id=True,
-                                last_id=_format_entry_id(group.last_id),
+                                last_id=format_entry_id(group.last_id),
                             )
                         )
 
-                    entries.append([_format_entry_id(entry_id), entry_data])
+                    entries.append([format_entry_id(entry_id), entry_data])
                 self.client_context.propagated_commands.append(
                     StreamGroupSetId(
                         self.database,
                         key,
                         group.name,
-                        _format_entry_id(group.last_id),
+                        format_entry_id(group.last_id),
                         group.read_entries,
                     )
                 )
@@ -818,7 +1139,7 @@ class StreamGroupRead(Command):
                     pending_entry = consumer.pending_entries[entry_id]
                     pending_entry.times_delivered += 1
                     pending_entry.last_delivery = self.client_context.current_client.command_time_snapshot
-                    entries.append([_format_entry_id(entry_id), value.entries.get(entry_id, {}) or {}])
+                    entries.append([format_entry_id(entry_id), value.entries.get(entry_id, {}) or {}])
 
             result.append([key, entries])
 
@@ -834,11 +1155,65 @@ class ExtendedPendingParameters:
     consumer: bytes | None = positional_parameter(default=None)
 
 
-@command(b"xpending", {b"write", b"stream", b"slow", b"blocking"})
+@command(b"xpending", {b"read", b"slow", b"stream"}, flags={b"readonly"})
 class StreamGroupPending(Command):
+    """
+    summary: >-
+      Returns the information and entries from a stream consumer group's pending entries list.
+    complexity: >-
+      O(N) with N being the number of elements returned, so asking for a small fixed number of entries per call
+      is O(1). O(M), where M is the total number of entries scanned when used with the IDLE filter. When the command
+      returns just the summary and the list of consumers is small, it runs in O(1) time; otherwise, an additional
+      O(N) time for iterating every consumer.
+    since: 5.0.0
+    function: xpendingCommand
+    reply_schema:
+      oneOf:
+      - description: Extended form, in case `start` was given.
+        type: array
+        items:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+          - description: Entry ID
+            type: string
+            pattern: '[0-9]+-[0-9]+'
+          - description: Consumer name
+            type: string
+          - description: Idle time
+            type: integer
+          - description: Delivery count
+            type: integer
+      - description: Summary form, in case `start` was not given.
+        type: array
+        minItems: 4
+        maxItems: 4
+        items:
+        - description: Total number of pending messages
+          type: integer
+        - description: Minimal pending entry ID
+          type: string
+          pattern: '[0-9]+-[0-9]+'
+        - description: Maximal pending entry ID
+          type: string
+          pattern: '[0-9]+-[0-9]+'
+        - description: Consumers with pending messages
+          type: array
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+            - description: Consumer name
+              type: string
+            - description: Number of pending messages
+              type: string
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"R")
     group: bytes = positional_parameter()
 
     extended_parameters: ExtendedPendingParameters | None = positional_parameter(default=None)
@@ -858,8 +1233,8 @@ class StreamGroupPending(Command):
                 if entry_id not in value.entries or value.entries[entry_id] is None:
                     continue
                 if first_non_deleted_pending_entry is None:
-                    first_non_deleted_pending_entry = _format_entry_id(entry_id)
-                last_non_deleted_pending_entry = _format_entry_id(entry_id)
+                    first_non_deleted_pending_entry = format_entry_id(entry_id)
+                last_non_deleted_pending_entry = format_entry_id(entry_id)
 
             return [
                 len(group.pending_entries),
@@ -903,7 +1278,7 @@ class StreamGroupPending(Command):
 
             result.append(
                 [
-                    _format_entry_id(entry_id),
+                    format_entry_id(entry_id),
                     entry_data.consumer.name,
                     now_ms() - entry_data.last_delivery,
                     entry_data.times_delivered,
@@ -913,11 +1288,26 @@ class StreamGroupPending(Command):
         return result
 
 
-@command(b"xack", {b"write", b"stream", b"slow", b"blocking"})
+@command(b"xack", {b"stream"}, flags={b"fast", b"write"})
 class StreamGroupAcknowledge(Command):
+    """
+    summary: >-
+      Returns the number of messages that were successfully acknowledged by the consumer group member of a stream.
+    complexity: O(1) for each message ID processed.
+    since: 5.0.0
+    function: xackCommand
+    reply_schema:
+      description: >-
+        The command returns the number of messages successfully acknowledged. Certain message IDs may no longer
+        be part of the PEL (for example because they have already been acknowledged), and XACK will not count them
+        as successfully acknowledged.
+      type: integer
+      minimum: 0
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = positional_parameter()
     ids: list[bytes] = positional_parameter()
 
@@ -934,7 +1324,7 @@ class StreamGroupAcknowledge(Command):
 
         for stream_id in self.ids:
             try:
-                parsed_ids.add(_parse_strict_entry_id(stream_id, sequence_fill=0))
+                parsed_ids.add(parse_strict_entry_id(stream_id, sequence_fill=0))
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -948,12 +1338,24 @@ class StreamGroupAcknowledge(Command):
         return deleted_count
 
 
-@command(b"destroy", {b"write", b"stream", b"slow", b"blocking"}, parent_command=b"xgroup")
+@command(b"destroy", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"write"})
 class StreamGroupDestroy(Command):
+    """
+    summary: Destroys a consumer group.
+    complexity: O(N) where N is the number of entries in the group's pending entries list (PEL).
+    since: 5.0.0
+    function: xgroupCommand
+    reply_schema:
+      description: The number of destroyed consumer groups (0 or 1)
+      oneOf:
+      - const: 1
+      - const: 0
+    """
+
     database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = positional_parameter()
 
     had_group: bool = field(default=False, init=False)
@@ -972,18 +1374,27 @@ class StreamGroupDestroy(Command):
             await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)
 
 
-@command(b"xautoclaim", {b"write", b"stream", b"slow", b"blocking"})
+@command(b"xautoclaim", {b"stream"}, flags={b"fast", b"write"}, reply_schema=XAUTOCLAIM_REPLY_SCHEMA)
 class StreamGroupAutoClaim(Command):
+    """
+    summary: >-
+      Changes, or acquires, ownership of messages in a consumer group, as if the messages were delivered to a consumer
+      group member.
+    complexity: O(1) if COUNT is small.
+    since: 6.2.0
+    function: xautoclaimCommand
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = keyword_parameter()
     consumer_name: bytes = positional_parameter()
     minimum_idle_time: int = positional_parameter()
     start: bytes = positional_parameter()
     count: int = keyword_parameter(flag=b"COUNT", default=100)
-    just_id: bool = keyword_parameter(flag=b"JUSTID", default=False)
+    just_id: bool = flag_parameter(token=b"JUSTID")
 
     def execute(self) -> ValueType:
         if self.count <= 0 or self.count > (LONG_MAX / 16):
@@ -1014,7 +1425,7 @@ class StreamGroupAutoClaim(Command):
             is_reversed=False,
         ):
             if entry_id not in value.entries or value.entries[entry_id] is None:
-                deleted_entries.append(_format_entry_id(entry_id))
+                deleted_entries.append(format_entry_id(entry_id))
                 continue
             if now_ms() - entry.last_delivery < self.minimum_idle_time:
                 continue
@@ -1027,9 +1438,9 @@ class StreamGroupAutoClaim(Command):
             if not self.just_id:
                 entry.last_delivery = now_ms()
                 entry.times_delivered += 1
-                stream_entries.append([_format_entry_id(entry_id), value.entries.get(entry_id)])
+                stream_entries.append([format_entry_id(entry_id), value.entries.get(entry_id)])
                 continue
-            stream_entries.append(_format_entry_id(entry_id))
+            stream_entries.append(format_entry_id(entry_id))
 
         next_entry_id = (0, 0)
         for next_entry_id, _ in range_entries(
@@ -1042,15 +1453,51 @@ class StreamGroupAutoClaim(Command):
         ):
             pass
 
-        return [_format_entry_id(next_entry_id), stream_entries, deleted_entries]
+        return [format_entry_id(next_entry_id), stream_entries, deleted_entries]
 
 
-@command(b"xclaim", {b"write", b"stream", b"slow", b"blocking"})
+@command(b"xclaim", {b"stream"}, flags={b"fast", b"write"})
 class StreamGroupClaim(Command):
+    """
+    summary: >-
+      Changes, or acquires, ownership of a message in a consumer group, as if the message was delivered to a consumer
+      group member.
+    complexity: O(log N) with N being the number of messages in the PEL of the consumer group.
+    since: 5.0.0
+    function: xclaimCommand
+    reply_schema:
+      description: Stream entries with IDs matching the specified range.
+      anyOf:
+      - description: >-
+          If JUSTID option is specified, return just an array of IDs of messages successfully claimed.
+        type: array
+        items:
+          description: Entry ID.
+          type: string
+          pattern: '[0-9]+-[0-9]+'
+      - description: >-
+          Array of stream entries that contains each entry as an array of 2 elements, the Entry ID and the entry
+          data itself.
+        type: array
+        uniqueItems: true
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+          - description: Entry ID.
+            type: string
+            pattern: '[0-9]+-[0-9]+'
+          - description: Data.
+            type: array
+            items:
+              type: string
+    """
+
     database: Database = dependency()
     client_context: ClientContext = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = keyword_parameter()
     consumer_name: bytes = positional_parameter()
     minimum_idle_time: int = positional_parameter()
@@ -1058,8 +1505,8 @@ class StreamGroupClaim(Command):
     idle: int | None = keyword_parameter(token=b"IDLE", default=None)
     time_milliseconds: int | None = keyword_parameter(token=b"TIME", default=None)
     retry_count: int | None = keyword_parameter(token=b"RERETRYCOUNT", default=None)
-    force: bool = keyword_parameter(flag=b"FORCE", default=False)
-    just_id: bool = keyword_parameter(flag=b"JUSTID", default=False)
+    force: bool = flag_parameter(token=b"FORCE")
+    just_id: bool = flag_parameter(token=b"JUSTID")
     last_id: bytes | None = keyword_parameter(token=b"LASTID", default=None)
     count: int | None = keyword_parameter(flag=b"COUNT", default=None)
 
@@ -1075,7 +1522,7 @@ class StreamGroupClaim(Command):
         last_id = (0, 0)
         if self.last_id is not None:
             try:
-                last_id = _parse_strict_entry_id(self.last_id, sequence_fill=0)
+                last_id = parse_strict_entry_id(self.last_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(b"ERR Invalid stream ID specified as stream command argument")
 
@@ -1085,13 +1532,14 @@ class StreamGroupClaim(Command):
         if consumer is None:
             consumer = Consumer(self.consumer_name)
             group.consumers[self.consumer_name] = consumer
+            self.database.notify(NotificationType.STREAM, b"xgroup-createconsumer", self.key)
 
         consumer.last_seen_timestamp = self.client_context.current_client.command_time_snapshot
 
         stream_entries: list = []
         for stream_id in self.entry_ids:
             try:
-                entry_id = _parse_strict_entry_id(stream_id, sequence_fill=0)
+                entry_id = parse_strict_entry_id(stream_id, sequence_fill=0)
             except ValueError:
                 raise ServerError(f"ERR Unrecognized XCLAIM option '{stream_id.decode()}'".encode())
 
@@ -1117,11 +1565,23 @@ class StreamGroupClaim(Command):
         return stream_entries
 
 
-@command(b"createconsumer", {b"write", b"stream", b"slow", b"blocking"}, parent_command=b"xgroup")
+@command(b"createconsumer", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"denyoom", b"write"})
 class StreamGroupCreateConsumer(Command):
+    """
+    summary: Creates a consumer in a consumer group.
+    complexity: O(1)
+    since: 6.2.0
+    function: xgroupCommand
+    reply_schema:
+      description: The number of created consumers (0 or 1)
+      oneOf:
+      - const: 1
+      - const: 0
+    """
+
     database: Database = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     group: bytes = positional_parameter()
     consumer: bytes = positional_parameter()
 
@@ -1140,4 +1600,53 @@ class StreamGroupCreateConsumer(Command):
 
         group.consumers[self.consumer] = Consumer(self.consumer)
 
+        self.database.notify(NotificationType.STREAM, b"xgroup-createconsumer", self.key)
+
         return 1
+
+
+@command(b"delconsumer", {b"slow", b"stream"}, parent_command=b"xgroup", flags={b"write"})
+class StreamGroupDeleteConsumer(Command):
+    """
+    summary: Deletes a consumer from a consumer group.
+    complexity: O(1)
+    since: 5.0.0
+    function: xgroupCommand
+    reply_schema:
+      description: The number of pending messages that were yet associated with such a consumer
+      type: integer
+      minimum: 0
+    """
+
+    database: Database = dependency()
+    blocking_manager: StreamBlockingManager = dependency()
+
+    key: bytes = positional_parameter(key_mode=b"RW")
+    group: bytes = positional_parameter()
+    consumer: bytes = positional_parameter()
+
+    removed_pending_count: int = field(default=0, init=False)
+
+    def execute(self) -> ValueType:
+        value = self.database.stream_database.get_value_or_none(self.key)
+
+        if value is None or value.consumer_groups.get(self.group) is None:
+            return 0
+
+        group = value.consumer_groups[self.group]
+
+        consumer = group.consumers.pop(self.consumer, None)
+        if consumer is None:
+            return 0
+
+        for entry_id in consumer.pending_entries.keys():
+            group.pending_entries.pop(entry_id, None)
+            self.removed_pending_count += 1
+
+        self.database.notifications_manager.notify(NotificationType.STREAM, b"xgroup-delconsumer", self.key)
+
+        return self.removed_pending_count
+
+    async def after(self, in_multi: bool = False) -> None:
+        if self.removed_pending_count > 0:
+            await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)

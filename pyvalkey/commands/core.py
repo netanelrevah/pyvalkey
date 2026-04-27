@@ -3,12 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Self, dataclass_transform
 
-from pyvalkey.commands.dependencies import dependency
-from pyvalkey.database_objects.databases import Database
-from pyvalkey.resp import ValueType
-
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ClientContext
+    from pyvalkey.resp import ValueType
 
 
 @dataclass_transform()
@@ -34,7 +31,6 @@ class Command:
     def create(cls, parameters: list[bytes], client_context: ClientContext) -> Self:
         raise NotImplementedError()
 
-
-@dataclass
-class DatabaseCommand(Command):
-    database: Database = dependency()
+    @classmethod
+    def collect_key_arguments(cls, command_arguments: dict[str, Any]) -> list[bytes] | None:
+        pass

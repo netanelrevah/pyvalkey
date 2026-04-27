@@ -1,15 +1,44 @@
+import os
+import time
+
 import docker
+import docker.errors
+import pytest
 from valkey import Valkey
+
+IDLE_TIMEOUT_SECONDS = 60
+
+
+def wait_with_idle_timeout(container, timeout: int = IDLE_TIMEOUT_SECONDS):
+    last_log_size = 0
+    last_activity = time.monotonic()
+
+    while True:
+        container.reload()
+        if container.status != "running":
+            result = container.wait(timeout=5)
+            return result
+
+        logs = container.logs()
+        if len(logs) != last_log_size:
+            last_log_size = len(logs)
+            last_activity = time.monotonic()
+        elif time.monotonic() - last_activity > timeout:
+            container.stop(timeout=5)
+            return {"StatusCode": 1}
+
+        time.sleep(1)
 
 
 def run_tests(s: Valkey, tags="", additional_args: str = ""):
     container = None
+    log_file_name = None
     try:
         client = docker.from_env()
 
-        image, logs = client.images.build(path=".", rm=True)
+        image, _ = client.images.build(path=os.path.dirname(os.path.abspath(__file__)), rm=True)
 
-        log_file_name = f"{'-'.join(tags.split())}.docker.log"
+        log_file_name = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{'-'.join(tags.split())}.docker.log")
 
         tags = (tags + " -needs:debug -external:skip -cluster -needs:repl -needs:config-maxmemory").strip()
         command = f'--host host.docker.internal --port {s.get_connection_kwargs()["port"]} --verbose --dump-logs --tags "{tags}" '
@@ -22,14 +51,18 @@ def run_tests(s: Valkey, tags="", additional_args: str = ""):
             detach=True,
         )
 
-        status = container.wait()
+        status = wait_with_idle_timeout(container)
 
         assert status["StatusCode"] == 0
     finally:
         if container is not None:
-            open(log_file_name, "wb").write(container.logs())
+            if log_file_name is not None:
+                open(log_file_name, "wb").write(container.logs())
 
-            container.stop()
+            try:
+                container.stop()
+            except docker.errors.APIError:
+                pass
             container.remove()
 
 
@@ -95,3 +128,26 @@ def test_type_zset(s: Valkey):
 
 def test_type_stream(s: Valkey):
     run_tests(s, tags="stream")
+
+
+def test_quit(s: Valkey):
+    run_tests(s, tags="quit")
+
+
+def test_pubsub(s: Valkey):
+    run_tests(s, tags="pubsub")
+
+
+def test_lazyfree(s: Valkey):
+    run_tests(s, tags="lazyfree")
+
+
+def test_tag(s: Valkey, request: pytest.FixtureRequest):
+    requested_tag = request.config.getoption("--tag")
+    run_tests(s, tags=requested_tag)
+
+
+def test_only(s: Valkey, request: pytest.FixtureRequest):
+    requested_tag = request.config.getoption("--tag")
+    requested_only = request.config.getoption("--only")
+    run_tests(s, tags=requested_tag, additional_args=f'--only "{requested_only}"')

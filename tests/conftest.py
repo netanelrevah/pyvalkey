@@ -39,7 +39,7 @@ def connection(external):
     port = 6379
     if not external:
         port = next_free_port()
-        server = ValkeyServer("127.0.0.1", port)
+        server = ValkeyServer.create("127.0.0.1", port)
         t = Thread(target=server.run)
         t.start()
 
@@ -64,7 +64,7 @@ class ValkeyPool:
     def fill_pool(cls, count):
         for _ in range(count):
             port = next_free_port()
-            server = ValkeyServer("127.0.0.1", port)
+            server = ValkeyServer.create("127.0.0.1", port)
             t = Thread(target=server.run)
             t.start()
 

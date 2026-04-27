@@ -1,23 +1,37 @@
 [project]
-name = "pyvalkey"
+name = "nrevah-pyvalkey"
 version = "0.0.5"
 description = "pyvalkey: Python implemented Valkey server"
 readme = "README.md"
-license = "MIT License"
 authors = [
-    { name = "Netanel Revah", email = "netanelrevah@outlook.com" },
+    { name = "Netanel Revah" },
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "psutil>=7.1.3",
+    "pyyaml>=6.0",
     "sortedcontainers>=2.4.0",
     "typer>=0.15.1",
 ]
 
 [project.optional-dependencies]
 lua = [
-    "lupa>=2.4",
-    "u-msgpack-python>=2.8.0",
+    "nrevah-pyvalkey-lua-runtime",
 ]
+valkey-tests = [
+    "nrevah-valkey-tests",
+]
+
+[tool.uv.build-backend]
+module-name = "pyvalkey"
+module-root = ""
+
+[project.scripts]
+valkey-server = "pyvalkey:main"
+
+[build-system]
+requires = ["uv_build>=0.8.5,<0.9.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
@@ -27,24 +41,33 @@ dev = [
     "pytest-parametrization>=2022.2.1",
     "ruff>=0.9.6",
     "sortedcontainers-stubs>=2.4.2",
-    "types-lupa>=2.4.0.20250112",
     "valkey>=6.1.0",
-    "lupa>=2.4",
-    "u-msgpack-python>=2.8.0",
+    "nrevah-pyvalkey-lua-runtime",
     "pytest-asyncio>=1.2.0",
     "ty>=0.0.1a23",
+    "types-docker>=7.1.0.20251129",
+    "types-psutil>=7.1.3.20251211",
+    "cython>=3.2.4",
+    "pre-commit>=4.0.0",
 ]
+
+
 
 [tool.pytest.ini_options]
 addopts = [
     "--import-mode=importlib",
 ]
 
-testpaths = "tests valkey_tests"
+testpaths = "tests"
 
 markers = [
     "slow",
     "string",
+    "scripting",
+    "acl",
+    "protocol",
+    "geo",
+    "hashexpire",
 ]
 
 [tool.ruff]
@@ -67,6 +90,7 @@ lint.select = [
     # "TRY",
     "UP",
     "YTT",
+    "TC",
 ]
 lint.ignore = [
     "E731",
@@ -80,13 +104,14 @@ lint.ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/{tests}/*" = ["ANN", "PLR2004", "PLR0913", "E501"]
+"lua_runtime/**/*.pyi" = ["ANN401"]
 
 
 [[tool.mypy.overrides]]
 module = [
     "sortedcontainers",
     "typer",
-    "umsgpack"
 ]
 ignore_missing_imports = true
+
 

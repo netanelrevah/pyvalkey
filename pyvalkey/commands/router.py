@@ -2,16 +2,38 @@ from __future__ import annotations
 
 import warnings
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from pyvalkey.commands.parsers import CommandMetadata, transform_command
+from pyvalkey.commands.creators import CommandCreator
+from pyvalkey.commands.parsers import (
+    CommandMetadata,
+    ObjectParametersParser,
+    move_mandatory_field_to_start,
+)
 from pyvalkey.database_objects.acl import ACL
 from pyvalkey.database_objects.errors import RouterKeyError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pyvalkey.commands.core import Command
+
+    CommandType = TypeVar("CommandType", bound=Command)
+
+
+def transform_command(
+    command_cls: type[CommandType], metadata: dict[CommandMetadata, Any] | None = None
+) -> type[CommandType]:
+    original_order = move_mandatory_field_to_start(command_cls)
+
+    command_cls = dataclass(command_cls)
+    setattr(command_cls, "__command_metadata__", metadata or {})
+    setattr(command_cls, "__original_order__", original_order)
+    setattr(command_cls, "parse", ObjectParametersParser.create(command_cls))
+    setattr(command_cls, "create", CommandCreator.create(command_cls))
+
+    return command_cls
 
 
 @dataclass
@@ -26,7 +48,15 @@ class CommandsRouter:
         command_name = parameters.pop(0).lower()
 
         if command_name not in routes:
-            raise RouterKeyError()
+            if routes is not self.ROUTES:
+                raise RouterKeyError(
+                    f"unknown subcommand or wrong number of arguments for '{command_name.decode()}'."
+                    f" Try '{{command_name}}' HELP.".encode()
+                )
+            raise RouterKeyError(
+                f"ERR unknown command '{command_name.decode()}',"
+                f" with args beginning with: {parameters[0].decode() if len(parameters) > 0 else ''}".encode()
+            )
 
         routed_command = routes[command_name]
 
@@ -48,9 +78,11 @@ class CommandsRouter:
         parent_command: bytes | None = None,
         flags: set[bytes] | None = None,
         metadata: dict[CommandMetadata, Any] | None = None,
+        reply_schema: dict[str, Any] | None = None,
     ) -> Callable[[type[Command]], type[Command]]:
         def _command_wrapper(command_cls: type[Command]) -> type[Command]:
             command_cls = transform_command(command_cls, metadata)
+            setattr(command_cls, "__reply_schema__", reply_schema)
 
             if not acl_categories:
                 raise TypeError("command must have at least one acl_categories")
@@ -61,10 +93,15 @@ class CommandsRouter:
                     "Using 'write' in acl_categories is deprecated, use 'write' flag instead.", DeprecationWarning
                 )
                 _flags.add(b"write")
+            if b"fast" in acl_categories:
+                warnings.warn(
+                    "Using 'fast' in acl_categories is deprecated, use 'fast' flag instead.", DeprecationWarning
+                )
+                _flags.add(b"fast")
 
             for flag in _flags:
-                if flag in [b"write"]:
-                    acl_categories.add(b"write")
+                if flag in [b"write", b"fast"]:
+                    acl_categories.add(flag)
 
             setattr(command_cls, "flags", set(_flags or []))
 

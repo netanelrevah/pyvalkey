@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Transport
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import IntEnum
-from io import IOBase
-from typing import Any, AnyStr, BinaryIO, Self
+from typing import TYPE_CHECKING, Any, AnyStr, BinaryIO, Self
 
 from pyvalkey.commands.utils import convert_float_value_to_bytes
+
+if TYPE_CHECKING:
+    from io import IOBase
 
 
 class RespProtocolVersion(IntEnum):
@@ -38,7 +39,18 @@ class ArrayNoneType:
 ArrayNone = ArrayNoneType()
 
 
+class DoNotReplyType:
+    __slots__ = ()
+
+
+DoNotReply = DoNotReplyType()
+
+
 class RespError(bytes):
+    pass
+
+
+class BulkArray(list):
     pass
 
 
@@ -55,6 +67,8 @@ ValueType = (
     | dict[bytes, Any]
     | None
     | ArrayNoneType
+    | DoNotReplyType
+    | BulkArray
 )
 
 
@@ -165,14 +179,15 @@ class RespQueryParser:
 class RespParser:
     buffered_reader: BufferedLineReader = field(default_factory=BufferedLineReader)
 
-    async def __aiter__(self) -> AsyncIterator[list[bytes]]:
-        line: bytes
-        async for line in self.buffered_reader:
-            if line[0:1] == b"*":
-                self.buffered_reader.return_line(line)
-                yield await RespQueryParser(self.buffered_reader).parse()
-                continue
-            yield line.split()
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> list[bytes]:
+        line = await anext(self.buffered_reader)
+        if line[0:1] == b"*":
+            self.buffered_reader.return_line(line)
+            return await RespQueryParser(self.buffered_reader).parse()
+        return line.split()
 
     def feed(self, data: bytes) -> None:
         self.buffered_reader.feed(data)
@@ -371,4 +386,8 @@ def dump(value: ValueType, stream: BinaryIO | IOBase | Transport, protocol: Resp
         stream.write(b"\r\n")
         raise ValueError(protocol)
 
-    dumper.dump(value)
+    if isinstance(value, BulkArray):
+        for item in value:
+            dumper.dump(item)
+    else:
+        dumper.dump(value)

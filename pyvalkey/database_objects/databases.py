@@ -2,28 +2,25 @@ from __future__ import annotations
 
 import operator
 import random
-import time
-from asyncio import wait_for
-from collections import OrderedDict
-from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, TypeVar, cast
 
 from sortedcontainers import SortedSet
 
-from pyvalkey.commands.utils import _decrease_entry_id, _format_entry_id, _parse_strict_entry_id, is_integer
+from pyvalkey.commands.utils import is_integer
 from pyvalkey.consts import LFU_COUNTER_MAXIMUM, LFU_INITIAL_VALUE
-from pyvalkey.database_objects.clients import BlockingContext
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
 from pyvalkey.database_objects.scored_sorted_set import ScoredSortedSet
-from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, EntryID, Stream
-from pyvalkey.enums import StreamSpecialIds, UnblockMessage
-from pyvalkey.utils.collections import SetMapping
+from pyvalkey.database_objects.stream import Stream
+from pyvalkey.enums import NotificationType
 from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:
-    from pyvalkey.commands.context import ClientContext
+    from collections.abc import Callable, Iterable, Iterator
+
+    from pyvalkey.database_objects.configurations import Configurations
+    from pyvalkey.notifications import NotificationsManager
 
 
 def create_empty_keys_with_expiration() -> SortedSet:
@@ -41,7 +38,7 @@ class KeyValue(Generic[KeyValueTypeVar]):
     key: bytes
     value: KeyValueTypeVar
     expiration: int | None = field(default=None)
-    last_accessed: int = field(default_factory=lambda: now_ms())
+    last_accessed: int = field(default_factory=now_ms)
     lfu_counter: int = LFU_INITIAL_VALUE
 
     def increase_frequency(self, lfu_log_factor: int) -> None:
@@ -60,15 +57,15 @@ class KeyValue(Generic[KeyValueTypeVar]):
     def copy(self, new_key: bytes) -> KeyValue:
         new_value: KeyValueTypeVar
         if isinstance(self.value, bytes | int):
-            new_value = cast(KeyValueTypeVar, self.value)
+            new_value = cast("KeyValueTypeVar", self.value)
         elif isinstance(self.value, dict):
-            new_value = cast(KeyValueTypeVar, dict(self.value))
+            new_value = cast("KeyValueTypeVar", dict(self.value))
         elif isinstance(self.value, ScoredSortedSet):
-            new_value = cast(KeyValueTypeVar, ScoredSortedSet(self.value.members_scores.items()))
+            new_value = cast("KeyValueTypeVar", ScoredSortedSet(self.value.members_scores.items()))
         elif isinstance(self.value, list):
-            new_value = cast(KeyValueTypeVar, list(self.value))
+            new_value = cast("KeyValueTypeVar", list(self.value))
         elif isinstance(self.value, set):
-            new_value = cast(KeyValueTypeVar, set(self.value))
+            new_value = cast("KeyValueTypeVar", set(self.value))
         else:
             raise NotImplementedError(f"copy of {type(self.value)} not implemented")
 
@@ -89,11 +86,13 @@ class DatabaseContent:
     data: dict[bytes, KeyValue] = field(default_factory=dict)
     key_with_expiration: SortedSet = field(default_factory=create_empty_keys_with_expiration)
     watchlist: dict[bytes, set[ClientWatchlist]] = field(default_factory=dict)
+    hash_field_expirations: dict[bytes, dict[bytes, int]] = field(default_factory=dict)
 
     def clear_key(self, key_value: KeyValue) -> None:
         if key_value.expiration is not None:
             self.key_with_expiration.discard(key_value)
         self.data.pop(key_value.key)
+        self.hash_field_expirations.pop(key_value.key, None)
 
     def size(self) -> int:
         return len(self.data)
@@ -116,6 +115,8 @@ class DatabaseContent:
 class DatabaseBase(Generic[KeyValueTypeVar]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     def is_empty(self, value: KeyValueTypeVar) -> bool:
         if isinstance(value, bytes | int | list | set | dict):
@@ -134,7 +135,9 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
 
         if key_value.expiration is not None:
             if now_ms() > key_value.expiration:
+                self.touch_watched_key(key_value.key)
                 self.content.clear_key(key_value)
+                self.notify(NotificationType.EXPIRED, b"expired", key)
                 return False
 
         if self.is_empty(key_value.value):
@@ -205,6 +208,7 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
         key_value = self.content.data.pop(key)
         if key_value.expiration is not None:
             self.content.key_with_expiration.discard(key_value)
+        self.content.hash_field_expirations.pop(key, None)
         self.touch_watched_key(key)
         return key_value
 
@@ -317,6 +321,8 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
 
         key_value.expiration = now_ms() + expiration_milliseconds
         self.content.key_with_expiration.add(key_value)
+        # Touch watched keys when their expiration is modified
+        self.touch_watched_key(key)
         return True
 
     def set_expiration_at(self, key: bytes, expiration_milliseconds_at: int) -> bool:
@@ -345,11 +351,16 @@ class DatabaseBase(Generic[KeyValueTypeVar]):
             return None
         return key_value.expiration - now_ms()
 
+    def notify(self, notification_type: NotificationType, event: bytes, key: bytes) -> None:
+        self.notifications_manager.notify(notification_type, event, key)
+
 
 @dataclass
 class TypedDatabase(Generic[KeyValueTypeVar], DatabaseBase[KeyValueTypeVar]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     type_: type[KeyValueTypeVar]
     empty_factory: Callable[[], KeyValueTypeVar]
@@ -365,10 +376,134 @@ class TypedDatabase(Generic[KeyValueTypeVar], DatabaseBase[KeyValueTypeVar]):
         return self.empty_factory()
 
 
+HFE_NO_FIELD = -2
+HFE_NO_TTL = -1
+HFE_COND_FAILED = 0
+HFE_SET = 1
+HFE_DELETED_PAST = 2
+
+
+@dataclass
+class HashDatabase(TypedDatabase[dict[bytes, int | bytes]]):
+    def _field_expirations_or_create(self, key: bytes) -> dict[bytes, int]:
+        return self.content.hash_field_expirations.setdefault(key, {})
+
+    def is_field_expired(self, key: bytes, field_name: bytes) -> bool:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return False
+        expire_at = table.get(field_name)
+        if expire_at is None:
+            return False
+        return now_ms() >= expire_at
+
+    def evict_expired_fields(self, key: bytes) -> int:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return 0
+        now = now_ms()
+        expired = [f for f, t in table.items() if now >= t]
+        if not expired:
+            return 0
+        key_value = self.content.data.get(key)
+        if key_value is None:
+            self.content.hash_field_expirations.pop(key, None)
+            return 0
+        value = key_value.value
+        if not isinstance(value, dict):
+            return 0
+        for f in expired:
+            value.pop(f, None)
+            table.pop(f, None)
+        if not table:
+            self.content.hash_field_expirations.pop(key, None)
+        self.notify(NotificationType.HASH, b"hexpired", key)
+        if not value:
+            self.pop_unsafely(key)
+        return len(expired)
+
+    def get_field_expiration(self, key: bytes, field_name: bytes) -> int | None:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return None
+        return table.get(field_name)
+
+    def set_field_expiration(self, key: bytes, field_name: bytes, ms_at: int) -> None:
+        self._field_expirations_or_create(key)[field_name] = ms_at
+
+    def remove_field_expiration(self, key: bytes, field_name: bytes) -> bool:
+        table = self.content.hash_field_expirations.get(key)
+        if not table:
+            return False
+        had = table.pop(field_name, None) is not None
+        if not table:
+            self.content.hash_field_expirations.pop(key, None)
+        return had
+
+    @staticmethod
+    def _check_condition(cond: bytes | None, current: int | None, new_at_ms: int) -> bool:
+        if cond is None:
+            return True
+        if cond == b"NX":
+            return current is None
+        if cond == b"XX":
+            return current is not None
+        if cond == b"GT":
+            return current is not None and new_at_ms > current
+        if cond == b"LT":
+            return current is None or new_at_ms < current
+        return True
+
+    def apply_field_expirations(self, key: bytes, new_at_ms: int, cond: bytes | None, fields: list[bytes]) -> list[int]:
+        self.evict_expired_fields(key)
+        if not self.has_key(key):
+            return [HFE_NO_FIELD for _ in fields]
+        hash_map = self.get_value(key)
+        results: list[int] = []
+        now = now_ms()
+        for f in fields:
+            if f not in hash_map:
+                results.append(HFE_NO_FIELD)
+                continue
+            current = self.get_field_expiration(key, f)
+            if not self._check_condition(cond, current, new_at_ms):
+                results.append(HFE_COND_FAILED)
+                continue
+            if new_at_ms <= now:
+                hash_map.pop(f, None)
+                self.remove_field_expiration(key, f)
+                results.append(HFE_DELETED_PAST)
+                continue
+            self.set_field_expiration(key, f, new_at_ms)
+            results.append(HFE_SET)
+        if not hash_map:
+            self.pop_unsafely(key)
+        return results
+
+    def query_field_expirations(self, key: bytes, fields: list[bytes], mapper: Callable[[int], int]) -> list[int]:
+        self.evict_expired_fields(key)
+        if not self.has_key(key):
+            return [HFE_NO_FIELD for _ in fields]
+        hash_map = self.get_value(key)
+        out: list[int] = []
+        for f in fields:
+            if f not in hash_map:
+                out.append(HFE_NO_FIELD)
+                continue
+            exp = self.get_field_expiration(key, f)
+            if exp is None:
+                out.append(HFE_NO_TTL)
+                continue
+            out.append(mapper(exp))
+        return out
+
+
 @dataclass
 class ListDatabase(DatabaseBase[list]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     def is_empty(self, value: list) -> bool:
         return not value
@@ -384,6 +519,8 @@ class ListDatabase(DatabaseBase[list]):
 class BytesDatabase(DatabaseBase[bytes]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     def is_empty(self, value: int | bytes) -> bool:
         return value == b""
@@ -404,6 +541,8 @@ class BytesDatabase(DatabaseBase[bytes]):
 class IntDatabase(DatabaseBase[int]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     def is_empty(self, value: int | bytes) -> bool:
         return value == b""
@@ -426,6 +565,8 @@ class IntDatabase(DatabaseBase[int]):
 class StringDatabase(DatabaseBase[bytes | int]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     def is_empty(self, value: int | bytes) -> bool:
         return value == b""
@@ -441,6 +582,8 @@ class StringDatabase(DatabaseBase[bytes | int]):
 class AnySetDatabase(DatabaseBase[ScoredSortedSet | set[bytes]]):
     index: int
     content: DatabaseContent
+    configurations: Configurations
+    notifications_manager: NotificationsManager
 
     def is_empty(self, value: ScoredSortedSet | set[bytes]) -> bool:
         return len(value) == 0
@@ -455,6 +598,9 @@ class AnySetDatabase(DatabaseBase[ScoredSortedSet | set[bytes]]):
 @dataclass
 class Database(DatabaseBase[KeyValueType]):
     index: int
+    configurations: Configurations
+    notifications_manager: NotificationsManager
+
     content: DatabaseContent = field(default_factory=DatabaseContent)
 
     string_database: StringDatabase = field(init=False)
@@ -462,7 +608,7 @@ class Database(DatabaseBase[KeyValueType]):
     int_database: IntDatabase = field(init=False)
     sorted_set_database: TypedDatabase[ScoredSortedSet] = field(init=False)
     set_database: TypedDatabase[set] = field(init=False)
-    hash_database: TypedDatabase[dict[bytes, int | bytes]] = field(init=False)
+    hash_database: HashDatabase = field(init=False)
     list_database: ListDatabase = field(init=False)
     stream_database: TypedDatabase[Stream] = field(init=False)
 
@@ -470,18 +616,44 @@ class Database(DatabaseBase[KeyValueType]):
         return self.has_typed_key(key)
 
     def __post_init__(self) -> None:
-        self.string_database = StringDatabase(self.index, self.content)
-        self.bytes_database = BytesDatabase(self.index, self.content)
-        self.int_database = IntDatabase(self.index, self.content)
+        self.string_database = StringDatabase(self.index, self.content, self.configurations, self.notifications_manager)
+        self.bytes_database = BytesDatabase(self.index, self.content, self.configurations, self.notifications_manager)
+        self.int_database = IntDatabase(self.index, self.content, self.configurations, self.notifications_manager)
         self.sorted_set_database = TypedDatabase(
-            self.index, self.content, ScoredSortedSet, ScoredSortedSet, lambda value: len(value) == 0
+            self.index,
+            self.content,
+            self.configurations,
+            self.notifications_manager,
+            ScoredSortedSet,
+            ScoredSortedSet,
+            lambda value: len(value) == 0,
         )
-        self.any_set_database = AnySetDatabase(self.index, self.content)
-        self.set_database = TypedDatabase(self.index, self.content, set, set, lambda value: not value)
-        self.hash_database = TypedDatabase(self.index, self.content, dict, dict, lambda value: not value)
-        self.list_database = ListDatabase(self.index, self.content)
+        self.any_set_database = AnySetDatabase(
+            self.index, self.content, self.configurations, self.notifications_manager
+        )
+        self.set_database = TypedDatabase(
+            self.index, self.content, self.configurations, self.notifications_manager, set, set, lambda value: not value
+        )
+        self.hash_database = HashDatabase(
+            self.index,
+            self.content,
+            self.configurations,
+            self.notifications_manager,
+            dict,
+            dict,
+            lambda value: not value,
+        )
+        self.list_database = ListDatabase(self.index, self.content, self.configurations, self.notifications_manager)
 
-        self.stream_database = TypedDatabase(self.index, self.content, Stream, Stream, lambda value: False)
+        self.stream_database = TypedDatabase(
+            self.index,
+            self.content,
+            self.configurations,
+            self.notifications_manager,
+            Stream,
+            Stream,
+            lambda value: False,
+        )
 
     def replace_content(self, new_content: DatabaseContent) -> None:
         for database in (
@@ -497,461 +669,6 @@ class Database(DatabaseBase[KeyValueType]):
             self.stream_database,
         ):
             database.content = new_content
-
-
-@dataclass
-class BlockingManagerBase:
-    notifications: SetMapping[bytes, BlockingContext] = field(default_factory=SetMapping)
-    lazy_notification_keys: list[bytes] = field(default_factory=list)
-
-    def has_key(self, database: Database, key: bytes) -> bool:
-        raise NotImplementedError()
-
-    def is_instance(self, value: KeyValueTypeVar) -> bool:
-        raise NotImplementedError()
-
-    async def wait_for_lists(
-        self,
-        client_context: ClientContext,
-        command: bytes,
-        keys: list[bytes],
-        timeout: int | float | None = None,
-        *,
-        in_multi: bool = False,
-        clear_queue: bool = True,
-    ) -> bytes | None:
-        if timeout is not None and timeout < 0:
-            raise ServerError(b"ERR timeout is negative")
-
-        for key in keys:
-            if not self.has_key(client_context.database, key):
-                continue
-            return key
-
-        if in_multi:
-            return None
-
-        client_context.current_client.blocking_context = BlockingContext(command)
-        self.notifications.add_multiple(keys, client_context.current_client.blocking_context)
-
-        try:
-            while True:
-                print(f"{client_context.current_client.client_id} waiting queue for keys {keys}")
-                message: bytes | UnblockMessage = await wait_for(
-                    client_context.current_client.blocking_context.queue.get(), timeout=timeout or None
-                )
-                if message == UnblockMessage.ERROR:
-                    print(f"{client_context.current_client.client_id} got unblock error from queue")
-                    raise ServerError(b"UNBLOCKED client unblocked via CLIENT UNBLOCK")
-                if message == UnblockMessage.TIMEOUT:
-                    print(f"{client_context.current_client.client_id} got unblock timeout from queue")
-                    raise TimeoutError()
-                print(f"{client_context.current_client.client_id} got '{message.decode()}' from queue")
-                if self.has_key(client_context.database, message):
-                    return message
-                print(
-                    f"{client_context.current_client.client_id} key '{message.decode()}' not in database, continue..."
-                )
-        except TimeoutError:
-            return None
-        finally:
-            self.notifications.remove_all(client_context.current_client.blocking_context)
-            if clear_queue:
-                client_context.current_client.blocking_context = None
-
-    async def notify(self, key: bytes, in_multi: bool = False) -> None:
-        if in_multi:
-            print(f"adding '{key.decode()}' to lazy notification keys")
-            self.lazy_notification_keys.append(key)
-            return
-        for blocking_context in self.notifications.iter_values(key):
-            print(f"putting '{key.decode()}' into queue")
-            await blocking_context.queue.put(key)
-
-    async def notify_safely(self, database: Database, key: bytes, in_multi: bool = False) -> None:
-        try:
-            if self.has_key(database, key):
-                await self.notify(key, in_multi=in_multi)
-        except ServerWrongTypeError:
-            pass
-
-    async def notify_lazy(self, database: Database) -> None:
-        while self.lazy_notification_keys:
-            key = self.lazy_notification_keys.pop(0)
-            if key not in database.content.data or not self.is_instance(database.content.data[key].value):
-                print(f"lazy key '{key.decode()}' not found, continue...")
-                continue
-            for blocking_context in self.notifications.iter_values(key):
-                print(f"putting '{key.decode()}' into queue")
-                await blocking_context.queue.put(key)
-
-
-class ListBlockingManager(BlockingManagerBase):
-    def has_key(self, database: Database, key: bytes) -> bool:
-        return database.list_database.has_key(key)
-
-    def is_instance(self, value: KeyValueTypeVar) -> bool:
-        return isinstance(value, list)
-
-
-class SortedSetBlockingManager(BlockingManagerBase):
-    def has_key(self, database: Database, key: bytes) -> bool:
-        return database.sorted_set_database.has_key(key)
-
-    def is_instance(self, value: KeyValueTypeVar) -> bool:
-        return isinstance(value, ScoredSortedSet)
-
-
-@dataclass
-class LazyNotification:
-    key: bytes
-    deleted: bool
-    created_in_transaction: bool
-
-
-@dataclass
-class StreamWaitingContext:
-    keys_to_minimum_id: dict[bytes, EntryID] = field(default_factory=dict)
-    key_to_consumer_group: dict[bytes, ConsumerGroup] = field(default_factory=dict)
-    key_to_consumer: dict[bytes, Consumer] = field(default_factory=dict)
-    key_to_history_only: dict[bytes, bool] = field(default_factory=dict)
-
-    def reset(self) -> None:
-        self.keys_to_minimum_id.clear()
-        self.key_to_consumer_group.clear()
-        self.key_to_consumer.clear()
-        self.key_to_history_only.clear()
-
-
-@dataclass
-class StreamBlockingManager:
-    notifications: SetMapping[bytes, BlockingContext] = field(default_factory=SetMapping)
-    lazy_notification_keys: OrderedDict[bytes, LazyNotification] = field(default_factory=OrderedDict)
-
-    def has_key(self, database: Database, key: bytes) -> bool:
-        return database.stream_database.has_key(key)
-
-    def is_instance(self, value: KeyValueTypeVar) -> bool:
-        return isinstance(value, Stream)
-
-    def calculate_group_context(
-        self,
-        database: Database,
-        group_name: bytes,
-        consumer_name: bytes,
-        keys_to_ids: dict[bytes, bytes],
-        waiting_context: StreamWaitingContext,
-    ) -> bool:
-        for key, id_ in keys_to_ids.items():
-            value = database.stream_database.get_value_or_empty(key)
-            if value is None or (value is not None and value.consumer_groups.get(group_name) is None):
-                raise ServerError(
-                    f"NOGROUP No such key '{key.decode()}' or consumer group '{group_name.decode()}'"
-                    f" in XREADGROUP with GROUP option".encode()
-                )
-            waiting_context.key_to_consumer_group[key] = value.consumer_groups[group_name]
-
-            group = value.consumer_groups[group_name]
-            consumer = group.consumers.get(consumer_name, None)
-            if consumer is None:
-                consumer = Consumer(consumer_name)
-                group.consumers[consumer_name] = consumer
-            waiting_context.key_to_consumer[key] = consumer
-
-            if id_ == StreamSpecialIds.NEW_GROUP_ENTRY_ID:
-                waiting_context.keys_to_minimum_id[key] = group.last_id
-                waiting_context.key_to_history_only[key] = False
-            else:
-                waiting_context.key_to_history_only[key] = True
-                try:
-                    waiting_context.keys_to_minimum_id[key] = _parse_strict_entry_id(id_, sequence_fill=0)
-                except ValueError:
-                    raise ServerError(b"ERR wrong type of argument for 'xread' command")
-
-            if (
-                id_ != StreamSpecialIds.NEW_GROUP_ENTRY_ID
-                or value.after(waiting_context.keys_to_minimum_id[key]) is not None
-            ):
-                return True
-        return False
-
-    async def wait_for_group(
-        self,
-        client_context: ClientContext,
-        group_name: bytes,
-        consumer_name: bytes,
-        keys_to_ids: dict[bytes, bytes],
-        block_milliseconds: int | float | None = None,
-        in_multi: bool = False,
-        waiting_context: StreamWaitingContext | None = None,
-    ) -> dict[bytes, EntryID] | None:
-        print(
-            f"waiting for group {group_name.decode()} and consumer {consumer_name.decode()} "
-            f"with streams {keys_to_ids.keys()} for {block_milliseconds} ms"
-        )
-
-        waiting_context = waiting_context if waiting_context is not None else StreamWaitingContext()
-
-        if self.calculate_group_context(
-            client_context.database, group_name, consumer_name, keys_to_ids, waiting_context
-        ):
-            return waiting_context.keys_to_minimum_id
-
-        if in_multi or block_milliseconds is None:
-            return None
-
-        client_context.current_client.blocking_context = BlockingContext(b"xreadgroup")
-        self.notifications.add_multiple(keys_to_ids.keys(), client_context.current_client.blocking_context)
-
-        deadline = (time.time_ns() + (block_milliseconds * 1_000_000)) if block_milliseconds != 0 else None
-        try:
-            while True:
-                start_time = time.time_ns()
-                if deadline is not None and start_time >= deadline:
-                    break
-
-                print(f"{client_context.current_client} time is {start_time}, deadline is {deadline}")
-
-                timeout = ((deadline - start_time) / 1_000_000_000) if deadline is not None else None
-
-                print(
-                    f"{client_context.current_client.client_id} waiting queue "
-                    f"for keys {keys_to_ids.keys()} with timeout {timeout}"
-                )
-
-                try:
-                    queue_item = await wait_for(
-                        client_context.current_client.blocking_context.queue.get(), timeout=timeout
-                    )
-
-                    if queue_item == UnblockMessage.ERROR:
-                        print(f"{client_context.current_client.client_id} got unblock error from queue")
-                        raise ServerError(b"UNBLOCKED client unblocked via CLIENT UNBLOCK")
-                    if queue_item == UnblockMessage.TIMEOUT:
-                        print(f"{client_context.current_client.client_id} got unblock timeout from queue")
-                        raise TimeoutError()
-
-                    key = queue_item
-
-                    if key not in waiting_context.keys_to_minimum_id:
-                        raise Exception()
-
-                    print(f"got queue item for grouped stream '{key.decode()}', recalculating context")
-                    waiting_context.reset()
-                    if self.calculate_group_context(
-                        client_context.database, group_name, consumer_name, keys_to_ids, waiting_context
-                    ):
-                        return waiting_context.keys_to_minimum_id
-                except TimeoutError:
-                    if time.time_ns() == start_time:
-                        print("got timeout, sleeping for 1 ms")
-                        time.sleep(0.001)
-                    continue
-        finally:
-            self.notifications.remove_all(client_context.current_client.blocking_context)
-            client_context.current_client.blocking_context = None
-
-        return None
-
-    def calculate_context(
-        self,
-        database: Database,
-        keys_to_ids: dict[bytes, bytes],
-        waiting_context: StreamWaitingContext,
-    ) -> bool:
-        had_keys = False
-        for key, id_ in keys_to_ids.items():
-            value = database.stream_database.get_value_or_empty(key)
-
-            if id_ == StreamSpecialIds.NEW_ENTRY_ID:
-                if len(value) > 0:
-                    last_entry_id = value.last_id
-                    waiting_context.keys_to_minimum_id[key] = last_entry_id
-                    keys_to_ids[key] = _format_entry_id(last_entry_id)
-                else:
-                    waiting_context.keys_to_minimum_id[key] = (0, 0)
-                    keys_to_ids[key] = _format_entry_id((0, 0))
-                continue
-            if id_ == StreamSpecialIds.LAST_ENTRY_ID:
-                if len(value) > 0:
-                    waiting_context.keys_to_minimum_id[key] = _decrease_entry_id(value.last_id)
-                    had_keys = True
-                else:
-                    waiting_context.keys_to_minimum_id[key] = (0, 0)
-                continue
-
-            try:
-                timestamp, sequence = _parse_strict_entry_id(id_, sequence_fill=0)
-            except ValueError:
-                raise ServerError(b"ERR wrong type of argument for 'xread' command")
-            waiting_context.keys_to_minimum_id[key] = (timestamp, sequence)
-            if value.after((timestamp, sequence)) is not None:
-                had_keys = True
-                continue
-        return had_keys
-
-    async def wait_for_stream(
-        self,
-        client_context: ClientContext,
-        keys_to_ids: dict[bytes, bytes],
-        block_milliseconds: int | float | None = None,
-        in_multi: bool = False,
-    ) -> dict[bytes, EntryID] | None:
-        client_id = client_context.current_client.client_id
-
-        print(f"{client_id} waiting for streams {keys_to_ids.keys()} for {block_milliseconds} ms")
-
-        database = client_context.database
-
-        stream_waiting_context = StreamWaitingContext()
-        had_keys = self.calculate_context(database, keys_to_ids, stream_waiting_context)
-
-        if had_keys:
-            return stream_waiting_context.keys_to_minimum_id
-
-        if in_multi or block_milliseconds is None:
-            return None
-
-        client_context.current_client.blocking_context = BlockingContext(b"xread")
-        self.notifications.add_multiple(keys_to_ids.keys(), client_context.current_client.blocking_context)
-
-        deadline = (time.time_ns() + (block_milliseconds * 1_000_000)) if block_milliseconds != 0 else None
-        try:
-            while True:
-                start_time = time.time_ns()
-                if deadline is not None and start_time >= deadline:
-                    break
-
-                print(f"{client_id} time is {start_time}, deadline is {deadline}")
-
-                timeout = ((deadline - start_time) / 1_000_000_000) if deadline is not None else None
-
-                print(f"{client_id} waiting queue for keys {keys_to_ids.keys()} with timeout {timeout}")
-
-                try:
-                    queue_item = await wait_for(
-                        client_context.current_client.blocking_context.queue.get(), timeout=timeout
-                    )
-
-                    if queue_item == UnblockMessage.ERROR:
-                        print(f"{client_id} got unblock error from queue")
-                        raise ServerError(b"UNBLOCKED client unblocked via CLIENT UNBLOCK")
-                    if queue_item == UnblockMessage.TIMEOUT:
-                        print(f"{client_id} got unblock timeout from queue")
-                        raise TimeoutError()
-
-                    key = queue_item
-
-                    print(f"{client_id} got queue item for stream '{key.decode()}', recalculating context")
-                    stream_waiting_context.reset()
-                    try:
-                        if self.calculate_context(database, keys_to_ids, stream_waiting_context):
-                            return stream_waiting_context.keys_to_minimum_id
-                    except ServerWrongTypeError:
-                        continue
-                except TimeoutError:
-                    if time.time_ns() == start_time:
-                        print(f"{client_id} got timeout, sleeping for 1 ms")
-                        time.sleep(0.001)
-                    continue
-        finally:
-            self.notifications.remove_all(client_context.current_client.blocking_context)
-            client_context.current_client.blocking_context = None
-
-        return None
-
-    async def notify_deleted(self, key: bytes, in_multi: bool = False) -> None:
-        if in_multi:
-            if key in self.lazy_notification_keys:
-                if self.lazy_notification_keys[key].created_in_transaction:
-                    print(f"notified key '{key.decode()}' was created and deleted in the same transaction, removing...")
-                    del self.lazy_notification_keys[key]
-                else:
-                    print(f"marking lazy notified key '{key.decode()}' as deleted")
-                    self.lazy_notification_keys[key].deleted = True
-            else:
-                print(f"adding deleted '{key.decode()}' to lazy notification keys")
-                self.lazy_notification_keys[key] = LazyNotification(key, deleted=True, created_in_transaction=True)
-            return
-        for blocking_context in self.notifications.iter_values(key):
-            print(f"putting stream '{key.decode()}' into queue")
-            await blocking_context.queue.put(key)
-
-    async def notify(self, key: bytes, in_multi: bool = False) -> None:
-        if in_multi:
-            if key in self.lazy_notification_keys:
-                print(f"notified lazy key '{key.decode()}' was recreated, marking as not deleted")
-                self.lazy_notification_keys[key].deleted = False
-            else:
-                print(f"adding '{key.decode()}' to lazy notification keys")
-                self.lazy_notification_keys[key] = LazyNotification(key, deleted=False, created_in_transaction=in_multi)
-            return
-        for blocking_context in self.notifications.iter_values(key):
-            print(f"putting '{key.decode()}' into queue")
-            await blocking_context.queue.put(key)
-
-    async def notify_safely(self, database: Database, key: bytes, in_multi: bool = False) -> None:
-        try:
-            if self.has_key(database, key):
-                await self.notify(key, in_multi=in_multi)
-        except ServerWrongTypeError:
-            pass
-
-    async def notify_lazy(self, database: Database) -> None:
-        while self.lazy_notification_keys:
-            key, lazy_notification = self.lazy_notification_keys.popitem(last=False)
-
-            if (not lazy_notification.deleted) and (
-                (key not in database.content.data) or not self.is_instance(database.content.data[key].value)
-            ):
-                print(f"lazy key '{key.decode()}' not found, continue...")
-                continue
-            for blocking_context in self.notifications.iter_values(key):
-                print(f"putting '{key.decode()}' into queue")
-                await blocking_context.queue.put(key)
-
-
-@dataclass
-class BlockingManager:
-    list_blocking_manager: ListBlockingManager = field(default_factory=ListBlockingManager)
-    sorted_set_blocking_manager: SortedSetBlockingManager = field(default_factory=SortedSetBlockingManager)
-    stream_blocking_manager: StreamBlockingManager = field(default_factory=StreamBlockingManager)
-
-    async def notify_safely(
-        self,
-        database: Database,
-        key: bytes,
-        in_multi: bool = False,
-    ) -> None:
-        await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
-        await self.sorted_set_blocking_manager.notify_safely(database, key, in_multi=in_multi)
-        await self.stream_blocking_manager.notify_safely(database, key, in_multi=in_multi)
-
-    async def notify_safely_all(self, database: Database, in_multi: bool = False) -> None:
-        for key in database.keys():
-            await self.list_blocking_manager.notify_safely(database, key, in_multi=in_multi)
-            await self.stream_blocking_manager.notify_safely(database, key, in_multi=in_multi)
-
-    def total_key_blocking(self) -> int:
-        return len(
-            self.list_blocking_manager.notifications.mapping.keys()
-            | self.sorted_set_blocking_manager.notifications.mapping.keys()
-            | self.stream_blocking_manager.notifications.mapping.keys()
-        )
-
-    def total_key_blocking_on_no_keys(self) -> int:
-        total_number = 0
-
-        for blocking_contexts in self.stream_blocking_manager.notifications.mapping.values():
-            has_xreadgroup = False
-            for blocking_context in blocking_contexts:
-                if blocking_context.command == b"xreadgroup":
-                    has_xreadgroup = True
-                    break
-            if has_xreadgroup:
-                total_number += 1
-
-        return total_number
 
 
 @dataclass(unsafe_hash=True)

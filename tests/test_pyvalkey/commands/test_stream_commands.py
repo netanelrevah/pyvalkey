@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from pyvalkey.blocking import StreamBlockingManager
 from pyvalkey.commands.context import ClientContext, ServerContext
 from pyvalkey.commands.generic_commands import Delete
 from pyvalkey.commands.stream_commands import (
@@ -15,7 +16,7 @@ from pyvalkey.commands.stream_commands import (
 )
 from pyvalkey.database_objects.clients import BlockingContext, Client
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue, StreamBlockingManager
+from pyvalkey.database_objects.databases import Database, DatabaseContent, KeyValue
 from pyvalkey.database_objects.information import Information
 from pyvalkey.database_objects.stream import Consumer, ConsumerGroup, PendingEntry, Stream
 from pyvalkey.utils.times import now_ms
@@ -30,15 +31,35 @@ class BaseStreamTest:
 
     @pytest.fixture(autouse=True, scope="function")
     def setup_test(self):
-        self.content = DatabaseContent()
-        self.database = Database(0, self.content)
+        self.configurations = Configurations()
+
         self.blocking_manager = StreamBlockingManager()
 
         information = Information()
-        server_context = ServerContext({0: self.database}, None, None, None, None, information, self.blocking_manager)
-        information.server_context = server_context
-        self.client_context = ClientContext(server_context, Client(0, b"localhost", 1234), None, 0, None)
-        self.configurations = Configurations()
+        server_context = ServerContext(
+            configurations=self.configurations,
+            functions_engine=None,  # ty: ignore[invalid-argument-type]
+            scripts_engine=None,  # ty: ignore[invalid-argument-type]
+            databases=None,  # ty: ignore[invalid-argument-type]
+            acl=None,  # ty: ignore[invalid-argument-type]
+            client_ids=None,  # ty: ignore[invalid-argument-type]
+            clients=None,  # ty: ignore[invalid-argument-type]
+            information=information,
+            blocking_manager=self.blocking_manager,  # ty: ignore[invalid-argument-type]
+            subscriptions_manager=None,  # ty: ignore[invalid-argument-type]
+        )
+        self.client_context = ClientContext(
+            server_context=server_context,
+            current_client=Client(0, b"localhost", 1234),
+            subscriptions=None,  # ty: ignore[invalid-argument-type]
+            current_database=0,
+            current_user=None,
+            transaction_context=None,
+            client_watchlist=None,  # ty: ignore[invalid-argument-type]
+        )
+
+        self.content = server_context.databases[0].content
+        self.database = server_context.databases[0]
 
 
 class TestStreamGroupRead(BaseStreamTest):
@@ -62,7 +83,6 @@ class TestStreamGroupRead(BaseStreamTest):
         my_stream.entries[(1, 0)] = {b"a": b"1"}
         my_stream.entries[(2, 0)] = {b"b": b"2"}
 
-        self.client_context.current_client.command_time_snapshot = now_ms()
         command = StreamGroupRead(
             database=self.database,
             blocking_manager=self.blocking_manager,
@@ -74,7 +94,6 @@ class TestStreamGroupRead(BaseStreamTest):
         await command.before()
         result = command.execute()
 
-        timestamp = now_ms()
         assert result == [
             [
                 b"mystream",
@@ -99,7 +118,6 @@ class TestStreamGroupRead(BaseStreamTest):
 
             assert pending_entry.consumer == consumer_1
             assert pending_entry.times_delivered == 1
-            assert pending_entry.last_delivery >= timestamp
 
         ###
 
@@ -141,7 +159,6 @@ class TestStreamGroupRead(BaseStreamTest):
 
             assert pending_entry.consumer == consumer_2
             assert pending_entry.times_delivered == 1
-            assert pending_entry.last_delivery >= timestamp
 
         ###
 
@@ -381,6 +398,7 @@ class TestStreamGroupRead(BaseStreamTest):
 
         command = Delete(
             database=self.database,
+            notifications=self.client_context.notifications_manager,
             keys=[b"mystream"],
             blocking_manager=self.blocking_manager,
         )

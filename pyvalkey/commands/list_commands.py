@@ -1,18 +1,20 @@
 from dataclasses import field
 from enum import Enum
 
+from pyvalkey.blocking import ListBlockingManager
 from pyvalkey.commands.context import ClientContext
 from pyvalkey.commands.core import Command
-from pyvalkey.commands.dependencies import dependency
 from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
 from pyvalkey.commands.router import command
-from pyvalkey.commands.string_commands import DatabaseCommand
 from pyvalkey.commands.utils import parse_range_parameters
 from pyvalkey.consts import LONG_MAX
-from pyvalkey.database_objects.databases import Database, ListBlockingManager
+from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import ServerError
 from pyvalkey.database_objects.information import Information
+from pyvalkey.enums import NotificationType
+from pyvalkey.notifications import NotificationsManager
 from pyvalkey.resp import RESP_OK, ArrayNone, ValueType
+from pyvalkey.utils.dependencies import dependency
 
 
 class DirectionMode(Enum):
@@ -20,8 +22,30 @@ class DirectionMode(Enum):
     AFTER = b"AFTER"
 
 
-@command(b"blpop", {b"list", b"fast"}, flags={b"write"})
+@command(b"blpop", {b"blocking", b"list", b"slow"}, flags={b"blocking", b"write"})
 class ListBlockingLeftPop(Command):
+    """
+    summary: >-
+      Removes and returns the first element in a list. Blocks until an element is available otherwise. Deletes the
+      list if the last element was popped.
+    complexity: O(N) where N is the number of provided keys.
+    since: 2.0.0
+    function: blpopCommand
+    reply_schema:
+      oneOf:
+      - type: 'null'
+        description: No element could be popped and timeout expired
+      - description: The key from which the element was popped and the value of the popped element
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: List key from which the element was popped.
+          type: string
+        - description: Value of the popped element.
+          type: string
+    """
+
     client_context: ClientContext = dependency()
     database: Database = dependency()
     information: Information = dependency()
@@ -47,8 +71,29 @@ class ListBlockingLeftPop(Command):
         return [self._key, value]
 
 
-@command(b"brpop", {b"write", b"list", b"fast"})
+@command(b"brpop", {b"blocking", b"list", b"slow"}, flags={b"blocking", b"write"})
 class ListBlockingRightPop(Command):
+    """
+    summary: >-
+      Removes and returns the last element in a list. Blocks until an element is available otherwise. Deletes the
+      list if the last element was popped.
+    complexity: O(N) where N is the number of provided keys.
+    since: 2.0.0
+    function: brpopCommand
+    reply_schema:
+      oneOf:
+      - description: No element could be popped and the timeout expired.
+        type: 'null'
+      - type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: 'The name of the key where an element was popped '
+          type: string
+        - description: The value of the popped element
+          type: string
+    """
+
     client_context: ClientContext = dependency()
     database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
@@ -77,8 +122,34 @@ class Direction(Enum):
     RIGHT = b"RIGHT"
 
 
-@command(b"blmpop", {b"write", b"list", b"fast"})
+@command(b"blmpop", {b"blocking", b"list", b"slow"}, flags={b"blocking", b"write"})
 class ListBlockingMultiplePop(Command):
+    """
+    summary: >-
+      Pops the first element from one of multiple lists. Blocks until an element is available otherwise. Deletes
+      the list if the last element was popped.
+    complexity: >-
+      O(N+M) where N is the number of provided keys and M is the number of elements returned.
+    since: 7.0.0
+    function: blmpopCommand
+    reply_schema:
+      oneOf:
+      - description: Operation timed-out
+        type: 'null'
+      - description: The key from which elements were popped and the popped elements
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: List key from which elements were popped.
+          type: string
+        - description: Array of popped elements.
+          type: array
+          minItems: 1
+          items:
+            type: string
+    """
+
     client_context: ClientContext = dependency()
     database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
@@ -108,8 +179,33 @@ class ListBlockingMultiplePop(Command):
         return [self._key, values]
 
 
-@command(b"lmpop", {b"write", b"list", b"fast"})
+@command(b"lmpop", {b"list", b"slow"}, flags={b"write"})
 class ListMultiplePop(Command):
+    """
+    summary: >-
+      Returns multiple elements from a list after removing them. Deletes the list if the last element was popped.
+    complexity: >-
+      O(N+M) where N is the number of provided keys and M is the number of elements returned.
+    since: 7.0.0
+    function: lmpopCommand
+    reply_schema:
+      anyOf:
+      - description: If no element could be popped.
+        type: 'null'
+      - description: List key from which elements were popped.
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+        - description: Name of the key from which elements were popped.
+          type: string
+        - description: Array of popped elements.
+          type: array
+          minItems: 1
+          items:
+            type: string
+    """
+
     client_context: ClientContext = dependency()
     database: Database = dependency()
 
@@ -133,14 +229,29 @@ class ListMultiplePop(Command):
         return [key, values]
 
 
-@command(b"brpoplpush", {b"write", b"list", b"fast"})
+@command(b"brpoplpush", {b"blocking", b"list", b"slow"}, flags={b"blocking", b"denyoom", b"write"})
 class ListBlockingRightPopLeftPush(Command):
+    """
+    summary: >-
+      Pops an element from a list, pushes it to another list and returns it. Blocks until an element is available
+      otherwise. Deletes the list if the last element was popped.
+    complexity: O(1)
+    since: 2.2.0
+    function: brpoplpushCommand
+    reply_schema:
+      oneOf:
+      - type: string
+        description: The element being popped from source and pushed to destination.
+      - type: 'null'
+        description: Timeout is reached.
+    """
+
     client_context: ClientContext = dependency()
     database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
-    source: bytes = positional_parameter()
-    destination: bytes = positional_parameter()
+    source: bytes = positional_parameter(key_mode=b"RW")
+    destination: bytes = positional_parameter(key_mode=b"RW")
     timeout: int = positional_parameter()
 
     _key: bytes | None = field(default=None, init=False)
@@ -165,15 +276,31 @@ class ListBlockingRightPopLeftPush(Command):
             await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"blmove", {b"write", b"list", b"fast"})
+@command(b"blmove", {b"blocking", b"list", b"slow"}, flags={b"blocking", b"denyoom", b"write"})
 class ListBlockingMove(Command):
+    """
+    summary: >-
+      Pops an element from a list, pushes it to another list and returns it. Blocks until an element is available
+      otherwise. Deletes the list if the last element was moved.
+    complexity: O(1)
+    since: 6.2.0
+    function: blmoveCommand
+    reply_schema:
+      oneOf:
+      - description: The popped element.
+        type: string
+      - description: >-
+          Operation timed-out or the command is issued from a transaction or a script and the source does not exist.
+        type: 'null'
+    """
+
     client_context: ClientContext = dependency()
     database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
     information: Information = dependency()
 
-    source: bytes = positional_parameter()
-    destination: bytes = positional_parameter()
+    source: bytes = positional_parameter(key_mode=b"RW")
+    destination: bytes = positional_parameter(key_mode=b"RW")
     source_direction: Direction = positional_parameter()
     destination_direction: Direction = positional_parameter()
     timeout: int = positional_parameter()
@@ -204,13 +331,28 @@ class ListBlockingMove(Command):
             await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"lmove", {b"write", b"list", b"fast"})
+@command(b"lmove", {b"list", b"slow"}, flags={b"denyoom", b"write"})
 class ListMove(Command):
+    """
+    summary: >-
+      Returns an element after popping it from one list and pushing it to another. Deletes the list if the last
+      element was moved.
+    complexity: O(1)
+    since: 6.2.0
+    function: lmoveCommand
+    reply_schema:
+      oneOf:
+      - description: The element being popped and pushed.
+        type: string
+      - description: Source does not exist.
+        type: 'null'
+    """
+
     database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
-    source: bytes = positional_parameter()
-    destination: bytes = positional_parameter()
+    source: bytes = positional_parameter(key_mode=b"RW")
+    destination: bytes = positional_parameter(key_mode=b"RW")
     source_direction: Direction = positional_parameter()
     destination_direction: Direction = positional_parameter()
 
@@ -233,9 +375,25 @@ class ListMove(Command):
         await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"lindex", {b"read", b"list", b"slow"})
-class ListIndex(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"lindex", {b"list", b"read", b"slow"}, flags={b"readonly"})
+class ListIndex(Command):
+    """
+    summary: Returns an element from a list by its index.
+    complexity: >-
+      O(N) where N is the number of elements to traverse to get to the element at index. This makes asking for the
+      first or the last element of the list O(1).
+    since: 1.0.0
+    function: lindexCommand
+    reply_schema:
+      oneOf:
+      - type: 'null'
+        description: Index is out of range
+      - description: The requested element
+        type: string
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"R")
     index: int = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -247,9 +405,29 @@ class ListIndex(DatabaseCommand):
         return value[self.index]
 
 
-@command(b"linsert", {b"write", b"list", b"slow"})
-class ListInsert(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"linsert", {b"list", b"slow"}, flags={b"denyoom", b"write"})
+class ListInsert(Command):
+    """
+    summary: Inserts an element before or after another element in a list.
+    complexity: >-
+      O(N) where N is the number of elements to traverse before seeing the value pivot. This means that inserting
+      somewhere on the left end on the list (head) can be considered O(1) and inserting somewhere on the right end
+      (tail) is O(N).
+    since: 2.2.0
+    function: linsertCommand
+    reply_schema:
+      oneOf:
+      - description: List length after a successful insert operation.
+        type: integer
+        minimum: 1
+      - description: In case key doesn't exist.
+        const: 0
+      - description: When the pivot wasn't found.
+        const: -1
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     direction: DirectionMode = positional_parameter()
     pivot: bytes = positional_parameter()
     element: bytes = positional_parameter()
@@ -268,9 +446,20 @@ class ListInsert(DatabaseCommand):
         return len(list_value)
 
 
-@command(b"lset", {b"write", b"list", b"slow"})
-class ListSet(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"lset", {b"list", b"slow"}, flags={b"denyoom", b"write"})
+class ListSet(Command):
+    """
+    summary: Sets the value of an element in a list by its index.
+    complexity: >-
+      O(N) where N is the length of the list. Setting either the first or the last element of the list is O(1).
+    since: 1.0.0
+    function: lsetCommand
+    reply_schema:
+      const: OK
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     index: int = positional_parameter()
     element: bytes = positional_parameter()
 
@@ -287,17 +476,44 @@ class ListSet(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"llen", {b"read", b"list", b"fast"})
-class ListLength(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"llen", {b"list", b"read"}, flags={b"fast", b"readonly"})
+class ListLength(Command):
+    """
+    summary: Returns the length of a list.
+    complexity: O(1)
+    since: 1.0.0
+    function: llenCommand
+    reply_schema:
+      description: List length.
+      type: integer
+      minimum: 0
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         return len(self.database.list_database.get_value_or_empty(self.key))
 
 
-@command(b"lrange", {b"read", b"list", b"slow"})
-class ListRange(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"lrange", {b"list", b"read", b"slow"}, flags={b"readonly"})
+class ListRange(Command):
+    """
+    summary: Returns a range of elements from a list.
+    complexity: >-
+      O(S+N) where S is the distance of start offset from HEAD for small lists, from nearest end (HEAD or TAIL)
+      for large lists; and N is the number of elements in the specified range.
+    since: 1.0.0
+    function: lrangeCommand
+    reply_schema:
+      description: List of elements in the specified range
+      type: array
+      items:
+        type: string
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"R")
     start: int = positional_parameter()
     stop: int = positional_parameter()
 
@@ -305,9 +521,20 @@ class ListRange(DatabaseCommand):
         return self.database.list_database.get_value_or_empty(self.key)[parse_range_parameters(self.start, self.stop)]
 
 
-@command(b"ltrim", {b"read", b"list", b"slow"})
-class ListTrim(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"ltrim", {b"list", b"slow"}, flags={b"write"})
+class ListTrim(Command):
+    """
+    summary: >-
+      Removes elements from both ends of a list. Deletes the list if all elements were trimmed.
+    complexity: O(N) where N is the number of elements to be removed by the operation.
+    since: 1.0.0
+    function: ltrimCommand
+    reply_schema:
+      const: OK
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     start: int = positional_parameter()
     stop: int = positional_parameter()
 
@@ -319,9 +546,29 @@ class ListTrim(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"lpop", {b"write", b"list", b"fast"})
-class ListPop(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"lpop", {b"list"}, flags={b"fast", b"write"})
+class ListPop(Command):
+    """
+    summary: >-
+      Returns and removes one or more elements from the beginning of a list. Deletes the list if the last element
+      was popped.
+    complexity: O(N) where N is the number of elements returned
+    since: 1.0.0
+    function: lpopCommand
+    reply_schema:
+      oneOf:
+      - description: Key does not exist.
+        type: 'null'
+      - description: In case `count` argument was not given, the value of the first element.
+        type: string
+      - description: In case `count` argument was given, a list of popped elements
+        type: array
+        items:
+          type: string
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     count: int | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
@@ -338,9 +585,32 @@ class ListPop(DatabaseCommand):
         return value
 
 
-@command(b"lpos", {b"read", b"list", b"slow"})
-class ListPosition(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"lpos", {b"list", b"read", b"slow"}, flags={b"readonly"})
+class ListPosition(Command):
+    """
+    summary: Returns the index of matching elements in a list.
+    complexity: >-
+      O(N) where N is the number of elements in the list, for the average case. When searching for elements near
+      the head or the tail of the list, or when the MAXLEN option is provided, the command may run in constant time.
+    since: 6.0.6
+    function: lposCommand
+    reply_schema:
+      anyOf:
+      - description: In case there is no matching element
+        type: 'null'
+      - description: An integer representing the matching element
+        type: integer
+      - description: >-
+          If the COUNT option is given, an array of integers representing the matching elements (empty if there
+          are no matches)
+        type: array
+        uniqueItems: true
+        items:
+          type: integer
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"R")
     element: bytes = positional_parameter()
     rank: int | None = keyword_parameter(token=b"RANK", default=None)
     number_of_matches: int | None = keyword_parameter(token=b"COUNT", default=None)
@@ -390,8 +660,21 @@ class ListPosition(DatabaseCommand):
         return indexes
 
 
-@command(b"lpush", {b"list", b"fast"}, flags={b"write", b"denyoom"})
-class ListPush(DatabaseCommand):
+@command(b"lpush", {b"list"}, flags={b"denyoom", b"fast", b"write"})
+class ListPush(Command):
+    """
+    summary: Prepends one or more elements to a list. Creates the key if it doesn't exist.
+    complexity: >-
+      O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.
+    since: 1.0.0
+    function: lpushCommand
+    reply_schema:
+      description: Length of the list after the push operations.
+      type: integer
+    """
+
+    database: Database = dependency()
+    notification: NotificationsManager = dependency()
     information: Information = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
@@ -404,14 +687,29 @@ class ListPush(DatabaseCommand):
         for v in self.values:
             a_list.insert(0, v)
             self.information.rdb_changes_since_last_save += 1
+
+        self.notification.notify(NotificationType.LIST, b"lpush", self.key)
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"lpushx", {b"list", b"fast"}, flags={b"write", b"denyoom"})
-class ListPushIfExists(DatabaseCommand):
+@command(b"lpushx", {b"list"}, flags={b"denyoom", b"fast", b"write"})
+class ListPushIfExists(Command):
+    """
+    summary: Prepends one or more elements to a list only when the list exists.
+    complexity: >-
+      O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.
+    since: 2.2.0
+    function: lpushxCommand
+    reply_schema:
+      type: integer
+      description: The length of the list after the push operation.
+      minimum: 0
+    """
+
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"W")
@@ -431,29 +729,73 @@ class ListPushIfExists(DatabaseCommand):
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"rpop", {b"write", b"list", b"fast"})
-class ListRightPop(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"rpop", {b"list"}, flags={b"fast", b"write"})
+class ListRightPop(Command):
+    """
+    summary: >-
+      Returns and removes one or more elements from the end of a list. Deletes the list if the last element was
+      popped.
+    complexity: O(N) where N is the number of elements returned
+    since: 1.0.0
+    function: rpopCommand
+    reply_schema:
+      oneOf:
+      - type: 'null'
+        description: Key does not exist.
+      - type: string
+        description: When 'COUNT' was not given, the value of the last element.
+      - type: array
+        description: When 'COUNT' was given, list of popped elements.
+        items:
+          type: string
+    """
+
+    database: Database = dependency()
+    notification: NotificationsManager = dependency()
+
+    key: bytes = positional_parameter(key_mode=b"RW")
     count: int | None = positional_parameter(default=None)
 
     def execute(self) -> ValueType:
         if self.count is not None and self.count < 0:
             raise ServerError(b"ERR value is out of range, must be positive")
 
-        a_list = self.database.list_database.get_value_or_create(self.key)
-
-        if not a_list:
+        value = self.database.list_database.get_value_or_none(self.key)
+        if not value or (self.count is not None and self.count == 0):
             return None if (self.count is None) else ArrayNone
+
+        self.notification.notify(NotificationType.LIST, b"rpop", self.key)
+        removed: ValueType
         if self.count is not None:
-            return [a_list.pop(-1) for _ in range(min(len(a_list), self.count))]
-        return a_list.pop(-1)
+            removed = [value.pop(-1) for _ in range(min(len(value), self.count))]
+        else:
+            removed = value.pop(-1)
+        if len(value) == 0:
+            self.notification.notify(NotificationType.GENERIC, b"del", self.key)
+        return removed
 
 
-@command(b"rpoplpush", {b"write", b"list", b"fast"})
-class ListRightPopLeftPush(DatabaseCommand):
+@command(b"rpoplpush", {b"list", b"slow"}, flags={b"denyoom", b"write"})
+class ListRightPopLeftPush(Command):
+    """
+    summary: >-
+      Returns the last element of a list after removing and pushing it to another list. Deletes the list if the
+      last element was popped.
+    complexity: O(1)
+    since: 1.2.0
+    function: rpoplpushCommand
+    reply_schema:
+      oneOf:
+      - type: string
+        description: The element being popped and pushed.
+      - type: 'null'
+        description: Source list is empty.
+    """
+
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
-    source: bytes = positional_parameter()
-    destination: bytes = positional_parameter()
+    source: bytes = positional_parameter(key_mode=b"RW")
+    destination: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
         source_value = self.database.list_database.get_value_or_none(self.source)
@@ -469,9 +811,22 @@ class ListRightPopLeftPush(DatabaseCommand):
         await self.blocking_manager.notify(self.destination, in_multi=in_multi)
 
 
-@command(b"lrem", {b"write", b"list", b"slow"})
-class ListRemove(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"lrem", {b"list", b"slow"}, flags={b"write"})
+class ListRemove(Command):
+    """
+    summary: Removes elements from a list. Deletes the list if the last element was removed.
+    complexity: >-
+      O(N+M) where N is the length of the list and M is the number of elements removed.
+    since: 1.0.0
+    function: lremCommand
+    reply_schema:
+      description: The number of removed elements.
+      type: integer
+      minimum: 0
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     count: int = positional_parameter()
     element: bytes = positional_parameter()
 
@@ -497,11 +852,26 @@ class ListRemove(DatabaseCommand):
         return deleted
 
 
-@command(b"rpush", {b"write", b"list", b"fast"})
-class ListPushAtTail(DatabaseCommand):
+@command(b"rpush", {b"list"}, flags={b"denyoom", b"fast", b"write"})
+class ListPushAtTail(Command):
+    """
+    summary: Appends one or more elements to a list. Creates the key if it doesn't exist.
+    complexity: >-
+      O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.
+    since: 1.0.0
+    function: rpushCommand
+    reply_schema:
+      description: Length of the list after the push operations.
+      type: integer
+      minimum: 1
+    """
+
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
-    key: bytes = positional_parameter()
+    notification: NotificationsManager = dependency()
+
+    key: bytes = positional_parameter(key_mode=b"RW")
     values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -509,17 +879,32 @@ class ListPushAtTail(DatabaseCommand):
 
         for v in self.values:
             a_list.append(v)
+
+        self.notification.notify(NotificationType.LIST, b"rpush", self.key)
         return len(a_list)
 
     async def after(self, in_multi: bool = False) -> None:
         await self.blocking_manager.notify(self.key, in_multi=in_multi)
 
 
-@command(b"rpushx", {b"write", b"list", b"fast"})
-class ListPushAtTailIfExists(DatabaseCommand):
+@command(b"rpushx", {b"list"}, flags={b"denyoom", b"fast", b"write"})
+class ListPushAtTailIfExists(Command):
+    """
+    summary: Appends one or more elements to a list only when the list exists.
+    complexity: >-
+      O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.
+    since: 2.2.0
+    function: rpushxCommand
+    reply_schema:
+      type: integer
+      description: Length of the list after the push operation.
+      minimum: 0
+    """
+
+    database: Database = dependency()
     blocking_manager: ListBlockingManager = dependency()
 
-    key: bytes = positional_parameter()
+    key: bytes = positional_parameter(key_mode=b"RW")
     values: list[bytes] = positional_parameter()
 
     def execute(self) -> ValueType:

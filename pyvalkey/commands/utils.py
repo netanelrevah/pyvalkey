@@ -136,7 +136,7 @@ def set_bit_to_bytes(value: bytes, offset: int, bit_value: bool) -> bytes:
     return new_value[:bytes_offset] + bytes([new_byte]) + new_value[bytes_offset + 1 :]
 
 
-def _decrease_entry_id(entry_id: EntryID) -> EntryID:
+def decrease_entry_id(entry_id: EntryID) -> EntryID:
     timestamp, sequence = entry_id
 
     if sequence == 0:
@@ -151,10 +151,10 @@ def _decrease_entry_id(entry_id: EntryID) -> EntryID:
 
 
 @overload
-def _parse_strict_entry_id(stream_id: bytes) -> tuple[int, int | None]: ...
+def parse_strict_entry_id(stream_id: bytes) -> tuple[int, int | None]: ...
 @overload
-def _parse_strict_entry_id(stream_id: bytes, sequence_fill: int) -> tuple[int, int]: ...
-def _parse_strict_entry_id(stream_id: bytes, sequence_fill: int | None = None) -> tuple[int, int | None]:
+def parse_strict_entry_id(stream_id: bytes, sequence_fill: int) -> tuple[int, int]: ...
+def parse_strict_entry_id(stream_id: bytes, sequence_fill: int | None = None) -> tuple[int, int | None]:
     if b"-" not in stream_id:
         return int(stream_id), sequence_fill
     timestamp, sequence = stream_id.split(b"-")
@@ -172,5 +172,5 @@ def _parse_entry_id(stream_id: bytes) -> tuple[int | None, int | None]:
     return int(timestamp), int(sequence)
 
 
-def _format_entry_id(entry_id: EntryID) -> bytes:
+def format_entry_id(entry_id: EntryID) -> bytes:
     return f"{entry_id[0]}-{entry_id[1]}".encode()

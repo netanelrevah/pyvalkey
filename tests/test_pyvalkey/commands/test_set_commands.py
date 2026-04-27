@@ -4,6 +4,7 @@ import pytest
 
 from pyvalkey.commands.set_commands import SetAreMembers, SetIntersectionCardinality, SetRandomMember
 from pyvalkey.commands.string_commands import SetMultiple
+from pyvalkey.database_objects.configurations import Configurations
 from pyvalkey.database_objects.databases import Database, KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongNumberOfArgumentsError
 
@@ -75,7 +76,7 @@ class TestSetRandomMember:
         assert command.count == 100
 
     def test_execute(self):
-        database = Database(0)
+        database = Database(0, Configurations(), Mock())
         database.set_database.set_key_value(KeyValue(b"ss", {b"a"}))
 
         command = SetRandomMember(database=database, key=b"ss", count=100)

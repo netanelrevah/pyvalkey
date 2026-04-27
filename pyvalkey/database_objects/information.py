@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import gc
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from psutil import Process
+
 from pyvalkey.database_objects.utils import to_bytes
+from pyvalkey.utils.times import now_ms
 
 if TYPE_CHECKING:
     from pyvalkey.commands.context import ServerContext
@@ -31,6 +35,7 @@ class CommandStatistics:
 
 @dataclass
 class Information:
+    start_time: float = field(default_factory=now_ms)
     server_version: bytes = b"255.255.255"
     arch_bits: bytes = b"64"
     cluster_enabled: bool = False
@@ -39,6 +44,7 @@ class Information:
     rdb_changes_since_last_save: int = 0
     commands_statistics: dict[bytes, CommandStatistics] = field(default_factory=dict)
     error_statistics: Counter[bytes] = field(default_factory=Counter)
+    lazyfreed_objects: int = 0
 
     _server_context: ServerContext | None = None
 
@@ -122,12 +128,45 @@ class Information:
 
         return b"\r\n".join(info)
 
+    @classmethod
+    def _human_readable_bytes(cls, bytes_value: float) -> str:
+        for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
+            if abs(bytes_value) < 1024.0:  # noqa: PLR2004
+                return f"{bytes_value:3.2f}{unit}"
+            bytes_value /= 1024.0
+        return f"{bytes_value:.2f}Y"
+
+    def memory(self) -> bytes:
+        gc.collect()
+
+        current_process = Process()
+
+        print(
+            f"Memory info: VMS={self._human_readable_bytes(current_process.memory_full_info().vms)}, "
+            f"RSS={self._human_readable_bytes(current_process.memory_full_info().rss)}"
+        )
+
+        num_cached = len(self._server_context.scripts_engine.registered_scripts) if self._server_context else 0
+
+        info = [
+            b"# Memory",
+            f"used_memory:{current_process.memory_full_info().vms}".encode(),
+            f"used_memory_rss:{current_process.memory_full_info().rss}".encode(),
+            b"lazyfree_pending_objects:0",
+            f"lazyfreed_objects:{self.lazyfreed_objects}".encode(),
+            f"number_of_cached_scripts:{num_cached}".encode(),
+        ]
+        return b"\r\n".join(info)
+
     def sections(self, sections: list[bytes] | None) -> bytes:
+        sections = [s.lower() for s in sections] if sections else sections
         info = []
         if not sections or b"all" in sections or b"server" in sections:
             info.append(self.server())
         if not sections or b"all" in sections or b"clients" in sections:
             info.append(self.clients())
+        if not sections or b"all" in sections or b"memory" in sections:
+            info.append(self.memory())
         if not sections or b"all" in sections or b"persistence" in sections:
             info.append(self.persistence())
         if not sections or b"all" in sections or b"stats" in sections:
@@ -142,3 +181,9 @@ class Information:
             info.append(self.keyspace())
 
         return b"\r\n\r\n".join(info)
+
+    def reset_stats(self) -> None:
+        self.commands_statistics = {}
+        self.rdb_changes_since_last_save = 0
+        self.error_statistics = Counter()
+        self.lazyfreed_objects = 0

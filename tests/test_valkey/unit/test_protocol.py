@@ -2,9 +2,12 @@ from datetime import datetime, timedelta
 from socket import socket
 
 import pytest
-import valkey
 from parametrization import Parametrization
-from valkey import ResponseError
+
+from tests.utils import assert_raises
+from tests.valkey_test_client import ValkeyError, ValkeyTestClient
+
+pytestmark = pytest.mark.protocol
 
 
 def test_handle_an_empty_query(connection: socket):
@@ -51,9 +54,9 @@ def test_multi_bulk_request_not_followed_by_bulk_arguments(connection: socket):
     assert a == b"-Protocol error: expected '$', got 'f'\r\n"
 
 
-def test_generic_wrong_number_of_args(s: valkey.Valkey):
-    with pytest.raises(ResponseError, match="wrong number of arguments for 'ping' command"):
-        s.execute_command("ping", "x", "y", "z")
+def test_generic_wrong_number_of_args(r: ValkeyTestClient):
+    with assert_raises(ValkeyError, "wrong number of arguments for 'ping' command"):
+        r.run("ping", "x", "y", "z")
 
 
 @Parametrization.autodetect_parameters()
@@ -89,5 +92,5 @@ def test_protocol_desync_regression_test(connection: socket, sequence: bytes):
 """
 
 
-def test_raw_protocol_response_multiline(s: valkey.Valkey):
+def test_raw_protocol_response_multiline(r: ValkeyTestClient):
     pass

@@ -1,18 +1,26 @@
+from __future__ import annotations
+
 from dataclasses import field
 from enum import Enum
 from math import isinf, isnan
+from typing import TYPE_CHECKING, cast
 
-from pyvalkey.commands.core import DatabaseCommand
-from pyvalkey.commands.dependencies import dependency
-from pyvalkey.commands.parameters import keyword_parameter, positional_parameter
+from pyvalkey.commands.core import Command
+from pyvalkey.commands.parameters import flag_parameter, keyword_parameter, positional_parameter
 from pyvalkey.commands.parsers import CommandMetadata
 from pyvalkey.commands.router import command
 from pyvalkey.commands.utils import increment_bytes_value_as_float, parse_range_parameters
 from pyvalkey.consts import LONG_LONG_MIN, LONG_MAX, LONG_MIN, UINT32_MAX
-from pyvalkey.database_objects.databases import Database, DatabaseBase, KeyValue, StreamBlockingManager
+from pyvalkey.database_objects.databases import KeyValue
 from pyvalkey.database_objects.errors import ServerError, ServerWrongTypeError
+from pyvalkey.enums import NotificationType
 from pyvalkey.resp import RESP_OK, ValueType
+from pyvalkey.utils.dependencies import dependency
 from pyvalkey.utils.times import now_ms
+
+if TYPE_CHECKING:
+    from pyvalkey.blocking import StreamBlockingManager
+    from pyvalkey.database_objects.databases import Database, DatabaseBase
 
 
 def increment_by_int(database: Database, key: bytes, increment: int = 1) -> int:
@@ -44,9 +52,23 @@ def increment_by(database: Database, key: bytes, increment: int | float = 1) -> 
         raise ValueError()
 
 
-@command(b"append", {b"write", b"string", b"fast"})
-class Append(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"append", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class Append(Command):
+    """
+    summary: Appends a string to the value of a key. Creates the key if it doesn't exist.
+    complexity: >-
+      O(1). The amortized time complexity is O(1) assuming the appended value is small and the already present value
+      is of any size, since the dynamic string library used by the server will double the free space available on
+      every reallocation.
+    since: 2.0.0
+    function: appendCommand
+    reply_schema:
+      type: integer
+      description: The length of the string after the append operation.
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -56,17 +78,41 @@ class Append(DatabaseCommand):
         return len(value)
 
 
-@command(b"decr", {b"write", b"string", b"fast"})
-class Decrement(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"decr", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class Decrement(Command):
+    """
+    summary: >-
+      Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn't exist.
+    complexity: O(1)
+    since: 1.0.0
+    function: decrCommand
+    reply_schema:
+      type: integer
+      description: The value of the key after decrementing it.
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
         return increment_by(self.database, self.key, -1)
 
 
-@command(b"decrby", {b"write", b"string", b"fast"})
-class DecrementBy(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"decrby", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class DecrementBy(Command):
+    """
+    summary: >-
+      Decrements the integer value of a key by a number. Uses 0 as initial value if the key doesn't exist.
+    complexity: O(1)
+    since: 1.0.0
+    function: decrbyCommand
+    reply_schema:
+      type: integer
+      description: The value of the key after decrementing it.
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     decrement: int = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -76,16 +122,44 @@ class DecrementBy(DatabaseCommand):
         return increment_by(self.database, self.key, self.decrement * -1)
 
 
-@command(b"get", {b"read", b"string", b"fast"})
-class Get(DatabaseCommand):
+@command(b"get", {b"read", b"string"}, flags={b"fast", b"readonly"})
+class Get(Command):
+    """
+    summary: Returns the string value of a key.
+    complexity: O(1)
+    since: 1.0.0
+    function: getCommand
+    reply_schema:
+      oneOf:
+      - description: The value of the key.
+        type: string
+      - description: Key does not exist.
+        type: 'null'
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
         return self.database.string_database.get_value_or_none(self.key)
 
 
-@command(b"getdel", {b"read", b"string", b"fast"})
-class GetDelete(DatabaseCommand):
+@command(b"getdel", {b"string"}, flags={b"fast", b"write"})
+class GetDelete(Command):
+    """
+    summary: Returns the string value of a key after deleting the key.
+    complexity: O(1)
+    since: 6.2.0
+    function: getdelCommand
+    reply_schema:
+      oneOf:
+      - description: The value of the key.
+        type: string
+      - description: The key does not exist.
+        type: 'null'
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -96,19 +170,34 @@ class GetDelete(DatabaseCommand):
 
 
 @command(
-    b"getex", {b"write", b"string", b"fast"}, metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"}
+    b"getex",
+    {b"string"},
+    flags={b"fast", b"write"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
 )
-class GetExpire(DatabaseCommand):
+class GetExpire(Command):
+    """
+    summary: Returns the string value of a key after setting its expiration time.
+    complexity: O(1)
+    since: 6.2.0
+    function: getexCommand
+    reply_schema:
+      oneOf:
+      - description: The value of the key.
+        type: string
+      - description: Key does not exist.
+        type: 'null'
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"R")
     ex: int | None = keyword_parameter(flag=b"EX", default=None)
     px: int | None = keyword_parameter(flag=b"PX", default=None)
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
-    persist: bool = keyword_parameter(flag=b"PERSIST")
+    persist: bool = flag_parameter(token=b"PERSIST")
 
     def execute(self) -> ValueType:
-        print(self.ex, self.px, self.exat, self.pxat, self.persist)
-
         key_value = self.database.string_database.get_or_none(self.key)
         if key_value is None:
             return None
@@ -133,9 +222,24 @@ class GetExpire(DatabaseCommand):
         return key_value.value
 
 
-@command(b"getrange", {b"stream", b"write", b"fast"})
-class StringGetRange(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"getrange", {b"read", b"slow", b"string"}, flags={b"readonly"})
+class StringGetRange(Command):
+    """
+    summary: Returns a substring of the string stored at a key.
+    complexity: >-
+      O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned
+      length, but because creating a substring from an existing string is very cheap, it can be considered O(1)
+      for small strings.
+    since: 2.4.0
+    function: getrangeCommand
+    reply_schema:
+      type: string
+      description: >-
+        The substring of the string value stored at key, determined by the offsets start and end (both are inclusive).
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"R")
     start: int = positional_parameter()
     end: int = positional_parameter()
 
@@ -144,8 +248,22 @@ class StringGetRange(DatabaseCommand):
         return value[parse_range_parameters(self.start, self.end)]
 
 
-@command(b"getset", {b"write", b"string", b"slow"})
-class GetSet(DatabaseCommand):
+@command(b"getset", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class GetSet(Command):
+    """
+    summary: Returns the previous string value of a key after setting it to a new value.
+    complexity: O(1)
+    since: 1.0.0
+    function: getsetCommand
+    reply_schema:
+      oneOf:
+      - description: The old value stored at the key.
+        type: string
+      - description: The key does not exist.
+        type: 'null'
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     value: bytes = positional_parameter()
 
@@ -155,26 +273,62 @@ class GetSet(DatabaseCommand):
         return old_value
 
 
-@command(b"incr", {b"write", b"string", b"fast"})
-class Increment(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"incr", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class Increment(Command):
+    """
+    summary: >-
+      Increments the integer value of a key by one. Uses 0 as initial value if the key doesn't exist.
+    complexity: O(1)
+    since: 1.0.0
+    function: incrCommand
+    reply_schema:
+      description: The value of key after the increment
+      type: integer
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
         return increment_by(self.database, self.key)
 
 
-@command(b"incrby", {b"write", b"string", b"fast"})
-class IncrementBy(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"incrby", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class IncrementBy(Command):
+    """
+    summary: >-
+      Increments the integer value of a key by a number. Uses 0 as initial value if the key doesn't exist.
+    complexity: O(1)
+    since: 1.0.0
+    function: incrbyCommand
+    reply_schema:
+      type: integer
+      description: The value of the key after incrementing it.
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     increment: int = positional_parameter()
 
     def execute(self) -> ValueType:
         return increment_by(self.database, self.key, self.increment)
 
 
-@command(b"incrbyfloat", {b"write", b"string", b"fast"})
-class IncrementByFloat(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"incrbyfloat", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class IncrementByFloat(Command):
+    """
+    summary: >-
+      Increments the floating point value of a key by a number. Uses 0 as initial value if the key doesn't exist.
+    complexity: O(1)
+    since: 2.6.0
+    function: incrbyfloatCommand
+    reply_schema:
+      type: string
+      description: The value of the key after incrementing it.
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
     increment: float = positional_parameter()
 
     def execute(self) -> ValueType:
@@ -183,14 +337,59 @@ class IncrementByFloat(DatabaseCommand):
         return increment_by(self.database, self.key, self.increment)
 
 
-@command(b"lcs", {b"write", b"string", b"fast"})
-class LongestCommonSubsequence(DatabaseCommand):
-    key1: bytes = positional_parameter()
-    key2: bytes = positional_parameter()
-    length: bool = keyword_parameter(flag=b"LEN", default=False)
-    index: bool = keyword_parameter(flag=b"IDX", default=False)
+@command(b"lcs", {b"read", b"slow", b"string"}, flags={b"readonly"})
+class LongestCommonSubsequence(Command):
+    """
+    summary: Finds the longest common substring.
+    complexity: O(N*M) where N and M are the lengths of s1 and s2, respectively
+    since: 7.0.0
+    function: lcsCommand
+    reply_schema:
+      oneOf:
+      - type: string
+        description: The longest common subsequence.
+      - type: integer
+        description: The length of the longest common subsequence when 'LEN' is given.
+      - type: object
+        description: >-
+          Array with the LCS length and all the ranges in both the strings when 'IDX' is given. In RESP2 this is
+          returned as a flat array
+        additionalProperties: false
+        properties:
+          matches:
+            type: array
+            items:
+              type: array
+              minItems: 2
+              maxItems: 3
+              items:
+              - type: array
+                description: Matched range in the first string.
+                minItems: 2
+                maxItems: 2
+                items:
+                  type: integer
+              - type: array
+                description: Matched range in the second string.
+                minItems: 2
+                maxItems: 2
+                items:
+                  type: integer
+              additionalItems:
+                type: integer
+                description: The length of the match when 'WITHMATCHLEN' is given.
+          len:
+            type: integer
+            description: Length of the longest common subsequence.
+    """
+
+    database: Database = dependency()
+    key1: bytes = positional_parameter(key_mode=b"R")
+    key2: bytes = positional_parameter(key_mode=b"R")
+    length: bool = flag_parameter(token=b"LEN")
+    index: bool = flag_parameter(token=b"IDX")
     min_match_length: int = keyword_parameter(token=b"MINMATCHLEN", default=0)
-    with_match_length: bool = keyword_parameter(flag=b"WITHMATCHLEN", default=False)
+    with_match_length: bool = flag_parameter(token=b"WITHMATCHLEN")
 
     def compute_matrix(self, s1: bytes, s2: bytes) -> list[list[int]]:
         matrix = [[0 for _ in range(len(s2) + 1)] for _ in range(len(s1) + 1)]
@@ -286,8 +485,24 @@ class LongestCommonSubsequence(DatabaseCommand):
         return {b"matches": matches, b"len": lcs_length}
 
 
-@command(b"mget", {b"read", b"string", b"fast"})
-class MultipleGet(DatabaseCommand):
+@command(b"mget", {b"read", b"string"}, flags={b"fast", b"readonly"})
+class MultipleGet(Command):
+    """
+    summary: Atomically returns the string values of one or more keys.
+    complexity: O(N) where N is the number of keys to retrieve.
+    since: 1.0.0
+    function: mgetCommand
+    reply_schema:
+      description: List of values at the specified keys.
+      type: array
+      minItems: 1
+      items:
+        oneOf:
+        - type: string
+        - type: 'null'
+    """
+
+    database: Database = dependency()
     keys: list[bytes] = positional_parameter(key_mode=b"R")
 
     def execute(self) -> ValueType:
@@ -306,8 +521,23 @@ class MultipleGet(DatabaseCommand):
         return result
 
 
-@command(b"mset", {b"write", b"string", b"slow"})
-class SetMultiple(DatabaseCommand):
+class ExistenceMode(Enum):
+    OnlyIfNotExist = b"NX"
+    OnlyIfExist = b"XX"
+
+
+@command(b"mset", {b"slow", b"string"}, flags={b"denyoom", b"write"})
+class SetMultiple(Command):
+    """
+    summary: Atomically creates or modifies the string values of one or more keys.
+    complexity: O(N) where N is the number of keys to set.
+    since: 1.0.1
+    function: msetCommand
+    reply_schema:
+      const: OK
+    """
+
+    database: Database = dependency()
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -316,8 +546,92 @@ class SetMultiple(DatabaseCommand):
         return RESP_OK
 
 
-@command(b"msetnx", {b"write", b"string", b"slow"})
-class SetIfNotExistsMultiple(DatabaseCommand):
+@command(
+    b"msetex",
+    {b"slow", b"string"},
+    flags={b"denyoom", b"write"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
+)
+class SetMultipleExpire(Command):
+    """
+    summary: >-
+      Atomically creates or modifies the string values of one or more keys, and optionally set their expiration.
+    complexity: O(N) where N is the number of keys to set.
+    since: 9.1.0
+    function: msetexCommand
+    reply_schema:
+      oneOf:
+      - description: No key was set.
+        const: 0
+      - description: All the keys were set.
+        const: 1
+    """
+
+    database: Database = dependency()
+    numkeys: int = positional_parameter()
+    key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW", length_field_name="numkeys")
+    existence_mode: ExistenceMode | None = keyword_parameter(
+        flag={b"NX": ExistenceMode.OnlyIfNotExist, b"XX": ExistenceMode.OnlyIfExist}, default=None
+    )
+    ex: int | None = keyword_parameter(flag=b"EX", default=None)
+    px: int | None = keyword_parameter(flag=b"PX", default=None)
+    exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
+    pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
+    keepttl: bool = flag_parameter(token=b"KEEPTTL")
+
+    def execute(self) -> ValueType:
+        ttl_flags = [self.ex, self.px, self.exat, self.pxat, self.keepttl]
+        if sum(1 for f in ttl_flags if f) > 1:
+            raise ServerError(b"ERR syntax error")
+
+        expiration: int | None = None
+        if self.ex is not None:
+            expiration = now_ms() + self.ex * 1000
+        elif self.px is not None:
+            expiration = now_ms() + self.px
+        elif self.exat is not None:
+            expiration = self.exat * 1000
+        elif self.pxat is not None:
+            expiration = self.pxat
+
+        if self.existence_mode == ExistenceMode.OnlyIfNotExist:
+            for key, _ in self.key_value:
+                if self.database.string_database.has_key(key):
+                    return 0
+        elif self.existence_mode == ExistenceMode.OnlyIfExist:
+            for key, _ in self.key_value:
+                if not self.database.string_database.has_key(key):
+                    return 0
+
+        for key, value in self.key_value:
+            if self.keepttl:
+                existing = self.database.string_database.get_or_none(key)
+                current_expiration = existing.expiration if existing is not None else None
+                self.database.string_database.set_key_value(
+                    KeyValue.of_string(key, value, expiration=current_expiration)
+                )
+            else:
+                self.database.string_database.set_key_value(KeyValue.of_string(key, value, expiration=expiration))
+        return 1
+
+
+@command(b"msetnx", {b"slow", b"string"}, flags={b"denyoom", b"write"})
+class SetIfNotExistsMultiple(Command):
+    """
+    summary: >-
+      Atomically modifies the string values of one or more keys only when all keys don't exist.
+    complexity: O(N) where N is the number of keys to set.
+    since: 1.0.1
+    function: msetnxCommand
+    reply_schema:
+      oneOf:
+      - description: No key was set (at least one key already existed).
+        const: 0
+      - description: All the keys were set.
+        const: 1
+    """
+
+    database: Database = dependency()
     key_value: list[tuple[bytes, bytes]] = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
@@ -329,13 +643,33 @@ class SetIfNotExistsMultiple(DatabaseCommand):
         return True
 
 
-class ExistenceMode(Enum):
-    OnlyIfNotExist = b"NX"
-    OnlyIfExist = b"XX"
+@command(
+    b"set",
+    {b"slow", b"string"},
+    flags={b"denyoom", b"write"},
+    metadata={CommandMetadata.PARAMETERS_LEFT_ERROR: b"ERR syntax error"},
+)
+class Set(Command):
+    """
+    summary: >-
+      Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.
+    complexity: O(1)
+    since: 1.0.0
+    function: setCommand
+    reply_schema:
+      anyOf:
+      - description: >-
+          `GET` not given: Operation was aborted (conflict with one of the `XX`/`NX` options).
+        type: 'null'
+      - description: '`GET` not given: The key was set.'
+        const: OK
+      - description: '`GET` given: The key didn''t exist before the `SET`'
+        type: 'null'
+      - description: '`GET` given: The previous value of the key'
+        type: string
+    """
 
-
-@command(b"set", {b"write", b"string", b"slow"})
-class Set(DatabaseCommand):
+    database: Database = dependency()
     blocking_manager: StreamBlockingManager = dependency()
 
     key: bytes = positional_parameter(key_mode=b"RW")
@@ -348,7 +682,7 @@ class Set(DatabaseCommand):
     px: int | None = keyword_parameter(flag=b"PX", default=None)
     exat: int | None = keyword_parameter(flag=b"EXAT", default=None)
     pxat: int | None = keyword_parameter(flag=b"PXAT", default=None)
-    get: bool = keyword_parameter(flag=b"GET", default=False)
+    get: bool = flag_parameter(token=b"GET")
 
     _is_key_updated: bool = field(init=False, default=False)
 
@@ -387,36 +721,90 @@ class Set(DatabaseCommand):
             if self.existence_mode == ExistenceMode.OnlyIfExist:
                 return None
         elif self.existence_mode == ExistenceMode.OnlyIfNotExist:
-            return previous_value if self.get else None
+            return cast("ValueType", previous_value) if self.get else None
 
         if self.condition is not None and previous_value != self.condition:
             return None
 
-        self.database.pop(self.key, None)
+        previous = self.database.pop(self.key, None)
         self.database.string_database.set_key_value(KeyValue.of_string(self.key, self.value, expiration=expiration))
+
+        if previous is None:
+            self.database.notify(NotificationType.NEW, b"new", self.key)
+
         self._is_key_updated = True
 
-        return RESP_OK if not self.get else previous_value
+        self.database.notifications_manager.notify(NotificationType.STRING, b"set", self.key)
+
+        return RESP_OK if not self.get else cast("ValueType", previous_value)
 
     async def after(self, in_multi: bool = False) -> None:
         if self._is_key_updated:
             await self.blocking_manager.notify_deleted(self.key, in_multi=in_multi)
 
 
-@command(b"setex", {b"write", b"string", b"slow"})
-class SetExpire(DatabaseCommand):
+@command(b"setex", {b"slow", b"string"}, flags={b"denyoom", b"write"})
+class SetExpire(Command):
+    """
+    summary: >-
+      Sets the string value and expiration time of a key. Creates the key if it doesn't exist.
+    complexity: O(1)
+    since: 2.0.0
+    function: setexCommand
+    reply_schema:
+      const: OK
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     seconds: int = positional_parameter()
     value: bytes = positional_parameter()
 
     def execute(self) -> ValueType:
         self.database.string_database.upsert(self.key, self.value)
-        self.database.set_expiration_in(self.key, self.seconds)
+        self.database.set_expiration_in(self.key, 1000 * self.seconds)
         return RESP_OK
 
 
-@command(b"setnx", {b"write", b"string", b"fast"})
-class SetIfNotExists(DatabaseCommand):
+@command(b"psetex", {b"slow", b"string"}, flags={b"denyoom", b"write"})
+class SetExpireMilliseconds(Command):
+    """
+    summary: >-
+      Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn't exist.
+    complexity: O(1)
+    since: 2.6.0
+    function: psetexCommand
+    reply_schema:
+      const: OK
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"RW")
+    milliseconds: int = positional_parameter()
+    value: bytes = positional_parameter()
+
+    def execute(self) -> ValueType:
+        self.database.string_database.upsert(self.key, self.value)
+        self.database.set_expiration_in(self.key, self.milliseconds)
+        return RESP_OK
+
+
+@command(b"setnx", {b"string"}, flags={b"denyoom", b"fast", b"write"})
+class SetIfNotExists(Command):
+    """
+    summary: Sets the string value of a key only when the key doesn't exist.
+    complexity: O(1)
+    since: 1.0.0
+    function: setnxCommand
+    reply_schema:
+      oneOf:
+      - description: The key was set.
+        const: 0
+      - description: The key was not set.
+        const: 1
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
 
     value: bytes = positional_parameter()
@@ -428,8 +816,23 @@ class SetIfNotExists(DatabaseCommand):
         return True
 
 
-@command(b"setrange", {b"write", b"string", b"slow"})
-class SetRange(DatabaseCommand):
+@command(b"setrange", {b"slow", b"string"}, flags={b"denyoom", b"write"})
+class SetRange(Command):
+    """
+    summary: >-
+      Overwrites a part of a string value with another by an offset. Creates the key if it doesn't exist.
+    complexity: >-
+      O(1), not counting the time taken to copy the new string in place. Usually, this string is very small so the
+      amortized complexity is O(1). Otherwise, complexity is O(M) with M being the length of the value argument.
+    since: 2.2.0
+    function: setrangeCommand
+    reply_schema:
+      description: Length of the string after it was modified by the command.
+      type: integer
+      minimum: 0
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
     offset: int = positional_parameter()
     value: bytes = positional_parameter()
@@ -455,17 +858,44 @@ class SetRange(DatabaseCommand):
         return len(new_value)
 
 
-@command(b"strlen", {b"read", b"string", b"fast"})
-class StringLength(DatabaseCommand):
+@command(b"strlen", {b"read", b"string"}, flags={b"fast", b"readonly"})
+class StringLength(Command):
+    """
+    summary: Returns the length of a string value.
+    complexity: O(1)
+    since: 2.2.0
+    function: strlenCommand
+    reply_schema:
+      description: The length of the string value stored at key, or 0 when key does not exist.
+      type: integer
+      minimum: 0
+    """
+
+    database: Database = dependency()
     key: bytes = positional_parameter(key_mode=b"RW")
 
     def execute(self) -> ValueType:
         return len(self.database.bytes_database.get_value_or_empty(self.key))
 
 
-@command(b"substr", {b"stream", b"write", b"fast"})
-class StringSubstring(DatabaseCommand):
-    key: bytes = positional_parameter()
+@command(b"substr", {b"read", b"slow", b"string"}, flags={b"readonly"})
+class StringSubstring(Command):
+    """
+    summary: Returns a substring from a string value.
+    complexity: >-
+      O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned
+      length, but because creating a substring from an existing string is very cheap, it can be considered O(1)
+      for small strings.
+    since: 1.0.0
+    function: getrangeCommand
+    reply_schema:
+      type: string
+      description: >-
+        The substring of the string value stored at key, determined by the offsets start and end (both are inclusive).
+    """
+
+    database: Database = dependency()
+    key: bytes = positional_parameter(key_mode=b"R")
     start: int = positional_parameter()
     end: int = positional_parameter()
 

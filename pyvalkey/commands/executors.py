@@ -4,14 +4,13 @@ from dataclasses import dataclass
 from traceback import print_exc
 from typing import TYPE_CHECKING
 
-from pyvalkey.commands.context import ClientContext
+from pyvalkey.commands.scripting_commands import FunctionKill, FunctionStats, ScriptKill
 from pyvalkey.commands.transactions_commands import (
     TransactionDiscard,
     TransactionExecute,
     TransactionStart,
     TransactionWatch,
 )
-from pyvalkey.database_objects.acl import ACLUser
 from pyvalkey.database_objects.errors import (
     CommandPermissionError,
     ServerError,
@@ -22,7 +21,9 @@ from pyvalkey.resp import RespError, ValueType
 from pyvalkey.utils.times import now_us
 
 if TYPE_CHECKING:
+    from pyvalkey.commands.context import ClientContext
     from pyvalkey.commands.core import Command
+    from pyvalkey.database_objects.acl import ACLUser
 
 
 TransactionCommand = TransactionExecute | TransactionDiscard | TransactionStart | TransactionWatch
@@ -43,13 +44,29 @@ class CommandExecutor:
         )
 
         try:
+            if self.client_context.server_context.functions_engine.is_busy.is_set() and not isinstance(
+                self.command, FunctionKill | FunctionStats
+            ):
+                return RespError(
+                    b"BUSY Valkey is busy running a script. You can only call FUNCTION KILL or SHUTDOWN NOSAVE."
+                )
+            if self.client_context.server_context.scripts_engine.is_busy.is_set() and not isinstance(
+                self.command, ScriptKill
+            ):
+                return RespError(
+                    b"BUSY Valkey is busy running a script. You can only call SCRIPT KILL or SHUTDOWN NOSAVE."
+                )
+
             if self.client_context.server_context.configurations.maxmemory > 0:
                 if b"denyoom" in self.command.flags:
                     raise ServerError(b"ERR OOM command not allowed when used memory > 'maxmemory'.")
 
             if self.client_context.transaction_context is not None:
                 if b"nomulti" in self.command.flags:
-                    raise ServerError(b"ERR Command not allowed inside a transaction")
+                    raise ServerError(
+                        f"ERR Command '{self.command.full_command_name.decode()}' "
+                        f"not allowed inside a transaction".encode()
+                    )
                 if not isinstance(self.command, TransactionCommand):
                     self.client_context.transaction_context.commands.append(self.command)
                     return "QUEUED"

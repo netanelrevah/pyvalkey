@@ -7,29 +7,34 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import Generator
 from dataclasses import dataclass, field
 from io import BytesIO
 from traceback import print_exc
-from types import FrameType
-from typing import cast
+from typing import TYPE_CHECKING, Self, cast
 
 from pyvalkey.commands.context import ClientContext, ServerContext
-from pyvalkey.commands.core import Command
 from pyvalkey.commands.executors import CommandExecutor
 from pyvalkey.commands.router import CommandsRouter
-from pyvalkey.database_objects.acl import ACL, ACLUser
-from pyvalkey.database_objects.clients import Client, ClientsMap
+from pyvalkey.commands.scripting import FunctionsEngine, ScriptsEngine
 from pyvalkey.database_objects.configurations import Configurations
-from pyvalkey.database_objects.databases import Database
 from pyvalkey.database_objects.errors import (
     RouterKeyError,
     ServerError,
     ServerWrongNumberOfArgumentsError,
 )
-from pyvalkey.enums import UnblockMessage
-from pyvalkey.resp import RESP_OK, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
+from pyvalkey.enums import ReplyMode, UnblockMessage
+from pyvalkey.resp import RESP_OK, DoNotReply, RespError, RespFatalError, RespParser, RespSyntaxError, ValueType, dump
 from pyvalkey.utils.times import now_f_s
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from types import FrameType
+
+    from pyvalkey.commands.core import Command
+    from pyvalkey.database_objects.acl import ACL, ACLUser
+    from pyvalkey.database_objects.clients import Client, ClientsMap
+    from pyvalkey.database_objects.databases import Database
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +47,13 @@ class ValkeyClientProtocol(asyncio.Protocol):
     _transport: asyncio.BaseTransport | None = None
     _client_context: ClientContext | None = None
     data: BytesIO = field(default_factory=BytesIO)
+    _server: ValkeyServer | None = None
 
     _resp_query_parser: RespParser = field(default_factory=RespParser)
 
     parser_task: asyncio.Task | None = None
+    pubsub_task: asyncio.Task | None = None
+    command_handling_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     @property
     def configurations(self) -> Configurations:
@@ -81,41 +89,73 @@ class ValkeyClientProtocol(asyncio.Protocol):
     def transport(self) -> asyncio.Transport:
         if self._transport is None:
             raise Exception("must initialize client first")
-        return cast(asyncio.Transport, self._transport)
+        return cast("asyncio.Transport", self._transport)
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self._transport = transport
         host: str
         port: int
         host, port = transport.get_extra_info("peername")
-        self._client_context = ClientContext.create(self.server_context, host.encode(), port, self.router)
+        self._client_context = ClientContext.create(self.server_context, host.encode(), port)
 
         self.parser_task = asyncio.create_task(self.parse())
+        self.pubsub_task = asyncio.create_task(self.pubsub())
+        server = self._server
+        if server is not None:
+            server.connections[id(self)] = self
 
-    def connection_lost(self, exception: Exception | None) -> None:
-        print(f"{self.current_client.client_id} connection lost")
-        if self.client_context.current_client.blocking_context is not None:
-            self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
-        del self.clients[self.current_client.client_id]
+    def connection_lost(self, exc: Exception | None) -> None:
+        server = self._server
+        if server is not None:
+            server.connections.pop(id(self), None)
+        if self._client_context is not None:
+            logger.debug("%s connection lost", self.current_client.client_id)
+            self.client_context.subscriptions.unsubscribe_all()
+            if self.client_context.current_client.blocking_context is not None:
+                self.client_context.current_client.blocking_context.queue.put_nowait(UnblockMessage.ERROR)
+            del self.clients[self.current_client.client_id]
+        else:
+            logger.debug("connection lost before context initialization")
 
-    def dump(self, value: ValueType) -> None:
+        if self.parser_task is not None:
+            self.parser_task.cancel()
+        if self.pubsub_task is not None:
+            self.pubsub_task.cancel()
+
+    async def pubsub(self) -> None:
+        try:
+            while True:
+                message = await self.current_client.push_message_queue.get()
+                async with self.command_handling_lock:
+                    self.dump(message, push_message=True)
+        except asyncio.CancelledError:
+            pass
+
+    def dump(self, value: ValueType, push_message: bool = False) -> None:
         dumped = BytesIO()
         dump(value, dumped, self.client_context.protocol)
-        print(self.current_client.client_id, "result", dumped.getvalue()[:103])
 
-        if self.current_client.reply_mode == "skip":
-            self.current_client.reply_mode = "on"
-            return
+        logger.debug(
+            "%s reply:%s %r", self.current_client.client_id, self.current_client.reply_mode, dumped.getvalue()[:103]
+        )
 
-        if self.current_client.reply_mode == "off":
-            return
+        if not push_message:
+            if self.current_client.reply_mode == ReplyMode.SKIP:
+                self.current_client.reply_mode = ReplyMode.ON
+                return
+
+            if self.current_client.reply_mode == ReplyMode.OFF:
+                return
 
         dump(value, self.transport, self.client_context.protocol)
 
     async def parse(self) -> None:
         try:
             async for query in self._resp_query_parser:
-                await self.handle(query)
+                async with self.command_handling_lock:
+                    await self.handle(query)
+                    if self.transport.is_closing():
+                        break
                 await asyncio.sleep(0)
         except RespSyntaxError as e:
             if self.client_context.transaction_context is not None:
@@ -128,8 +168,10 @@ class ValkeyClientProtocol(asyncio.Protocol):
 
     def cancel(self) -> None:
         self.transport.close()
-        if self.parser_task:
+        if self.parser_task is not None:
             self.parser_task.cancel()
+        if self.pubsub_task is not None:
+            self.pubsub_task.cancel()
 
     def data_received(self, data: bytes) -> None:
         try:
@@ -148,7 +190,8 @@ class ValkeyClientProtocol(asyncio.Protocol):
     async def handle(self, command: list[bytes]) -> None:
         if not command:
             return
-        if command[0] == b"QUIT":
+        if command[0].upper() == b"QUIT":
+            logger.debug("%s got quit command with params %s", self.current_client.client_id, command[1:])
             self.dump(RESP_OK)
             self.transport.close()
             return
@@ -156,20 +199,17 @@ class ValkeyClientProtocol(asyncio.Protocol):
         self.server_context.information.total_commands_processed += 1
         self.current_client.command_time_snapshot = time.time_ns() // 1_000_000
 
-        print(self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command])
+        logger.debug(
+            "%s %s", self.current_client.client_id, [i[:300] if i and not isinstance(i, int) else i for i in command]
+        )
 
         try:
             routed_command_cls, parameters = self.router.route(command)
 
-        except RouterKeyError:
+        except RouterKeyError as e:
             if self.client_context.transaction_context is not None:
                 self.client_context.transaction_context.is_aborted = True
-            self.dump(
-                RespError(
-                    f"ERR unknown command '{command[0].decode()}', "
-                    f"with args beginning with: {command[1].decode() if len(command) > 1 else ''}".encode()
-                )
-            )
+            self.dump(RespError(e.message))
             return
 
         if self.server_context.pause_timeout:
@@ -185,11 +225,24 @@ class ValkeyClientProtocol(asyncio.Protocol):
             routed_command = routed_command_cls.create(parameters, self.client_context)
         except ServerWrongNumberOfArgumentsError:
             command_statistics.rejected_calls += 1
-            self.dump(
-                RespError(
-                    b"ERR wrong number of arguments for '" + routed_command_cls.full_command_name.lower() + b"' command"
+            if b"|" in routed_command_cls.full_command_name:
+                _, command_name = routed_command_cls.full_command_name.split(b"|")
+
+                self.dump(
+                    RespError(
+                        b"ERR unknown subcommand or wrong number of arguments for '"
+                        + command_name
+                        + b"'. Try FUNCTION HELP."
+                    )
                 )
-            )
+            else:
+                self.dump(
+                    RespError(
+                        b"ERR wrong number of arguments for '"
+                        + routed_command_cls.full_command_name.lower()
+                        + b"' command"
+                    )
+                )
             self.server_context.information.error_statistics[b"ERR"] += 1
             return
         except ServerError as e:
@@ -208,7 +261,9 @@ class ValkeyClientProtocol(asyncio.Protocol):
         command_executor = CommandExecutor(routed_command, self.client_context)
         try:
             result = await command_executor.execute()
-            self.dump(result)
+            if result is not DoNotReply:
+                self.dump(result, self.client_context.subscriptions.active_subscriptions > 0)
+
         except Exception as e:
             self.dump(RespError(b"ERR internal"))
             raise e
@@ -234,13 +289,26 @@ class ValkeyServer:
     host: str
     port: int
 
-    context: ServerContext = field(default_factory=ServerContext)
-    router: CommandsRouter = field(default_factory=CommandsRouter)
+    context: ServerContext
+    router: CommandsRouter
 
     _captured_signals: list[int] = field(default_factory=list)
     should_exit: bool = False
     force_exit: bool = False
     server: asyncio.Server | None = None
+    connections: dict[int, ValkeyClientProtocol] = field(default_factory=dict)
+
+    _database_cleanup_task: asyncio.Task | None = None
+
+    @classmethod
+    def create(cls, host: str, port: int) -> Self:
+        configurations = Configurations()
+        router = CommandsRouter()
+        functions_engine = FunctionsEngine.create(configurations, router)
+        scripts_engine = ScriptsEngine.create(configurations, router)
+
+        context = ServerContext(configurations, functions_engine, scripts_engine)
+        return cls(host, port, context, router)
 
     async def serve(self) -> None:
         with self.capture_signals():
@@ -257,12 +325,23 @@ class ValkeyServer:
         loop = asyncio.get_running_loop()
 
         self.server = await loop.create_server(
-            lambda: ValkeyClientProtocol(self.context, self.router), self.host, self.port
+            lambda: ValkeyClientProtocol(self.context, self.router, _server=self), self.host, self.port
         )
+        self._database_cleanup_task = asyncio.create_task(self.cleanup_databases())
 
     async def main_loop(self) -> None:
         while not self.should_exit:
             await asyncio.sleep(0.1)
+
+    def clean_databases(self) -> None:
+        for database in self.context.databases.values():
+            for key in database.content.key_with_expiration[:10]:
+                database.get_or_none(key.key)
+
+    async def cleanup_databases(self) -> None:
+        while not self.should_exit:
+            self.clean_databases()
+            await asyncio.sleep(1.0)
 
     def run(self) -> None:
         return asyncio.run(self.serve())
@@ -289,8 +368,22 @@ class ValkeyServer:
             signal.raise_signal(captured_signal)
 
     async def _shutdown(self) -> None:
-        if self.server:
+        if self._database_cleanup_task is not None:
+            self._database_cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._database_cleanup_task
+
+        if self.server is not None:
             self.server.close()
+            await self.server.wait_closed()
+
+        # Close all active connections
+        for conn in list(self.connections.values()):
+            conn.transport.close()
+
+        # Give some time for tasks to be cancelled and cleaned up
+        if self.connections:
+            await asyncio.sleep(0.1)
 
     def shutdown(self) -> None:
         self.should_exit = True

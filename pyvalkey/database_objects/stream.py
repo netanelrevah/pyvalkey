@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Self, TypeVar
+from typing import TYPE_CHECKING, Self, TypeVar
 
 from sortedcontainers import SortedDict
 
 from pyvalkey.consts import UINT64_MAX
 from pyvalkey.utils.times import now_ms
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 EntryID = tuple[int, int]
 EntryData = dict[bytes, bytes]
@@ -89,7 +91,7 @@ def range_entries(
 @dataclass
 class Consumer:
     name: bytes
-    last_seen_timestamp: int = field(default_factory=lambda: now_ms())
+    last_seen_timestamp: int = field(default_factory=now_ms)
     last_active_timestamp: int | None = None
 
     pending_entries: SortedDict[EntryID, PendingEntry] = field(default_factory=SortedDict)
@@ -170,7 +172,7 @@ class Stream:
     consumer_groups: dict[bytes, ConsumerGroup]
 
     def __init__(self, entries: Iterable[EntryType] | None = None) -> None:
-        self.entries: SortedDict[EntryID, EntryData | None] = SortedDict({key: data for key, data in entries or []})
+        self.entries: SortedDict[EntryID, EntryData | None] = SortedDict({key: data for key, data in entries or []})  # ty: ignore[invalid-assignment]
         self.consumer_groups: dict[bytes, ConsumerGroup] = {}
 
         self.added_entries = 0
